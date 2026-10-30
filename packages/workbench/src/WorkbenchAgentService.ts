@@ -21,14 +21,18 @@ import * as Schema from "effect/Schema";
 
 import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
 import { WorkbenchAgentHost } from "./WorkbenchAgentHost.ts";
-import { WorkbenchStore, type WorkbenchThreadOwner } from "./WorkbenchStore.ts";
+import {
+  WorkbenchStore,
+  type WorkbenchThreadContextSnapshot,
+  type WorkbenchThreadOwner,
+} from "./WorkbenchStore.ts";
 
 export class WorkstreamNotOwnedError extends Schema.TaggedError<WorkstreamNotOwnedError>()(
   "WorkstreamNotOwnedError",
   {},
 ) {
   override get message(): string {
-    return "This Thread does not belong to a Workstream";
+    return "This Thread does not belong to a Ticket";
   }
 }
 
@@ -37,7 +41,7 @@ export class WorkstreamChangedError extends Schema.TaggedError<WorkstreamChanged
   { currentRevision: NonNegativeInt },
 ) {
   override get message(): string {
-    return `The Workstream changed. It is now at revision ${this.currentRevision}. Read it again, then retry with that revision.`;
+    return `The Ticket changed. It is now at revision ${this.currentRevision}. Read it again, then retry with that revision.`;
   }
 }
 
@@ -53,7 +57,7 @@ const AgentRepository = Schema.Struct({
   name: Schema.String,
   selected: Schema.Boolean,
   worktreePath: Schema.NullOr(Schema.String).annotate({
-    description: "Prepared worktree for this Workstream, when there is one.",
+    description: "Prepared worktree for this Ticket, when there is one.",
   }),
 });
 
@@ -62,6 +66,7 @@ const sharedStateFields = {
   revision: NonNegativeInt,
   title: Schema.String,
   brief: Schema.String,
+  progress: Schema.String,
   repositories: Schema.Array(AgentRepository),
   references: Schema.Array(AgentReference),
   artifactsDir: Schema.String,
@@ -102,6 +107,7 @@ export interface WorkstreamUpdateInput {
   readonly expectedRevision: number;
   readonly title?: string | undefined;
   readonly brief?: string | undefined;
+  readonly progress?: string | undefined;
   readonly status?: WorkbenchTicketStatus | undefined;
   readonly repositoryProjectIds?: ReadonlyArray<ProjectId> | undefined;
 }
@@ -123,6 +129,11 @@ export class WorkbenchAgentService extends Context.Service<
       readonly threadId: ThreadId;
       readonly url: string;
       readonly title?: string | undefined;
+    }) => Effect.Effect<AgentReferenceResult, AgentServiceError>;
+    readonly updateReference: (input: {
+      readonly threadId: ThreadId;
+      readonly url: string;
+      readonly title: string;
     }) => Effect.Effect<AgentReferenceResult, AgentServiceError>;
     readonly removeReference: (input: {
       readonly threadId: ThreadId;
@@ -235,6 +246,7 @@ const make = Effect.gen(function* () {
       revision: ticket.revision,
       title: ticket.title,
       brief: ticket.markdown,
+      progress: ticket.progress ?? "",
       status: ticket.status,
       repositories: yield* describeRepositories({
         workspaceId: ticket.projectId,
@@ -264,6 +276,7 @@ const make = Effect.gen(function* () {
       phase: draft.phase,
       title: draft.fields.title,
       brief: draft.fields.markdown,
+      progress: draft.progress ?? "",
       repositories: yield* describeRepositories({
         workspaceId: draft.projectId,
         selected: draft.fields.repositoryProjectIds,
@@ -279,8 +292,38 @@ const make = Effect.gen(function* () {
       ? readTicket({ ticketId: owner.ticketId, threadId })
       : readDraft(owner.draftId);
 
+  // What a Thread reads or writes itself is not sent back to it as a change on its next turn.
+  // Recording is best effort: a miss only resends that part.
+  const recordSeen = (input: {
+    readonly threadId: ThreadId;
+    readonly ownerId: WorkbenchTicketId;
+    readonly update: (snapshot: WorkbenchThreadContextSnapshot) => WorkbenchThreadContextSnapshot;
+  }) =>
+    store.updateSeenThreadContext(input).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Workbench seen context could not be recorded", {
+          threadId: input.threadId,
+          error: error.message,
+        }),
+      ),
+    );
+  const recordSeenState = (threadId: ThreadId, state: WorkstreamState) =>
+    recordSeen({
+      threadId,
+      ownerId: state.id,
+      update: (snapshot) => ({
+        ...snapshot,
+        revision: state.revision,
+        brief: state.brief,
+        progress: state.progress,
+        references: state.references.map(({ url, title }) => ({ url, title })),
+      }),
+    });
+
   const read = Effect.fn("WorkbenchAgentService.read")(function* (threadId: ThreadId) {
-    return yield* readOwner(yield* requireOwner(threadId), threadId);
+    const state = yield* readOwner(yield* requireOwner(threadId), threadId);
+    yield* recordSeenState(threadId, state);
+    return state;
   });
 
   // A stale write reports the current revision, so the agent can reread and retry.
@@ -328,6 +371,7 @@ const make = Effect.gen(function* () {
         expectedRevision: input.expectedRevision,
         ...(input.title === undefined ? {} : { title: input.title }),
         ...(input.brief === undefined ? {} : { markdown: input.brief }),
+        ...(input.progress === undefined ? {} : { progress: input.progress }),
         ...(input.status === undefined ? {} : { status: input.status }),
         ...(repositoryProjectIds === undefined
           ? {}
@@ -363,7 +407,7 @@ const make = Effect.gen(function* () {
     if (input.status !== undefined) {
       return yield* new WorkbenchOperationError({
         code: "ticket_draft_invalid",
-        message: "A draft has no status. Leave status out until the Workstream is created.",
+        message: "A draft has no status. Leave status out until the Ticket is created.",
       });
     }
     const draft = yield* store.getTicketDraft(draftId);
@@ -383,6 +427,7 @@ const make = Effect.gen(function* () {
               ? primary
               : (repositoryProjectIds[0] ?? null),
         },
+        ...(input.progress === undefined ? {} : { progress: input.progress }),
         updatedByThreadId: input.threadId,
       })
       .pipe(
@@ -402,7 +447,9 @@ const make = Effect.gen(function* () {
       owner.kind === "ticket"
         ? yield* updateTicket(owner.ticketId, input)
         : yield* updateDraft(owner.draftId, input);
-    return { state: yield* readOwner(owner, input.threadId), ...outcome };
+    const state = yield* readOwner(owner, input.threadId);
+    yield* recordSeenState(input.threadId, state);
+    return { state, ...outcome };
   });
 
   const addReference = Effect.fn("WorkbenchAgentService.addReference")(function* (input: {
@@ -419,6 +466,44 @@ const make = Effect.gen(function* () {
         addedByThreadId: input.threadId,
       })
       .pipe(lostOwnership);
+    yield* recordSeen({
+      threadId: input.threadId,
+      ownerId: reference.ticketId,
+      update: (snapshot) =>
+        snapshot.references.some(({ url }) => url === reference.url)
+          ? snapshot
+          : {
+              ...snapshot,
+              references: [...snapshot.references, { url: reference.url, title: reference.title }],
+            },
+    });
+    return agentReference(reference);
+  });
+
+  const updateReference = Effect.fn("WorkbenchAgentService.updateReference")(function* (input: {
+    readonly threadId: ThreadId;
+    readonly url: string;
+    readonly title: string;
+  }) {
+    const owner = yield* requireOwner(input.threadId);
+    const reference = yield* store
+      .updateReference({
+        ticketId: ownerId(owner),
+        url: input.url,
+        title: input.title,
+        actingThreadId: input.threadId,
+      })
+      .pipe(lostOwnership);
+    yield* recordSeen({
+      threadId: input.threadId,
+      ownerId: reference.ticketId,
+      update: (snapshot) => ({
+        ...snapshot,
+        references: snapshot.references.map((seen) =>
+          seen.url === reference.url ? { url: seen.url, title: reference.title } : seen,
+        ),
+      }),
+    });
     return agentReference(reference);
   });
 
@@ -427,12 +512,27 @@ const make = Effect.gen(function* () {
     readonly url: string;
   }) {
     const owner = yield* requireOwner(input.threadId);
+    const url = parseWorkbenchReferenceUrl(input.url)?.url ?? input.url.trim();
     yield* store
-      .removeReference({ ticketId: ownerId(owner), url: input.url, actingThreadId: input.threadId })
+      .removeReference({ ticketId: ownerId(owner), url, actingThreadId: input.threadId })
       .pipe(lostOwnership);
+    yield* recordSeen({
+      threadId: input.threadId,
+      ownerId: ownerId(owner),
+      update: (snapshot) => ({
+        ...snapshot,
+        references: snapshot.references.filter((seen) => seen.url !== url),
+      }),
+    });
   });
 
-  return WorkbenchAgentService.of({ read, update, addReference, removeReference });
+  return WorkbenchAgentService.of({
+    read,
+    update,
+    addReference,
+    updateReference,
+    removeReference,
+  });
 });
 
 export const layer = Layer.effect(WorkbenchAgentService, make);

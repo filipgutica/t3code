@@ -30,6 +30,12 @@ const handlers = {
       return yield* service.addReference({ ...input, threadId: yield* callerThreadId });
     }),
   ),
+  workbench_reference_update: McpToolAccess.actsAsCaller((input) =>
+    Effect.gen(function* () {
+      const service = yield* WorkbenchAgentService;
+      return yield* service.updateReference({ ...input, threadId: yield* callerThreadId });
+    }),
+  ),
   workbench_reference_remove: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const service = yield* WorkbenchAgentService;

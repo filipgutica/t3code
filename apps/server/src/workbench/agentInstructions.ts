@@ -1,9 +1,9 @@
 /** How a Ticket is planned and tracked, in the words every agent-facing text shares. */
-export const TRACKING_RULE =
-  "Keep the brief short: goal, open questions, and decisions. Track the work in `progress`, one `- [ ]` per task or PR, and tick each when its work lands. Put requirements and each PR's scope and acceptance in `plan.md` and `requirements.md` in `artifactsDir`, and add them as References.";
+const TRACKING_RULE =
+  "Keep the brief short: goal, open questions, and decisions. Track the work in `progress`, one `- [ ]` per task or PR. Keep it in step with the plan: add, reword, or reorder items when the plan changes, and tick each when its work lands. Put requirements and each PR's scope and acceptance in `plan.md` and `requirements.md` in `artifactsDir`, and add them as References.";
 
 export const REFERENCES_RULE =
-  "References are current sources to read: specs, plans, designs, issues, example PRs. Not test output, audits, or evidence logs. Remove a superseded file's Reference.";
+  "References are current sources to read: specs, plans, designs, issues, example PRs. Not test output, audits, or evidence logs. Remove a superseded file's Reference. Retitle one whose status changes, such as proposed to approved.";
 
 const section = (label: string, text: string) => `${label}:\n${text.trim() || "(empty)"}`;
 
@@ -12,9 +12,17 @@ export const ticketInstruction = (input: {
   readonly id: string;
   readonly title: string;
   readonly brief: string;
-  readonly progress?: string;
-  readonly references?: ReadonlyArray<{ readonly url: string; readonly title: string | null }>;
-  readonly artifactsDir?: string;
+  readonly progress?: string | undefined;
+  readonly references?:
+    | ReadonlyArray<{ readonly url: string; readonly title: string | null }>
+    | undefined;
+  readonly artifactsDir?: string | undefined;
+  readonly worktrees?: ReadonlyArray<{
+    readonly id: string;
+    readonly path: string;
+    readonly branch: string;
+    readonly primary: boolean;
+  }>;
 }) =>
   [
     `This thread works on Workbench Ticket ${JSON.stringify(input.title.trim() || "Untitled draft")} (id ${input.id}). Its brief, Progress, and References below are current, and later turns carry what changes. Record progress and decisions with workbench_ticket_update so the other Threads see them.`,
@@ -25,9 +33,12 @@ export const ticketInstruction = (input: {
     section(
       "References",
       (input.references ?? [])
-        .map((reference) => `- ${reference.title ?? reference.url} — ${reference.url}`)
+        .map((reference) => `- ${reference.title ?? reference.url} (${reference.url})`)
         .join("\n"),
     ),
+    ...(input.worktrees === undefined || input.worktrees.length === 0
+      ? []
+      : [`Prepared worktrees: ${JSON.stringify(input.worktrees)}`]),
   ].join("\n\n");
 
 export const PLANNING_INSTRUCTION = [

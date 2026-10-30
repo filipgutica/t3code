@@ -38,5 +38,16 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly hasThreadAtWorktreePath: (
       worktreePath: string,
     ) => Effect.Effect<boolean, WorkbenchOperationError>;
+    /** The Thread's run whose provider turn is being started, if any. */
+    readonly findStartingRunId: (
+      threadId: ThreadId,
+    ) => Effect.Effect<Option.Option<RunId>, WorkbenchOperationError>;
+    /** Position of the Thread's latest completed compaction or context handoff, or 0. */
+    readonly contextMarker: (threadId: ThreadId) => Effect.Effect<number, WorkbenchOperationError>;
+    /** The user message text that started a run. */
+    readonly findRunMessageText: (input: {
+      readonly threadId: ThreadId;
+      readonly runId: RunId;
+    }) => Effect.Effect<Option.Option<string>, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/WorkbenchNativeAccess") {}

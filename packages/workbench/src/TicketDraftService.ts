@@ -118,6 +118,9 @@ const make = Effect.gen(function* () {
           ...draft.fields,
           primaryT3ProjectId: primary,
           updatedByThreadId: draft.updatedByThreadId ?? null,
+          // Only the draft's planning Thread writes its Progress.
+          progress: draft.progress ?? "",
+          progressUpdatedByThreadId: draft.progress ? draft.threadId : null,
           createdAt: draft.createdAt,
         })
         .pipe(

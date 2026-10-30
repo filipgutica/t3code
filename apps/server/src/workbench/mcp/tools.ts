@@ -89,8 +89,7 @@ const UpdateWorkstreamTool = Tool.make("workbench_ticket_update", {
   .annotate(Tool.OpenWorld, false);
 
 const AddReferenceTool = Tool.make("workbench_reference_add", {
-  description:
-    `${REFERENCES_RULE} Link delivery PRs with link_pull_request instead. Existing URLs are a no-op.`,
+  description: `${REFERENCES_RULE} Link delivery PRs with link_pull_request instead. Existing URLs are a no-op.`,
   parameters: Schema.Struct({
     url: ReferenceUrl,
     title: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(500))),
@@ -100,6 +99,22 @@ const AddReferenceTool = Tool.make("workbench_reference_add", {
   dependencies,
 })
   .annotate(Tool.Title, "Add Ticket Reference")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, true)
+  .annotate(Tool.OpenWorld, false);
+
+const UpdateReferenceTool = Tool.make("workbench_reference_update", {
+  description: "Retitle a Reference in place, such as when its status changes.",
+  parameters: Schema.Struct({
+    url: ReferenceUrl,
+    title: TrimmedNonEmptyString.check(Schema.isMaxLength(500)),
+  }),
+  success: AgentReferenceResult,
+  failure: WorkbenchToolError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Retitle Ticket Reference")
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
@@ -122,5 +137,6 @@ export const WorkbenchToolkit = Toolkit.make(
   ReadWorkstreamTool,
   UpdateWorkstreamTool,
   AddReferenceTool,
+  UpdateReferenceTool,
   RemoveReferenceTool,
 );

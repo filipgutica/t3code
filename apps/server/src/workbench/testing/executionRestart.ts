@@ -4,6 +4,7 @@ import {
   NodeId,
   ProjectId,
   ProviderInstanceId,
+  ProviderThreadId,
   RunId,
   ThreadId,
   WorkbenchAssignmentId,
@@ -41,6 +42,7 @@ const encodeResult = Schema.encodeEffect(
 export const projectId = ProjectId.make("execution-restart-project");
 const workspaceId = WorkbenchProjectId.make("execution-restart-workspace");
 export const threadId = ThreadId.make("execution-restart-thread");
+const defaultThreadId = threadId;
 export const ticketId = WorkbenchTicketId.make("execution-restart-ticket");
 export const now = "2026-10-03T10:00:00.000Z";
 const runId = RunId.make("execution-restart-run");
@@ -48,10 +50,14 @@ export const runEvent = ({
   id = runId,
   status = "running",
   ordinal = 1,
+  threadId = defaultThreadId,
+  providerThreadId = null,
 }: {
   readonly id?: RunId;
-  readonly status?: "queued" | "starting" | "running" | "completed";
+  readonly status?: "queued" | "starting" | "running" | "completed" | "failed" | "cancelled";
   readonly ordinal?: number;
+  readonly threadId?: ThreadId;
+  readonly providerThreadId?: ProviderThreadId | null;
 } = {}): Extract<OrchestrationV2DomainEvent, { type: "run.updated" }> => ({
   id: EventId.make(`event-${id}-${status}`),
   type: "run.updated",
@@ -63,14 +69,17 @@ export const runEvent = ({
     ordinal,
     providerInstanceId: ProviderInstanceId.make("codex"),
     modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: "default" },
-    providerThreadId: null,
+    providerThreadId,
     userMessageId: MessageId.make(`user-${id}`),
     rootNodeId: NodeId.make(`root-${id}`),
     activeAttemptId: null,
     status,
     requestedAt: DateTime.makeUnsafe(now),
     startedAt: status === "queued" || status === "starting" ? null : DateTime.makeUnsafe(now),
-    completedAt: status === "completed" ? DateTime.makeUnsafe(now) : null,
+    completedAt:
+      status === "completed" || status === "failed" || status === "cancelled"
+        ? DateTime.makeUnsafe(now)
+        : null,
     checkpointId: null,
     contextHandoffId: null,
   },

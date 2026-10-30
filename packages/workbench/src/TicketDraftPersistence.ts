@@ -330,9 +330,15 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(operationError));
-  /** Like `updateTicket`, a changed title or description records `updatedByThreadId`. */
+  /**
+   * Like `updateTicket`, a changed title or description records `updatedByThreadId`.
+   * Only the planning agent passes `progress`; omitted, it keeps the current list.
+   */
   const updateTicketDraft = Effect.fn("TicketDraftPersistence.updateTicketDraft")(function* (
-    input: WorkbenchUpdateTicketDraftInput & { readonly updatedByThreadId?: ThreadId },
+    input: WorkbenchUpdateTicketDraftInput & {
+      readonly updatedByThreadId?: ThreadId;
+      readonly progress?: string;
+    },
   ) {
     const current = yield* readCurrentDraft(input);
     if (current.phase !== "draft") return yield* busy();
@@ -349,6 +355,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         const next = {
           ...draft,
           fields: input.fields,
+          ...(input.progress === undefined ? {} : { progress: input.progress }),
           updatedByThreadId: contentChanged
             ? (input.updatedByThreadId ?? null)
             : (draft.updatedByThreadId ?? null),

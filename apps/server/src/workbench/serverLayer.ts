@@ -9,6 +9,7 @@ import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
+import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
@@ -27,9 +28,14 @@ export const WorkbenchProviderPoliciesLayerLive = Layer.succeed(ClaudeQueryOptio
   decorate: ClaudeResearchPolicy.decorate,
 });
 
+const TicketContextLayerLive = TicketContextService.layer.pipe(
+  Layer.provide(WorkbenchStoreLayerLive),
+  Layer.provide(ProjectionStoreV2.layer),
+);
+
 export const WorkbenchHostPoliciesLayerLive = Layer.mergeAll(
   WorkbenchProviderPoliciesLayerLive,
-  TicketPlanningRuntime.layerRuntimePolicyDecorator,
+  TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(Layer.provide(TicketContextLayerLive)),
   WorkbenchWorktreeOwnership.layer,
 ).pipe(
   Layer.provide(WorkbenchStoreLayerLive),
@@ -59,6 +65,7 @@ export const WorkbenchServicesLayerLive = Layer.empty.pipe(
   Layer.provideMerge(WorkbenchHostPoliciesLayerLive),
   Layer.provideMerge(TicketDraftLayerLive),
   Layer.provideMerge(WorkbenchAgentLayerLive),
+  Layer.provideMerge(TicketContextLayerLive),
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(TicketWorkspaceService.TicketWorkspaceServiceLive),
   Layer.provideMerge(TicketSummaryService.TicketSummaryServiceLive),

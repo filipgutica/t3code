@@ -25,6 +25,7 @@ const OWNED: WorkstreamState = {
   phase: "draft",
   title: "Expire invitations",
   brief: "",
+  progress: "- [ ] Expire links after a week",
   repositories: [],
   references: [],
   artifactsDir: "/home/user/.t3/userdata/workbench-artifacts/draft-1",
@@ -71,6 +72,16 @@ const makeHarness = (owned: boolean) =>
               label: "ORBIT-1",
             }),
           ),
+        updateReference: (input) =>
+          record("updateReference", input).pipe(
+            Effect.andThen(requireOwned),
+            Effect.as({
+              url: input.url,
+              title: input.title,
+              kind: "jira_issue" as const,
+              label: "ORBIT-1",
+            }),
+          ),
         removeReference: (input) =>
           record("removeReference", input).pipe(Effect.andThen(requireOwned)),
       }),
@@ -99,14 +110,18 @@ const makeHarness = (owned: boolean) =>
   });
 
 describe("Workbench toolkit handlers", () => {
-  it.effect("acts on the calling Thread's own Workstream", () =>
+  it.effect("acts on the calling Thread's own Ticket", () =>
     Effect.gen(function* () {
       const { call, calls } = yield* makeHarness(true);
       const url = "https://acme.atlassian.net/browse/ORBIT-1";
 
-      expect(yield* call("workbench_workstream_read", {})).toEqual(OWNED);
+      expect(yield* call("workbench_ticket_read", {})).toEqual(OWNED);
       expect(
-        yield* call("workbench_workstream_update", { expectedRevision: 3, title: "Expire links" }),
+        yield* call("workbench_ticket_update", {
+          expectedRevision: 3,
+          title: "Expire links",
+          progress: "- [x] Expire links after a week",
+        }),
       ).toEqual({ state: OWNED });
       expect(yield* call("workbench_reference_add", { url, title: "Expire invitations" })).toEqual({
         url,
@@ -114,24 +129,39 @@ describe("Workbench toolkit handlers", () => {
         kind: "jira_issue",
         label: "ORBIT-1",
       });
+      expect(yield* call("workbench_reference_update", { url, title: "Approved spec" })).toEqual({
+        url,
+        title: "Approved spec",
+        kind: "jira_issue",
+        label: "ORBIT-1",
+      });
       expect(yield* call("workbench_reference_remove", { url })).toEqual({});
       expect(yield* Ref.get(calls)).toEqual([
         ["read", THREAD_ID],
-        ["update", { expectedRevision: 3, title: "Expire links", threadId: THREAD_ID }],
+        [
+          "update",
+          {
+            expectedRevision: 3,
+            title: "Expire links",
+            progress: "- [x] Expire links after a week",
+            threadId: THREAD_ID,
+          },
+        ],
         ["addReference", { url, title: "Expire invitations", threadId: THREAD_ID }],
+        ["updateReference", { url, title: "Approved spec", threadId: THREAD_ID }],
         ["removeReference", { url, threadId: THREAD_ID }],
       ]);
     }),
   );
 
-  it.effect("reports a Thread that belongs to no Workstream", () =>
+  it.effect("reports a Thread that belongs to no Ticket", () =>
     Effect.gen(function* () {
       const { call } = yield* makeHarness(false);
       const error = yield* call("workbench_reference_add", {
         url: "https://github.com/acme/app/issues/1",
       }).pipe(Effect.flip);
       expect(error).toMatchObject({ _tag: "WorkstreamNotOwnedError" });
-      expect(error.message).toBe("This Thread does not belong to a Workstream");
+      expect(error.message).toBe("This Thread does not belong to a Ticket");
     }),
   );
 
@@ -142,13 +172,11 @@ describe("Workbench toolkit handlers", () => {
         _tag: "OrchestratorMcpFailure",
         code: "thread_credential_required",
       };
-      expect(yield* Effect.flip(call("workbench_workstream_read", {}, clientCaller))).toMatchObject(
+      expect(yield* Effect.flip(call("workbench_ticket_read", {}, clientCaller))).toMatchObject(
         refused,
       );
       expect(
-        yield* Effect.flip(
-          call("workbench_workstream_update", { expectedRevision: 3 }, clientCaller),
-        ),
+        yield* Effect.flip(call("workbench_ticket_update", { expectedRevision: 3 }, clientCaller)),
       ).toMatchObject(refused);
       expect(yield* Ref.get(calls)).toEqual([]);
     }),

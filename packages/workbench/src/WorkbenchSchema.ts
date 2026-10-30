@@ -1156,6 +1156,23 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     )`.pipe(Effect.asVoid),
   );
   yield* applyMigration(22, migrateJiraLinksToReferences);
+  yield* applyMigration(
+    23,
+    Effect.gen(function* () {
+      yield* sql`ALTER TABLE workbench_tickets ADD COLUMN progress TEXT NOT NULL DEFAULT ''`;
+      yield* sql`ALTER TABLE workbench_tickets ADD COLUMN progress_updated_by_thread_id TEXT`;
+      // What each Thread was last given of its Ticket, so later turns carry only the changes.
+      yield* sql`CREATE TABLE workbench_thread_context (
+      thread_id TEXT PRIMARY KEY, seen_json TEXT NOT NULL, provider_thread_id TEXT,
+      context_marker INTEGER NOT NULL, updated_at TEXT NOT NULL
+    )`;
+      // The snapshot a starting run's text was built from; it becomes seen when the run runs.
+      yield* sql`CREATE TABLE workbench_thread_context_pending (
+      run_id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, snapshot_json TEXT NOT NULL,
+      provider_thread_id TEXT, context_marker INTEGER NOT NULL, created_at TEXT NOT NULL
+    )`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

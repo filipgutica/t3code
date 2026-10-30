@@ -82,6 +82,28 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     },
   );
 
+  const findStartingRunRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId }),
+    Result: Schema.Struct({ id: RunId }),
+    execute: ({ threadId }) => sql`
+      SELECT run_id AS "id" FROM orchestration_v2_projection_runs
+      WHERE thread_id = ${threadId} AND status = 'starting'
+      ORDER BY ordinal DESC LIMIT 1
+    `,
+  });
+  const findRunMessageRow = SqlSchema.findOneOption({
+    Request: Schema.Struct({ threadId: ThreadId, runId: RunId }),
+    Result: Schema.Struct({ text: Schema.String }),
+    execute: ({ threadId, runId }) => sql`
+      SELECT json_extract(message.payload_json, '$.text') AS "text"
+      FROM orchestration_v2_projection_messages AS message
+      JOIN orchestration_v2_projection_runs AS run
+        ON message.message_id = json_extract(run.payload_json, '$.userMessageId')
+      WHERE run.thread_id = ${threadId} AND run.run_id = ${runId}
+        AND message.thread_id = ${threadId}
+    `,
+  });
+
   return WorkbenchNativeAccess.of({
     executionSequence: sql<{ readonly sequence: number }>`
       SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events
@@ -115,6 +137,28 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     isRepository,
     findThread,
     hasThreadAtWorktreePath,
+    findStartingRunId: Effect.fn("WorkbenchNativeAccess.findStartingRunId")((threadId) =>
+      findStartingRunRow({ threadId }).pipe(
+        Effect.map(Option.map((row) => row.id)),
+        Effect.mapError(persistenceError),
+      ),
+    ),
+    // Adapters record provider compactions and context handoffs as these turn items.
+    contextMarker: Effect.fn("WorkbenchNativeAccess.contextMarker")((threadId) =>
+      sql<{ readonly marker: number }>`
+        SELECT COALESCE(MAX(ordinal), 0) AS marker FROM orchestration_v2_projection_turn_items
+        WHERE thread_id = ${threadId} AND type IN ('compaction', 'handoff') AND status = 'completed'
+      `.pipe(
+        Effect.map((rows) => rows[0]?.marker ?? 0),
+        Effect.mapError(persistenceError),
+      ),
+    ),
+    findRunMessageText: Effect.fn("WorkbenchNativeAccess.findRunMessageText")((input) =>
+      findRunMessageRow(input).pipe(
+        Effect.map(Option.map((row) => row.text)),
+        Effect.mapError(persistenceError),
+      ),
+    ),
   });
 });
 
