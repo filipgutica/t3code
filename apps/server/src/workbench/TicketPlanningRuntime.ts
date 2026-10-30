@@ -16,7 +16,7 @@ import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as RuntimePolicy from "../orchestration-v2/RuntimePolicy.ts";
-import { PLANNING_FILL_INSTRUCTION, workstreamInstruction } from "./agentInstructions.ts";
+import { PLANNING_INSTRUCTION, ticketInstruction } from "./agentInstructions.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 
 const RepositoryManifest = Schema.Array(
@@ -102,7 +102,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
     if (Option.isNone(owner)) return undefined;
     if (owner.value.kind === "draft") {
       const draft = yield* store.getTicketDraft(owner.value.draftId);
-      return workstreamInstruction({
+      return ticketInstruction({
         id: draft.id,
         title: draft.fields.title,
         brief: draft.fields.markdown,
@@ -110,7 +110,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
     }
     const ticket = yield* store.getTicket(owner.value.ticketId);
     if (Option.isNone(ticket)) return undefined;
-    const instruction = workstreamInstruction({
+    const instruction = ticketInstruction({
       id: ticket.value.id,
       title: ticket.value.title,
       brief: ticket.value.markdown,
@@ -156,7 +156,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
           const draft = yield* store.getTicketDraftForThread(input.thread.id);
           if (draft === null) return policy;
           if (draft.phase === "working") {
-            // The Workstream instruction lists the prepared worktrees.
+            // The Ticket instruction lists the prepared worktrees.
             return {
               ...policy,
               instructions:
@@ -204,9 +204,7 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             interactionMode: "default" as const,
             checkpoints: "disabled" as const,
             instructions: [
-              "You are preparing a ticket in a Workbench workspace. This is a planning conversation, not implementation. Inspect the repositories listed below to understand the request; run commands, connectors, GitHub tools, and the browser as needed. Do not change the repositories' files, branches, or worktrees, and do not start implementing. The working directory is an internal anchor and does not define the task's repository scope.",
-              "Help the user establish a title, goal, implementation plan, acceptance criteria, non-goals, and testing. Ask focused questions only when the repository evidence and conversation do not resolve a material uncertainty. Identify which repositories need to be attached. Preserve the user's decisions and edits.",
-              PLANNING_FILL_INSTRUCTION,
+              PLANNING_INSTRUCTION,
               `Repository manifest: ${manifest}`,
               draft.phase === "planning"
                 ? "The ticket is already saved. Continue planning here until the user selects Start work; further planning must not implement the ticket."

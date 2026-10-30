@@ -5,20 +5,20 @@ import * as McpInvocationContext from "../../mcp/McpInvocationContext.ts";
 import * as McpToolAccess from "../../mcp/McpToolAccess.ts";
 import { WorkbenchToolkit } from "./tools.ts";
 
-// Ownership comes from the calling Thread, so no tool takes a Workstream id.
+// Ownership comes from the calling Thread, so no tool takes a Ticket id.
 const callerThreadId = McpInvocationContext.McpInvocationContext.pipe(
   Effect.flatMap((scope) => McpInvocationContext.requireThreadScope(scope, "This Workbench tool")),
   Effect.map((scope) => scope.thread.threadId),
 );
 
 const handlers = {
-  workbench_workstream_read: McpToolAccess.readsAsCaller(() =>
+  workbench_ticket_read: McpToolAccess.readsAsCaller(() =>
     Effect.gen(function* () {
       const service = yield* WorkbenchAgentService;
       return yield* service.read(yield* callerThreadId);
     }),
   ),
-  workbench_workstream_update: McpToolAccess.actsAsCaller((input) =>
+  workbench_ticket_update: McpToolAccess.actsAsCaller((input) =>
     Effect.gen(function* () {
       const service = yield* WorkbenchAgentService;
       return yield* service.update({ ...input, threadId: yield* callerThreadId });
