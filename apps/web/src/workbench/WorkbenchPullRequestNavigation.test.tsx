@@ -280,6 +280,36 @@ describe("Workbench pull request navigation", () => {
     }
   });
 
+  it("opens a brief's pull request from another repository on the host in the chat Thread's panel", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
+    useWorkbenchFloatingChatStore.setState({ shownThread });
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <WorkbenchPullRequestPreviewProvider>
+            <WorkbenchDescription markdown="See [the PR](https://github.com/acme/other/pull/7)." />
+          </WorkbenchPullRequestPreviewProvider>,
+        );
+      });
+      const click = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+      await act(() =>
+        renderer?.root.findByType("a").props.onClick({ ...click, metaKey: false, ctrlKey: false }),
+      );
+      expect(click.preventDefault).toHaveBeenCalled();
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+      ).toMatchObject({ kind: "pull-request", repository: "acme/other", number: 7 });
+    } finally {
+      await act(() => renderer?.unmount());
+      useWorkbenchFloatingChatStore.setState({ shownThread: null });
+      useRightPanelStore.setState({ byThreadKey: {} });
+      navigate.mockClear();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("preserves ticket context until navigation, then dismisses the pull request", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let renderer: ReactTestRenderer | undefined;

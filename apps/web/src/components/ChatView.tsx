@@ -411,6 +411,8 @@ interface ChatViewEmbedding {
     readonly anchor: RefObject<Element | null>;
     readonly handle: ReturnType<typeof PopoverCreateHandle>;
   };
+  /** The host hides the conversation and keeps only its panel, so the Thread is not marked read. */
+  readonly conversationHidden?: boolean;
 }
 
 /**
@@ -4125,7 +4127,9 @@ export default function ChatView(props: ChatViewProps) {
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      <ThreadVisitWatermark threadRef={routeThreadRef} />
+      {workbenchEmbed?.conversationHidden ? null : (
+        <ThreadVisitWatermark threadRef={routeThreadRef} />
+      )}
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );

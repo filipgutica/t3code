@@ -4,6 +4,7 @@ import remarkGfm from "remark-gfm";
 
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 
 /** Pull request links open in the page's PR preview; other links open a new tab. */
@@ -15,9 +16,11 @@ function DescriptionLink({
   readonly children: ReactNode;
 }) {
   const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
+  // Resolve like a link in the floating chat's Thread, whose panel the PR opens in.
+  const shownThread = useWorkbenchFloatingChatStore((state) => state.shownThread) ?? undefined;
   const openChangeRequestLink = useOpenChangeRequestLink(
-    undefined,
-    undefined,
+    shownThread,
+    shownThread,
     openWorkbenchPullRequest,
   );
   return (

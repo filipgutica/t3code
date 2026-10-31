@@ -264,7 +264,13 @@ function FloatingChatThread({
         routeKind="server"
         hideHeader
         readOnlyPlanning={planningThread}
-        workbenchEmbed={{ composerFocusRequest, openThread, panelHost, threadDetails }}
+        workbenchEmbed={{
+          composerFocusRequest,
+          openThread,
+          panelHost,
+          threadDetails,
+          conversationHidden: hidden,
+        }}
       />
     </ChangeRequestLinkOpenProvider>
   );
@@ -281,7 +287,8 @@ function FloatingChatThread({
 
 /**
  * The conversation stays mounted, hidden, while its Thread's panel is open, so collapsing the
- * chat keeps the panel. Otherwise only an expanded chat mounts it: mounting marks the Thread read.
+ * chat keeps the panel; hidden, it does not mark the Thread read. Otherwise only an expanded chat
+ * mounts it.
  */
 function FloatingChatBody({
   environmentId,
