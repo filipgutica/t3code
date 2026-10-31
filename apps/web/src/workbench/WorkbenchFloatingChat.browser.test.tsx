@@ -38,10 +38,10 @@ vi.mock("../components/ChatView", async () => {
     default: function ChatViewStub(props: {
       environmentId: EnvironmentId;
       threadId: ThreadId;
-      embedded?: { composerFocusRequest: number | null };
+      workbenchEmbed?: { composerFocusRequest: number | null };
     }) {
       const ref = useRef<HTMLTextAreaElement>(null);
-      const request = props.embedded?.composerFocusRequest ?? null;
+      const request = props.workbenchEmbed?.composerFocusRequest ?? null;
       const openChangeRequest = useOpenChangeRequestLink(
         scopeThreadRef(props.environmentId, props.threadId),
       );

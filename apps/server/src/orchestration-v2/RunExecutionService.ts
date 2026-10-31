@@ -922,7 +922,8 @@ export const layer: Layer.Layer<
                   .responseStreamingMode,
             ),
           );
-          if (input.checkpointScope !== null)
+          // Side chats share the parent's worktree; a snapshot would capture the parent's edits.
+          if (input.checkpointScope !== null && input.appThread.lineage.sideChat !== true)
             yield* checkpointService
               .captureBaseline({
                 scope: input.checkpointScope,

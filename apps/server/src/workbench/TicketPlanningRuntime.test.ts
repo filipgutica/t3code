@@ -282,6 +282,8 @@ const policyLayer = (
                 scripts: [],
                 createdAt: DateTime.formatIso(now),
                 updatedAt: DateTime.formatIso(now),
+                pinnedAt: null,
+                archivedAt: null,
                 deletedAt: null,
               })),
             ),
