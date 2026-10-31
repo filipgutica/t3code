@@ -17,11 +17,11 @@ import {
   filterWorkbenchFloatingChatThreads,
   getWorkbenchFloatingChatThreadLabel,
   getWorkbenchBoardChatThreads,
-  getWorkbenchFloatingChatPickerSections,
-  isWorkbenchFloatingChatGroupOpenByDefault,
+  getWorkbenchFloatingChatPickerRow,
+  getWorkbenchThreadStatusSections,
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
-  type WorkbenchFloatingChatTicket,
+  type WorkbenchThreadStatusSection,
 } from "./workbenchFloatingChat.logic";
 import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
@@ -356,112 +356,110 @@ describe("resolveWorkbenchFloatingChat", () => {
   });
 });
 
-describe("getWorkbenchFloatingChatPickerSections", () => {
-  const ticketA = {
+describe("getWorkbenchThreadStatusSections", () => {
+  const shape = (
+    sections: ReadonlyArray<WorkbenchThreadStatusSection<WorkbenchFloatingChatThread>>,
+  ) =>
+    sections.map((section) => ({
+      id: section.id,
+      threads: ids(section.threads),
+      workingCount: section.workingCount,
+      openByDefault: section.openByDefault,
+    }));
+
+  it("puts Threads waiting on the user first, then idle and working, then settled", () => {
+    const sections = getWorkbenchThreadStatusSections({
+      active: [
+        thread("idle"),
+        thread("approval", "approval"),
+        thread("working", "working"),
+        thread("input", "input"),
+        thread("limited", "limited"),
+        thread("failed", "failed"),
+      ],
+      settled: [thread("done")],
+      showingThreadId: null,
+    });
+
+    expect(shape(sections)).toEqual([
+      {
+        id: "attention",
+        threads: ["approval", "input", "failed"],
+        workingCount: 0,
+        openByDefault: true,
+      },
+      {
+        id: "idle",
+        threads: ["idle", "working", "limited"],
+        workingCount: 1,
+        openByDefault: false,
+      },
+      { id: "settled", threads: ["done"], workingCount: 0, openByDefault: false },
+    ]);
+  });
+
+  it("omits empty sections and opens the one holding the showing Thread", () => {
+    const sections = getWorkbenchThreadStatusSections({
+      active: [thread("a")],
+      settled: [thread("s")],
+      showingThreadId: ThreadId.make("s"),
+    });
+
+    expect(shape(sections)).toEqual([
+      { id: "idle", threads: ["a"], workingCount: 0, openByDefault: false },
+      { id: "settled", threads: ["s"], workingCount: 0, openByDefault: true },
+    ]);
+  });
+
+  it("moves a Thread to Needs attention when it starts waiting on the user", () => {
+    const sectionOf = (kind: WorkbenchThreadExecutionStatus["kind"] | null) =>
+      getWorkbenchThreadStatusSections({
+        active: [thread("a", kind), thread("b")],
+        settled: [],
+        showingThreadId: null,
+      }).find((section) => section.threads.some((entry) => entry.threadId === "a"))?.id;
+
+    expect(sectionOf("working")).toBe("idle");
+    expect(sectionOf("approval")).toBe("attention");
+    expect(sectionOf(null)).toBe("idle");
+  });
+});
+
+describe("getWorkbenchFloatingChatPickerRow", () => {
+  const keyed = {
     id: WorkbenchTicketId.make("a"),
     key: "WB-1",
     title: "First",
     kind: "bug" as const,
   };
-  const ticketB = {
+  const unkeyed = {
     id: WorkbenchTicketId.make("b"),
     key: null,
     title: "Second",
     kind: "story" as const,
   };
-  const ticketC = {
-    id: WorkbenchTicketId.make("c"),
-    key: null,
-    title: "Thread c1",
-    kind: "story" as const,
+  const row = (title: string, ticket: WorkbenchFloatingChatThread["ticket"], board: boolean) => {
+    const { ticketLabel, title: rowTitle } = getWorkbenchFloatingChatPickerRow(
+      thread("t", null, { title, ticket }),
+      board,
+    );
+    return { ticketLabel, title: rowTitle };
   };
-  const shape = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
-    sections.map((section) => ({
-      type: section.type,
-      id: section.id,
-      rows: section.rows.map((row) => row.thread.threadId),
-    }));
-  const rowTitles = (sections: ReturnType<typeof getWorkbenchFloatingChatPickerSections>) =>
-    sections.flatMap((section) => section.rows.map((row) => row.title));
 
-  it("groups drafts first, then each ticket's Threads, including a ticket with one Thread", () => {
-    const sections = getWorkbenchFloatingChatPickerSections(
-      [
-        thread("b1", null, { ticket: ticketB }),
-        thread("a1", null, { ticket: ticketA }),
-        thread("draft"),
-        thread("b2", null, { ticket: ticketB }),
-        thread("c1", null, { ticket: ticketC }),
-      ],
-      true,
-    );
-    expect(shape(sections)).toEqual([
-      { type: "group", id: "drafts", rows: ["draft"] },
-      { type: "group", id: "b", rows: ["b1", "b2"] },
-      { type: "group", id: "a", rows: ["a1"] },
-      { type: "group", id: "c", rows: ["c1"] },
-    ]);
-  });
-
-  it("keeps a lone ticket's heading on the board, as when a search matches one ticket", () => {
-    expect(
-      shape(
-        getWorkbenchFloatingChatPickerSections([thread("b1", null, { ticket: ticketB })], true),
-      ),
-    ).toEqual([{ type: "group", id: "b", rows: ["b1"] }]);
-  });
-
-  it("lists the ticket chat's Threads as plain rows under the ticket", () => {
-    const oneTicket = getWorkbenchFloatingChatPickerSections(
-      [
-        thread("main", null, { title: "Second", ticket: ticketB }),
-        thread("api", null, { title: "Second — API contract review", ticket: ticketB }),
-        thread("other", null, { title: "Review copy", ticket: ticketB }),
-        thread("word", null, { title: "Secondary review", ticket: ticketB }),
-      ],
-      false,
-    );
-    expect(shape(oneTicket)).toEqual([
-      { type: "rows", id: "b", rows: ["main", "api", "other", "word"] },
-    ]);
+  it("drops a leading ticket title the ticket chat already shows", () => {
+    expect(row("Second — API contract review", unkeyed, false)).toEqual({
+      ticketLabel: null,
+      title: "API contract review",
+    });
     // Only a separator after the ticket title marks it as the title's prefix.
-    expect(rowTitles(oneTicket)).toEqual([
-      "Second",
-      "API contract review",
-      "Review copy",
-      "Secondary review",
-    ]);
+    expect(row("Secondary review", unkeyed, false).title).toBe("Secondary review");
+    expect(row("Second", unkeyed, false).title).toBe("Second");
   });
-});
 
-describe("isWorkbenchFloatingChatGroupOpenByDefault", () => {
-  const group = (
-    ticket: WorkbenchFloatingChatTicket | null,
-    ...threads: WorkbenchFloatingChatThread[]
-  ) => ({
-    type: "group" as const,
-    id: ticket?.id ?? "drafts",
-    ticket,
-    rows: threads.map((entry) => ({ thread: entry, title: entry.title })),
-  });
-  const shared = {
-    id: WorkbenchTicketId.make("t"),
-    key: null,
-    title: "Shared",
-    kind: "story" as const,
-  };
-
-  it("opens drafts, and a ticket's group that holds the showing Thread or one waiting on you", () => {
-    expect(isWorkbenchFloatingChatGroupOpenByDefault(group(null, thread("d")), null)).toBe(true);
-    const quiet = group(shared, thread("a"), thread("b", "working"));
-    expect(isWorkbenchFloatingChatGroupOpenByDefault(quiet, null)).toBe(false);
-    expect(isWorkbenchFloatingChatGroupOpenByDefault(quiet, ThreadId.make("a"))).toBe(true);
-    expect(
-      isWorkbenchFloatingChatGroupOpenByDefault(
-        group(shared, thread("a"), thread("c", "approval")),
-        null,
-      ),
-    ).toBe(true);
+  it("names each board row's ticket by key, else by the title it then drops", () => {
+    expect(row("First: copy", keyed, true)).toEqual({ ticketLabel: "WB-1", title: "First: copy" });
+    expect(row("Second · copy", unkeyed, true)).toEqual({ ticketLabel: "Second", title: "copy" });
+    expect(row("Draft", null, true)).toEqual({ ticketLabel: null, title: "Draft" });
   });
 });
 

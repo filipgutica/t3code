@@ -1,5 +1,6 @@
 import type {
   EnvironmentId,
+  ScopedThreadRef,
   ThreadId,
   WorkbenchProjectId,
   WorkbenchTicketId,
@@ -31,9 +32,12 @@ export const useWorkbenchFloatingChatStore = create<{
   readonly focusRequest: WorkbenchFloatingChatFocusRequest;
   /** The page chat on screen, which shows a new Thread instead of navigating to it. */
   readonly pageChat: WorkbenchPageChat | null;
+  /** The Thread the page chat shows, whose right panel the page hosts. */
+  readonly shownThread: ScopedThreadRef | null;
   /** The Thread the user picked in each page chat, so returning to the page shows it again. */
   readonly pickedThreads: Readonly<Record<string, ThreadId | null>>;
   readonly setPageChat: (pageChat: WorkbenchPageChat | null) => void;
+  readonly setShownThread: (shownThread: ScopedThreadRef | null) => void;
   readonly pickThread: (pageChatKey: string, threadId: ThreadId | null) => void;
   readonly expand: (threadId?: ThreadId) => void;
   readonly collapse: () => void;
@@ -44,8 +48,10 @@ export const useWorkbenchFloatingChatStore = create<{
   restoreMode: "collapsed",
   focusRequest: { id: 0, threadId: null },
   pageChat: null,
+  shownThread: null,
   pickedThreads: {},
   setPageChat: (pageChat) => set({ pageChat }),
+  setShownThread: (shownThread) => set({ shownThread }),
   pickThread: (pageChatKey, threadId) =>
     set((state) => ({ pickedThreads: { ...state.pickedThreads, [pageChatKey]: threadId } })),
   expand: (threadId) =>

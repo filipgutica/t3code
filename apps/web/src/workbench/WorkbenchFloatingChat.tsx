@@ -1,5 +1,5 @@
-import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import {
   ArrowUpIcon,
   ChevronDownIcon,
@@ -9,23 +9,27 @@ import {
   MinusIcon,
   PlusIcon,
   SquareArrowOutUpRightIcon,
+  SquareMenuIcon,
 } from "lucide-react";
 import {
   useEffect,
-  useEffectEvent,
   useRef,
   useState,
   type ReactElement,
   type ReactNode,
   type Ref,
+  type RefObject,
 } from "react";
 
 import ChatView from "../components/ChatView";
 import { Button } from "../components/ui/button";
 import { MenuItem, MenuItemLabel } from "../components/ui/menu";
+import { PopoverCreateHandle, PopoverTrigger } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
+import { useMediaQuery } from "../hooks/useMediaQuery";
 import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { cn } from "../lib/utils";
+import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
 import "./WorkbenchFloatingChat.css";
 import type {
@@ -36,8 +40,10 @@ import type {
 import {
   useWorkbenchFloatingChatStore,
   type WorkbenchFloatingChatFocusRequest,
+  type WorkbenchFloatingChatMode,
 } from "./workbenchFloatingChatState";
 import { WorkbenchFloatingChatPicker } from "./WorkbenchFloatingChatPicker";
+import { useWorkbenchPanelHost, useWorkbenchThreadPanel } from "./WorkbenchPagePanel";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import {
@@ -122,12 +128,14 @@ function FloatingChatLauncher({
   label,
   attentionCount,
   buttonRef,
+  overPanel,
   onRestore,
 }: {
   readonly copy: ChatCopy;
   readonly label: string;
   readonly attentionCount: number;
   readonly buttonRef: Ref<HTMLButtonElement>;
+  readonly overPanel: boolean;
   readonly onRestore: () => void;
 }) {
   return (
@@ -142,7 +150,10 @@ function FloatingChatLauncher({
                 ? `Show ${label} chat, ${attentionCount} waiting on you`
                 : `Show ${label} chat`
             }
-            className="absolute right-4 bottom-4 z-20 grid size-11 place-items-center rounded-full border border-border/80 bg-popover/92 text-foreground shadow-lg/20 backdrop-blur-xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring"
+            className={cn(
+              "absolute right-4 bottom-4 z-20 grid size-11 place-items-center rounded-full border border-border/80 bg-popover/92 text-foreground shadow-lg/20 backdrop-blur-xl hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring",
+              overPanel && "pointer-events-auto visible",
+            )}
             onClick={onRestore}
           />
         }
@@ -215,39 +226,32 @@ function FloatingChatPlaceholder({
   );
 }
 
-// The embed hides the right panel, so a file or diff the user opens from the timeline
-// continues in the full Thread, where the right panel shows it.
-function useOpenThreadOnPanelAction(threadRef: ScopedThreadRef, onOpen: () => void) {
-  const threadKey = scopedThreadKey(threadRef);
-  const open = useEffectEvent(onOpen);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to native panel actions so an embedded conversation can open its full Thread, then releases the subscription
-  useEffect(() => {
-    let revision = useRightPanelStore.getState().userActionRevisionByThreadKey[threadKey];
-    return useRightPanelStore.subscribe((state) => {
-      const next = state.userActionRevisionByThreadKey[threadKey];
-      if (next === revision) return;
-      revision = next;
-      if (state.byThreadKey[threadKey]?.isOpen) open();
-    });
-  }, [threadKey]);
+/** The Thread details popover's handle, anchored to the chat header as on Thread pages. */
+interface FloatingChatThreadDetails {
+  readonly anchor: RefObject<HTMLDivElement | null>;
+  readonly handle: ReturnType<typeof PopoverCreateHandle>;
 }
 
 function FloatingChatThread({
   environmentId,
   thread,
+  hidden,
   composerFocusRequest,
+  panelHost,
+  threadDetails,
   onOpenThread,
   planning,
 }: {
   readonly environmentId: EnvironmentId;
   readonly thread: WorkbenchFloatingChatThread;
+  readonly hidden: boolean;
   readonly composerFocusRequest: number | null;
+  readonly panelHost: HTMLElement | null;
+  readonly threadDetails: FloatingChatThreadDetails;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }) {
-  const threadRef = scopeThreadRef(environmentId, thread.threadId);
   const openThread = () => onOpenThread(thread.threadId);
-  useOpenThreadOnPanelAction(threadRef, openThread);
   const openPullRequest = useOpenWorkbenchPullRequest();
   const planningThread = planning?.threadIds.has(thread.threadId) === true;
   // Pull request links open in the page's preview, so the user stays on the Board or Ticket.
@@ -260,17 +264,25 @@ function FloatingChatThread({
         routeKind="server"
         hideHeader
         readOnlyPlanning={planningThread}
-        workbenchEmbed={{ composerFocusRequest, openThread }}
+        workbenchEmbed={{ composerFocusRequest, openThread, panelHost, threadDetails }}
       />
     </ChangeRequestLinkOpenProvider>
   );
   return (
-    <div role="region" aria-label={thread.title} className="flex min-h-0 flex-1 flex-col">
+    <div
+      role="region"
+      aria-label={thread.title}
+      className={cn("flex min-h-0 flex-1 flex-col", hidden && "hidden")}
+    >
       {planning && planningThread ? planning.render(thread.threadId, conversation) : conversation}
     </div>
   );
 }
 
+/**
+ * The conversation stays mounted, hidden, while its Thread's panel is open, so collapsing the
+ * chat keeps the panel. Otherwise only an expanded chat mounts it: mounting marks the Thread read.
+ */
 function FloatingChatBody({
   environmentId,
   copy,
@@ -278,7 +290,10 @@ function FloatingChatBody({
   selected,
   hasHistory,
   expanded,
+  mounted,
   composerFocusRequest,
+  panelHost,
+  threadDetails,
   onExpand,
   onOpenThread,
   onNewThread,
@@ -291,7 +306,10 @@ function FloatingChatBody({
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
+  readonly mounted: boolean;
   readonly composerFocusRequest: number | null;
+  readonly panelHost: HTMLElement | null;
+  readonly threadDetails: FloatingChatThreadDetails;
   readonly onExpand: () => void;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly onNewThread: () => void;
@@ -309,15 +327,22 @@ function FloatingChatBody({
       />
     );
   }
-  if (!expanded) return <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />;
   return (
-    <FloatingChatThread
-      environmentId={environmentId}
-      thread={selected}
-      composerFocusRequest={composerFocusRequest}
-      onOpenThread={onOpenThread}
-      planning={planning}
-    />
+    <>
+      {expanded ? null : <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />}
+      {mounted ? (
+        <FloatingChatThread
+          environmentId={environmentId}
+          thread={selected}
+          hidden={!expanded}
+          composerFocusRequest={composerFocusRequest}
+          panelHost={panelHost}
+          threadDetails={threadDetails}
+          onOpenThread={onOpenThread}
+          planning={planning}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -368,10 +393,15 @@ const RESIZE_HANDLES: ReadonlyArray<{
 function FloatingChatFrame({
   label,
   expanded,
+  hidden,
+  overPanel,
   children,
 }: {
   readonly label: string;
   readonly expanded: boolean;
+  readonly hidden: boolean;
+  /** Shows the chat over a maximized panel, which the invisible page column sits above. */
+  readonly overPanel: boolean;
   readonly children: ReactNode;
 }) {
   const { size, handlers } = useWorkbenchFloatingChatSize();
@@ -383,6 +413,8 @@ function FloatingChatFrame({
       className={cn(
         "absolute right-4 bottom-4 z-20 flex max-h-[calc(100%-2rem)] max-w-[calc(100%-2rem)] flex-col rounded-2xl border border-border/80 bg-popover/92 shadow-lg/20 backdrop-blur-xl",
         expanded && height === null && "h-[min(540px,70vh)]",
+        hidden && "hidden",
+        overPanel && "pointer-events-auto visible",
       )}
       style={{ width: size.width, height: height ?? undefined }}
     >
@@ -464,18 +496,31 @@ function NewThreadItems({
 function FloatingChatThreadActions({
   copy,
   expanded,
+  detailsHandle,
   toggleRef,
   onOpenThread,
   onToggle,
 }: {
   readonly copy: ChatCopy;
   readonly expanded: boolean;
+  /** Null while the conversation, which renders the details, is collapsed. */
+  readonly detailsHandle: FloatingChatThreadDetails["handle"] | null;
   readonly toggleRef: Ref<HTMLButtonElement>;
   readonly onOpenThread: () => void;
   readonly onToggle: () => void;
 }) {
   return (
     <>
+      {detailsHandle ? (
+        <FloatingChatAction label="Thread details" render={<span className="flex shrink-0" />}>
+          <PopoverTrigger
+            handle={detailsHandle}
+            render={<Button variant="ghost" size="icon-sm" aria-label="Thread details" />}
+          >
+            <SquareMenuIcon />
+          </PopoverTrigger>
+        </FloatingChatAction>
+      ) : null}
       <FloatingChatAction
         label="Open full Thread"
         render={
@@ -496,6 +541,117 @@ function FloatingChatThreadActions({
         onToggle={onToggle}
       />
     </>
+  );
+}
+
+/**
+ * The chat's layout around the showing Thread's page panel. Publishes the Thread so page pull
+ * request links open in its panel. Narrow windows show the panel as the native sheet, which
+ * minimizes the chat.
+ */
+function useFloatingChatLayout(
+  environmentId: EnvironmentId,
+  threadId: ThreadId | null,
+  mode: WorkbenchFloatingChatMode,
+) {
+  const threadRef = threadId === null ? null : scopeThreadRef(environmentId, threadId);
+  const { open, maximized } = useWorkbenchThreadPanel(threadRef);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the showing Thread to the page's pull request opener and clears it when the chat leaves
+  useEffect(() => {
+    if (threadId === null) return;
+    const { setShownThread } = useWorkbenchFloatingChatStore.getState();
+    setShownThread(scopeThreadRef(environmentId, threadId));
+    return () => setShownThread(null);
+  }, [environmentId, threadId]);
+  const sheetLayout = useMediaQuery(RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY);
+  /** Closes the open sheet, which brings the chat back; null while no sheet is open. */
+  const closeSheet =
+    sheetLayout && open && !maximized && threadRef
+      ? () => useRightPanelStore.getState().close(threadRef)
+      : null;
+  const launcher = mode === "launcher" || closeSheet !== null;
+  const expanded = !launcher && mode === "expanded" && threadId !== null;
+  return { launcher, expanded, mounted: expanded || open, maximized, closeSheet };
+}
+
+/** The Thread menu and the chat's actions. */
+function FloatingChatHeader({
+  chatProps,
+  copy,
+  hasHistory,
+  expanded,
+  detailsHandle,
+  detailsAnchorRef,
+  toggleRef,
+  onSelect,
+  onToggle,
+  onMinimize,
+}: {
+  readonly chatProps: WorkbenchFloatingChatProps;
+  readonly copy: ChatCopy;
+  readonly hasHistory: boolean;
+  readonly expanded: boolean;
+  readonly detailsHandle: FloatingChatThreadDetails["handle"];
+  readonly detailsAnchorRef: Ref<HTMLDivElement>;
+  readonly toggleRef: Ref<HTMLButtonElement>;
+  readonly onSelect: (threadId: ThreadId) => void;
+  readonly onToggle: () => void;
+  readonly onMinimize: () => void;
+}) {
+  const { chat, onOpenThread } = chatProps;
+  const { selected } = chat;
+  return (
+    <div
+      ref={detailsAnchorRef}
+      className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2"
+    >
+      {selected === null && !hasHistory ? (
+        <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
+      ) : (
+        <WorkbenchFloatingChatPicker
+          environmentId={chatProps.environmentId}
+          chat={chat}
+          grouped={chatProps.kind === "board"}
+          title={copy.title}
+          listLabel={copy.threads}
+          onSelect={onSelect}
+          onOpenThread={onOpenThread}
+          actions={
+            <NewThreadItems
+              kind={chatProps.kind}
+              copy={copy}
+              newThreadDisabled={chatProps.newThreadDisabled}
+              ticketThread={chatProps.ticketThread}
+              onNewThread={chatProps.onNewThread}
+            />
+          }
+        />
+      )}
+      {selected === null ? null : (
+        <FloatingChatThreadActions
+          copy={copy}
+          expanded={expanded}
+          // The hidden conversation measures 0px, which would strip the details card.
+          detailsHandle={expanded ? detailsHandle : null}
+          toggleRef={toggleRef}
+          onOpenThread={() => onOpenThread(selected.threadId)}
+          onToggle={onToggle}
+        />
+      )}
+      <FloatingChatAction
+        label={`Minimize ${copy.title.toLowerCase()}`}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={`Minimize ${copy.title.toLowerCase()}`}
+            onClick={onMinimize}
+          />
+        }
+      >
+        <MinusIcon />
+      </FloatingChatAction>
+    </div>
   );
 }
 
@@ -527,83 +683,59 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     pendingFocusRef.current = true;
     change();
   };
-
-  if (mode === "launcher") {
-    return (
-      <FloatingChatLauncher
-        copy={copy}
-        label={label}
-        attentionCount={chat.attentionCount}
-        buttonRef={launcherRef}
-        onRestore={() => changeMode(restore)}
-      />
-    );
-  }
-
-  const expanded = mode === "expanded" && selected !== null;
+  const { launcher, expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
+    environmentId,
+    selectedThreadId,
+    mode,
+  );
+  const panelHost = useWorkbenchPanelHost();
+  const [detailsHandle] = useState(PopoverCreateHandle);
+  const detailsAnchorRef = useRef<HTMLDivElement>(null);
+  const threadDetails = { anchor: detailsAnchorRef, handle: detailsHandle };
   const hasHistory = chat.settled.length > 0 || chat.archived.length > 0;
   return (
-    <FloatingChatFrame label={label} expanded={expanded}>
-      <div className="flex h-11 shrink-0 items-center gap-1 border-b border-border/60 px-2">
-        {selected === null && !hasHistory ? (
-          <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
-        ) : (
-          <WorkbenchFloatingChatPicker
-            environmentId={environmentId}
-            chat={chat}
-            grouped={props.kind === "board"}
-            title={copy.title}
-            listLabel={copy.threads}
-            onSelect={selectThread}
-            onOpenThread={onOpenThread}
-            actions={
-              <NewThreadItems
-                kind={props.kind}
-                copy={copy}
-                newThreadDisabled={newThreadDisabled}
-                ticketThread={props.ticketThread}
-                onNewThread={onNewThread}
-              />
-            }
-          />
-        )}
-        {selected === null ? null : (
-          <FloatingChatThreadActions
-            copy={copy}
-            expanded={expanded}
-            toggleRef={expandButtonRef}
-            onOpenThread={() => onOpenThread(selected.threadId)}
-            onToggle={expanded ? () => changeMode(collapse) : () => expand()}
-          />
-        )}
-        <FloatingChatAction
-          label={`Minimize ${copy.title.toLowerCase()}`}
-          render={
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label={`Minimize ${copy.title.toLowerCase()}`}
-              onClick={() => changeMode(minimize)}
-            />
-          }
-        >
-          <MinusIcon />
-        </FloatingChatAction>
-      </div>
-      <FloatingChatBody
-        environmentId={environmentId}
-        copy={copy}
-        label={label}
-        selected={selected}
-        hasHistory={hasHistory}
-        expanded={expanded}
-        composerFocusRequest={composerFocus.requestFor(selectedThreadId)}
-        onExpand={() => expand()}
-        onOpenThread={onOpenThread}
-        onNewThread={onNewThread}
-        newThreadDisabled={newThreadDisabled}
-        planning={props.planning}
-      />
-    </FloatingChatFrame>
+    <>
+      {launcher ? (
+        <FloatingChatLauncher
+          copy={copy}
+          label={label}
+          attentionCount={chat.attentionCount}
+          buttonRef={launcherRef}
+          overPanel={maximized}
+          onRestore={closeSheet ?? (() => changeMode(restore))}
+        />
+      ) : null}
+      <FloatingChatFrame label={label} expanded={expanded} hidden={launcher} overPanel={maximized}>
+        <FloatingChatHeader
+          chatProps={props}
+          copy={copy}
+          hasHistory={hasHistory}
+          expanded={expanded}
+          detailsHandle={detailsHandle}
+          detailsAnchorRef={detailsAnchorRef}
+          toggleRef={expandButtonRef}
+          onSelect={selectThread}
+          onToggle={expanded ? () => changeMode(collapse) : () => expand()}
+          onMinimize={() => changeMode(minimize)}
+        />
+        <FloatingChatBody
+          environmentId={environmentId}
+          copy={copy}
+          label={label}
+          selected={selected}
+          hasHistory={hasHistory}
+          expanded={expanded}
+          mounted={mounted}
+          composerFocusRequest={composerFocus.requestFor(selectedThreadId)}
+          panelHost={panelHost}
+          threadDetails={threadDetails}
+          onExpand={() => expand()}
+          onOpenThread={onOpenThread}
+          onNewThread={onNewThread}
+          newThreadDisabled={newThreadDisabled}
+          planning={props.planning}
+        />
+      </FloatingChatFrame>
+    </>
   );
 }

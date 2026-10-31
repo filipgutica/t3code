@@ -1,13 +1,43 @@
+import type { ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 
-const descriptionComponents: Components = {
-  a: ({ children, href }) => (
-    <a href={href} target="_blank" rel="noreferrer" className="text-primary underline">
+import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
+import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
+
+/** Pull request links open in the page's PR preview; other links open a new tab. */
+function DescriptionLink({
+  href,
+  children,
+}: {
+  readonly href: string | undefined;
+  readonly children: ReactNode;
+}) {
+  const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
+  const openChangeRequestLink = useOpenChangeRequestLink(
+    undefined,
+    undefined,
+    openWorkbenchPullRequest,
+  );
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="text-primary underline"
+      onClick={(event) => {
+        // Without the page's preview the native handler would leave the page for PR review.
+        if (openWorkbenchPullRequest && href) openChangeRequestLink(event, href);
+      }}
+    >
       {children}
     </a>
-  ),
+  );
+}
+
+const descriptionComponents: Components = {
+  a: ({ children, href }) => <DescriptionLink href={href}>{children}</DescriptionLink>,
   pre: ({ children }) => (
     <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3">{children}</pre>
   ),

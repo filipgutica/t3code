@@ -317,165 +317,75 @@ describe("Workbench sidebar ticket groups", () => {
 });
 
 describe("Workbench sidebar expansion", () => {
-  const ticketId = WorkbenchTicketId.make("ticket-one");
-  const initial: WorkbenchSidebarExpansion = {
-    workspaceId: workspaceId,
-    ticketId,
-    done: false,
-    archived: false,
-  };
+  const initial: WorkbenchSidebarExpansion = { workspaceId, done: false, archived: false };
 
-  it("opens the active workspace and ticket by default", () => {
-    expect(
-      getWorkbenchSidebarExpansionDefaults({
-        workspaceId,
-        ticketId,
-        ticketIsDone: false,
-      }),
-    ).toEqual(initial);
-  });
-
-  it("keeps the active ticket expanded and resets after navigation", () => {
-    const archivedTicketId = WorkbenchTicketId.make("archived-ticket");
-    expect(
-      getWorkbenchSidebarExpansionDefaults({
-        workspaceId,
-        ticketId: archivedTicketId,
-        ticketIsDone: false,
-      }),
-    ).toEqual({
+  it("opens the selected workspace, and its Done list for a done Ticket", () => {
+    expect(getWorkbenchSidebarExpansionDefaults({ workspaceId, ticketIsDone: false })).toEqual(
+      initial,
+    );
+    expect(getWorkbenchSidebarExpansionDefaults({ workspaceId, ticketIsDone: true })).toEqual({
       workspaceId,
-      ticketId: archivedTicketId,
-      done: false,
+      done: true,
       archived: false,
     });
     expect(
-      getWorkbenchSidebarExpansionDefaults({
-        workspaceId: otherWorkspaceId,
-        ticketId: undefined,
-        ticketIsDone: false,
-      }),
-    ).toEqual({
-      workspaceId: otherWorkspaceId,
-      ticketId: null,
-      done: false,
-      archived: false,
-    });
-    expect(
-      getWorkbenchSidebarExpansionDefaults({
-        workspaceId,
-        ticketId,
-        ticketIsDone: true,
-      }),
-    ).toEqual({ workspaceId, ticketId, done: true, archived: false });
+      getWorkbenchSidebarExpansionDefaults({ workspaceId: undefined, ticketIsDone: false }),
+    ).toEqual({ workspaceId: null, done: false, archived: false });
   });
 
-  it("keeps one workspace and one ticket group open at a time", () => {
-    const otherTicketId = WorkbenchTicketId.make("ticket-two");
-    const otherWorkspace = reduceWorkbenchSidebarExpansion(initial, {
-      type: "toggleWorkspace",
-      workspaceId: otherWorkspaceId,
-    });
+  it("keeps one workspace open at a time and allows closing it", () => {
+    const otherWorkspace = reduceWorkbenchSidebarExpansion(
+      { ...initial, done: true },
+      { type: "toggleWorkspace", workspaceId: otherWorkspaceId },
+    );
     expect(otherWorkspace).toEqual({
       workspaceId: otherWorkspaceId,
-      ticketId: null,
       done: false,
       archived: false,
     });
     expect(
       reduceWorkbenchSidebarExpansion(otherWorkspace, {
-        type: "toggleTicket",
+        type: "toggleWorkspace",
         workspaceId: otherWorkspaceId,
-        ticketId: otherTicketId,
-        done: false,
       }),
-    ).toEqual({
-      workspaceId: otherWorkspaceId,
-      ticketId: otherTicketId,
-      done: false,
-      archived: false,
-    });
+    ).toEqual({ workspaceId: null, done: false, archived: false });
   });
 
-  it("allows closing the current workspace, ticket, or archived group", () => {
-    const closedWorkspace = reduceWorkbenchSidebarExpansion(initial, {
-      type: "toggleWorkspace",
-      workspaceId,
-    });
-    expect(closedWorkspace).toEqual({
-      workspaceId: null,
-      ticketId: null,
-      done: false,
-      archived: false,
-    });
-    const closedTicket = reduceWorkbenchSidebarExpansion(initial, {
-      type: "toggleTicket",
-      workspaceId,
-      ticketId,
-      done: false,
-    });
-    expect(closedTicket).toEqual({
-      workspaceId,
-      ticketId: null,
-      done: false,
-      archived: false,
-    });
+  it("toggles the Done and Archived lists one at a time", () => {
     const openArchived = reduceWorkbenchSidebarExpansion(initial, {
       type: "toggleArchived",
       workspaceId,
     });
-    expect(openArchived).toEqual({
-      workspaceId,
-      ticketId: null,
-      done: false,
-      archived: true,
-    });
+    expect(openArchived).toEqual({ workspaceId, done: false, archived: true });
     expect(
-      reduceWorkbenchSidebarExpansion(openArchived, {
-        type: "toggleArchived",
-        workspaceId,
-      }),
-    ).toEqual({ workspaceId, ticketId: null, done: false, archived: false });
-    const doneTicket = reduceWorkbenchSidebarExpansion(
-      { workspaceId, ticketId, done: true, archived: false },
-      { type: "toggleTicket", workspaceId, ticketId, done: true },
-    );
-    expect(doneTicket).toEqual({
+      reduceWorkbenchSidebarExpansion(openArchived, { type: "toggleArchived", workspaceId }),
+    ).toEqual(initial);
+    const openDone = reduceWorkbenchSidebarExpansion(openArchived, {
+      type: "toggleDone",
       workspaceId,
-      ticketId: null,
-      done: true,
-      archived: false,
     });
+    expect(openDone).toEqual({ workspaceId, done: true, archived: false });
+    expect(reduceWorkbenchSidebarExpansion(openDone, { type: "toggleDone", workspaceId })).toEqual(
+      initial,
+    );
   });
 
-  it("reveals a newly selected Ticket and leaves workspace-only disclosure state alone", () => {
-    const otherTicketId = WorkbenchTicketId.make("ticket-two");
-    const manuallyClosed = { ...initial, ticketId: null };
+  it("opens Done for a newly selected done Ticket and leaves other disclosure state alone", () => {
+    const archivedOpen = { ...initial, archived: true };
     expect(
-      revealWorkbenchSidebarSelection(manuallyClosed, {
-        workspaceId,
-        ticketId,
-        ticketIsDone: false,
-      }),
-    ).toEqual(initial);
+      revealWorkbenchSidebarSelection(archivedOpen, { workspaceId, ticketIsDone: true }),
+    ).toEqual({ workspaceId, done: true, archived: false });
     expect(
-      revealWorkbenchSidebarSelection(manuallyClosed, {
-        workspaceId,
-        ticketId: undefined,
-        ticketIsDone: false,
-      }),
-    ).toBe(manuallyClosed);
+      revealWorkbenchSidebarSelection(archivedOpen, { workspaceId, ticketIsDone: false }),
+    ).toBe(archivedOpen);
+    expect(
+      revealWorkbenchSidebarSelection(initial, { workspaceId: undefined, ticketIsDone: true }),
+    ).toBe(initial);
     expect(
       revealWorkbenchSidebarSelection(initial, {
         workspaceId: otherWorkspaceId,
-        ticketId: otherTicketId,
         ticketIsDone: true,
       }),
-    ).toEqual({
-      workspaceId: otherWorkspaceId,
-      ticketId: otherTicketId,
-      done: true,
-      archived: false,
-    });
+    ).toEqual({ workspaceId: otherWorkspaceId, done: true, archived: false });
   });
 });

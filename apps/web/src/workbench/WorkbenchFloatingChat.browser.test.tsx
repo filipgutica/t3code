@@ -1,12 +1,15 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { EnvironmentId, ProjectId, ThreadId, WorkbenchTicketId } from "@t3tools/contracts";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { expect, it, vi } from "vite-plus/test";
-import { userEvent } from "vite-plus/test/browser";
+import { page, userEvent } from "vite-plus/test/browser";
+
+import "~/index.css";
 
 import { act, render } from "../../test/render";
 import { useRightPanelStore } from "../rightPanelStore";
 import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
+import { WorkbenchPageRow } from "./WorkbenchPagePanel";
 import {
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
@@ -15,7 +18,10 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const { openPullRequest } = vi.hoisted(() => ({ openPullRequest: vi.fn() }));
+const { openPullRequest, panelClick } = vi.hoisted(() => ({
+  openPullRequest: vi.fn(),
+  panelClick: vi.fn(),
+}));
 vi.mock("./WorkbenchPullRequestPreview", () => ({
   useOpenWorkbenchPullRequest: () => openPullRequest,
 }));
@@ -29,27 +35,41 @@ vi.mock("@t3tools/client-runtime/change-request-links", async (importOriginal) =
 }));
 
 // The real ChatView needs a connected environment. The stand-in honors the embedding inputs
-// the panel controls, as ChatView does: each new focus request focuses the composer, and a
-// pull request link in the timeline opens through the native link handler.
+// the panel controls, as ChatView does: each new focus request focuses the composer, a pull
+// request link in the timeline opens through the native link handler, and the Thread's open
+// right panel renders into the page's panel host.
 vi.mock("../components/ChatView", async () => {
   const { useEffect, useRef } = await import("react");
+  const { createPortal } = await import("react-dom");
   const { useOpenChangeRequestLink } = await import("../lib/openPullRequestLink");
+  const { selectThreadRightPanelState, useRightPanelStore } = await import("../rightPanelStore");
   return {
     default: function ChatViewStub(props: {
       environmentId: EnvironmentId;
       threadId: ThreadId;
-      workbenchEmbed?: { composerFocusRequest: number | null };
+      workbenchEmbed?: { composerFocusRequest: number | null; panelHost?: HTMLElement | null };
     }) {
       const ref = useRef<HTMLTextAreaElement>(null);
       const request = props.workbenchEmbed?.composerFocusRequest ?? null;
-      const openChangeRequest = useOpenChangeRequestLink(
-        scopeThreadRef(props.environmentId, props.threadId),
+      const threadRef = scopeThreadRef(props.environmentId, props.threadId);
+      const openChangeRequest = useOpenChangeRequestLink(threadRef);
+      const panelOpen = useRightPanelStore(
+        (state) => selectThreadRightPanelState(state.byThreadKey, threadRef).isOpen,
       );
+      const panelHost = props.workbenchEmbed?.panelHost ?? null;
       useEffect(() => {
         if (request !== null) ref.current?.focus();
       }, [request]);
       return (
         <>
+          {panelOpen && panelHost
+            ? createPortal(
+                <button type="button" onClick={panelClick}>
+                  Panel for {props.threadId}
+                </button>,
+                panelHost,
+              )
+            : null}
           <textarea ref={ref} aria-label={`Composer for ${props.threadId}`} />
           <a
             href="https://github.com/acme/app/pull/42"
@@ -68,9 +88,11 @@ const setup = () => {
     restoreMode: "collapsed",
     focusRequest: { id: 0, threadId: null },
     pageChat: null,
+    shownThread: null,
   });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   openPullRequest.mockReset();
+  panelClick.mockReset();
 };
 
 const thread = (
@@ -158,7 +180,7 @@ it("switches Threads from the picker without moving focus into the composer", as
   await expect.element(screen.getByLabelText("Composer for a")).not.toHaveFocus();
 });
 
-it("shows each Thread's recap and opens on the first other Thread waiting on the user", async () => {
+it("opens on the first other Thread waiting on the user, above the idle and working ones", async () => {
   setup();
   await using screen = await render(
     <Harness
@@ -178,10 +200,13 @@ it("shows each Thread's recap and opens on the first other Thread waiting on the
   await userEvent.click(pill);
 
   await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
+  const idle = screen.getByRole("menuitem", { name: "Idle and working, 1 Thread, 1 working" });
+  await expect.element(idle).toHaveAttribute("aria-expanded", "false");
+  await userEvent.click(idle);
   await expect.element(screen.getByText("Added the board chat picker.")).toBeVisible();
 });
 
-it("opens a collapsed group to focus its waiting Thread from the pill", async () => {
+it("opens a collapsed section to focus its waiting Thread from the pill", async () => {
   setup();
   const ticket = (id: string, key: string) => ({
     id: WorkbenchTicketId.make(id),
@@ -204,9 +229,9 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
-  const group = screen.getByRole("menuitem", { name: "PAY-2 Ticket PAY-2 2 Threads" });
-  await userEvent.click(group);
-  await expect.element(group).toHaveAttribute("aria-expanded", "false");
+  const attention = screen.getByRole("menuitem", { name: "Needs attention, 1 Thread" });
+  await userEvent.click(attention);
+  await expect.element(attention).toHaveAttribute("aria-expanded", "false");
   await userEvent.keyboard("{Escape}");
 
   const pill = screen.getByRole("button", { name: "1 other Thread needs you" });
@@ -216,7 +241,7 @@ it("opens a collapsed group to focus its waiting Thread from the pill", async ()
   await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
 });
 
-it("scrolls to the showing Thread whenever the menu opens, even after its group was collapsed", async () => {
+it("scrolls to the showing Thread whenever the menu opens, even after its section was collapsed", async () => {
   setup();
   const threads = Array.from({ length: 20 }, (_, index) => ({
     ...thread(`t${index}`),
@@ -231,12 +256,12 @@ it("scrolls to the showing Thread whenever the menu opens, even after its group 
     <Harness kind="board" threads={threads} primaryThreadId={ThreadId.make("t19")} />,
   );
   const menu = screen.getByRole("button", { name: /^Board Threads/ });
-  const showing = screen.getByRole("menuitemradio", { name: "Thread t19" });
+  const showing = screen.getByRole("menuitemradio", { name: "PAY-19 Thread t19" });
 
   await userEvent.click(menu);
   await expect.element(showing).toBeInViewport();
 
-  await userEvent.click(screen.getByRole("menuitem", { name: "PAY-19 Ticket 19 1 Thread" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Idle and working, 20 Threads" }));
   await expect.element(showing).not.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   await userEvent.click(menu);
@@ -263,12 +288,12 @@ it("moves keyboard focus to the showing Thread it scrolls to", async () => {
 
   await userEvent.keyboard("{Enter}");
 
-  const showing = screen.getByRole("menuitemradio", { name: "Thread t4" });
+  const showing = screen.getByRole("menuitemradio", { name: "PAY-1 Thread t4" });
   await expect.element(showing).toHaveFocus();
   await expect.element(showing).toBeInViewport();
 });
 
-it("collapses a group in search results, and forgets it with the search", async () => {
+it("collapses a section in search results, and forgets it with the search", async () => {
   setup();
   const ticket = {
     id: WorkbenchTicketId.make("pay-2"),
@@ -283,7 +308,7 @@ it("collapses a group in search results, and forgets it with the search", async 
   await using screen = await render(<Harness kind="board" threads={threads} />);
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
-  const group = screen.getByRole("menuitem", { name: "PAY-2 Payouts 7 Threads" });
+  const group = screen.getByRole("menuitem", { name: "Idle and working, 8 Threads" });
   await expect.element(group).toHaveAttribute("aria-expanded", "true");
 
   await userEvent.click(group);
@@ -419,24 +444,93 @@ it("focuses the expanded composer again for a new request, such as the palette a
   await expect.element(screen.getByLabelText("Composer for a")).toHaveFocus();
 });
 
-it("opens the full Thread when the user opens a right-panel surface from the embed", async () => {
+/** A sized page row, with the chat inside a positioned page column as on the Ticket page. */
+function Page({ children }: { readonly children: ReactNode }) {
+  return (
+    <div style={{ display: "flex", height: 600 }}>
+      <WorkbenchPageRow>
+        <div style={{ position: "relative", flex: 1 }}>{children}</div>
+      </WorkbenchPageRow>
+    </div>
+  );
+}
+
+it("opens a file from the embed in the page's panel and keeps it through collapse and minimize", async () => {
   setup();
+  await page.viewport(1280, 800);
   const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("a"));
-  // The full Thread left a file open earlier; mounting the embed is not a new request.
-  useRightPanelStore.getState().open(threadRef, "diff");
-  useRightPanelStore.getState().openFile(threadRef, "src/earlier.ts");
   const onOpenThread = vi.fn();
   await using screen = await render(
-    <Harness threads={[thread("a")]} onOpenThread={onOpenThread} />,
+    <Page>
+      <Harness threads={[thread("a")]} onOpenThread={onOpenThread} />
+    </Page>,
   );
   await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
 
-  await act(() => useRightPanelStore.getState().reconcileFileSurfaces(threadRef, false));
-  expect(onOpenThread).not.toHaveBeenCalled();
-
   await act(() => useRightPanelStore.getState().openFile(threadRef, "src/index.ts"));
 
-  expect(onOpenThread).toHaveBeenCalledExactlyOnceWith(ThreadId.make("a"));
+  const panel = screen.getByRole("button", { name: "Panel for a" });
+  await expect.element(panel).toBeVisible();
+  expect(panel.element().closest("[data-workbench-panel-host]")).not.toBeNull();
+  expect(onOpenThread).not.toHaveBeenCalled();
+  await expect.element(screen.getByRole("button", { name: "Thread details" })).toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
+  await expect.element(panel).toBeVisible();
+  await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
+  await expect
+    .element(screen.getByRole("button", { name: "Thread details" }))
+    .not.toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
+  await expect.element(panel).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Show PAY-1 chat" })).toBeVisible();
+});
+
+it("floats the chat over a maximized panel without covering the panel's controls", async () => {
+  setup();
+  await page.viewport(1280, 800);
+  const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("a"));
+  await using screen = await render(
+    <Page>
+      <p>Ticket brief</p>
+      <Harness threads={[thread("a")]} />
+    </Page>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+  await act(() => {
+    useRightPanelStore.getState().openFile(threadRef, "src/index.ts");
+    useRightPanelStore.getState().setMaximized(threadRef, true);
+  });
+
+  await expect.element(screen.getByText("Ticket brief")).not.toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Panel for a" }));
+  expect(panelClick).toHaveBeenCalledOnce();
+
+  await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
+  await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toBeVisible();
+});
+
+it("minimizes the chat while a narrow window shows the panel as a sheet, and the chat closes it", async () => {
+  setup();
+  await page.viewport(900, 800);
+  const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("a"));
+  await using screen = await render(
+    <Page>
+      <Harness threads={[thread("a")]} />
+    </Page>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+
+  await act(() => useRightPanelStore.getState().openFile(threadRef, "src/index.ts"));
+  await expect.element(screen.getByRole("button", { name: "Show PAY-1 chat" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Panel for a" })).toBeVisible();
+
+  await userEvent.click(screen.getByRole("button", { name: "Show PAY-1 chat" }));
+  await expect.element(screen.getByLabelText("Composer for a")).toBeVisible();
+  expect(useRightPanelStore.getState().byThreadKey).toMatchObject({
+    [scopedThreadKey(threadRef)]: { isOpen: false },
+  });
 });
 
 it("opens a pull request link from the embed in the page's preview, not the full Thread", async () => {

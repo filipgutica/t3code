@@ -196,10 +196,10 @@ function Harness(props: {
 
 type Screen = Awaited<ReturnType<typeof render>>;
 
-/** `group` names a collapsed ticket group to open before picking its Thread. */
-const pickThread = async (screen: Screen, name: RegExp, group?: RegExp) => {
+/** `section` names a collapsed status section to open before picking its Thread. */
+const pickThread = async (screen: Screen, name: RegExp, section?: RegExp) => {
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
-  if (group) await userEvent.click(screen.getByRole("menuitem", { name: group }));
+  if (section) await userEvent.click(screen.getByRole("menuitem", { name: section }));
   await userEvent.click(screen.getByRole("menuitemradio", { name }));
 };
 
@@ -235,7 +235,7 @@ const setup = async () => {
   };
 };
 
-it("groups drafts and each ticket under collapsible headings, even a ticket with one Thread", async () => {
+it("lists drafts first, then the board's Threads by status, each naming its ticket", async () => {
   const { onSnapshot } = await setup();
   await using screen = await render(
     <Harness
@@ -247,24 +247,26 @@ it("groups drafts and each ticket under collapsible headings, even a ticket with
 
   const headings = screen.getByRole("menuitem");
   const drafts = headings.nth(0);
-  await expect.element(drafts).toHaveAccessibleName("Drafts 1 Thread");
+  await expect.element(drafts).toHaveAccessibleName("Drafts, 1 Thread");
   await expect.element(drafts).toHaveAttribute("aria-expanded", "true");
   await expect.element(screen.getByRole("menuitemradio", { name: /Plan exports/ })).toBeVisible();
-  const refunds = headings.nth(1);
-  await expect.element(refunds).toHaveAccessibleName("PAY-1 Refunds 1 Thread");
-  await expect.element(refunds).toHaveAttribute("aria-expanded", "false");
-  await expect.element(headings.nth(2)).toHaveAccessibleName("Payouts 1 Thread");
+  const idle = headings.nth(1);
+  await expect.element(idle).toHaveAccessibleName("Idle and working, 2 Threads");
+  await expect.element(idle).toHaveAttribute("aria-expanded", "false");
 
-  // A ticket heading opens to its Thread instead of opening the Thread itself.
-  await userEvent.click(refunds);
-  const first = screen.getByRole("menuitemradio", { name: "Thread first" });
+  // A section heading opens to its Threads instead of opening a Thread itself.
+  await userEvent.click(idle);
+  const first = screen.getByRole("menuitemradio", { name: "PAY-1 Thread first" });
   await expect.element(first).toHaveAccessibleDescription("Refunded the duplicate charge.");
   await expect.element(first.getByText("Refunded the duplicate charge.")).toBeVisible();
+  await expect
+    .element(screen.getByRole("menuitemradio", { name: "Payouts Thread second" }))
+    .toBeVisible();
   await expect
     .element(screen.getByRole("button", { name: "Board Threads: Plan exports" }))
     .toBeInTheDocument();
 
-  // Collapsing keeps the menu open and hides only the group's Threads.
+  // Collapsing keeps the menu open and hides only the section's Threads.
   await userEvent.click(drafts);
   await expect.element(drafts).toHaveAttribute("aria-expanded", "false");
   await expect
@@ -286,7 +288,7 @@ it("starts another Thread on the showing Thread's ticket, but not on a draft's",
       onNewTicketThread={onNewTicketThread}
     />,
   );
-  await pickThread(screen, /Thread first/, /^PAY-1 Refunds/);
+  await pickThread(screen, /Thread first/, /^Idle and working/);
   await userEvent.click(threadMenu(screen));
   await userEvent.click(screen.getByRole("menuitem", { name: "New Thread on PAY-1" }));
   expect(onNewTicketThread).toHaveBeenCalledWith(
@@ -308,7 +310,7 @@ it("shows the picked Thread again when the user returns to the Board", async () 
     screen.getByRole("button", { name: "Board Threads: Thread second" });
   {
     await using screen = await render(<Harness onSnapshot={onSnapshot} />);
-    await pickThread(screen, /Thread second/, /^Payouts/);
+    await pickThread(screen, /Thread second/);
     await expect.element(showing(screen)).toBeVisible();
   }
   await using screen = await render(<Harness onSnapshot={onSnapshot} />);
@@ -320,7 +322,7 @@ it("cancels an untouched draft and returns to the Thread it was started from", a
   mocks.begin.mockImplementation(succeed);
   mocks.otherCommand.mockResolvedValue({ _tag: "Success", value: undefined });
   await using screen = await render(<Harness onSnapshot={onSnapshot} />);
-  await pickThread(screen, /Thread second/, /^Payouts/);
+  await pickThread(screen, /Thread second/);
 
   await beginDraft(screen);
   const begun = mocks.begin.mock.calls[0]?.[0].input as BeginInput;
@@ -339,7 +341,7 @@ it("returns each cancelled draft to the Thread it was started from", async () =>
   mocks.begin.mockImplementation(succeed);
   mocks.otherCommand.mockResolvedValue({ _tag: "Success", value: undefined });
   await using screen = await render(<Harness onSnapshot={onSnapshot} />);
-  await pickThread(screen, /Thread second/, /^Payouts/);
+  await pickThread(screen, /Thread second/);
   const cancel = screen.getByRole("group", { name: "Ticket draft" }).getByRole("button", {
     name: "Cancel",
   });
@@ -436,7 +438,7 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
     .element(strip.getByRole("status"))
     .toHaveTextContent("Select a repository to create the ticket.");
 
-  await pickThread(screen, /Thread first/, /^PAY-1 Refunds/);
+  await pickThread(screen, /Thread first/, /^Idle and working/);
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for first" }))
     .not.toHaveAttribute("readonly");
@@ -535,7 +537,7 @@ it("opens ticket Threads, including settled ones, as Threads and drafts as draft
       onOpenThread={onOpenThread}
     />,
   );
-  await pickThread(screen, /Thread first/, /^PAY-1 Refunds/);
+  await pickThread(screen, /Thread first/, /^Idle and working/);
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("first");
   await pickThread(screen, /Plan exports/);

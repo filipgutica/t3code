@@ -48,6 +48,7 @@ import {
   ArchiveIcon,
   BotIcon,
   ChevronDownIcon,
+  ChevronRightIcon,
   CircleAlertIcon,
   CheckIcon,
   FolderGit2Icon,
@@ -78,6 +79,7 @@ import {
   getWorkbenchTicketExecutionStatuses,
   type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
+import { getWorkbenchThreadStatusSections } from "./workbenchFloatingChat.logic";
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
@@ -972,8 +974,6 @@ function WorkbenchTicketDetailController({
     setResetConfirmationOpen,
     threadPanelCollapsed,
     setThreadPanelCollapsed,
-    settledThreadsCollapsed,
-    setSettledThreadsCollapsed,
     detailsPanelCollapsed,
     setDetailsPanelCollapsed,
     repositoryScopePanelCollapsed,
@@ -1289,8 +1289,6 @@ function WorkbenchTicketDetailController({
                   onDeleteThread: onDeleteThread,
                   onOpenAssignedThread: onOpenAssignedThread,
                   onReplaceThread: onReplaceThread,
-                  settledThreadsCollapsed: settledThreadsCollapsed,
-                  setSettledThreadsCollapsed: setSettledThreadsCollapsed,
                   onAttachThread: onAttachThread,
                 }}
                 presentation={{
@@ -2328,8 +2326,6 @@ type WorkbenchTicketThreadsPanelProps = {
   threadLookupReady: boolean;
   onOpenAssignedThread: (threadId: ThreadId) => void;
   onReplaceThread: (ticket: WorkbenchTicket, previousThreadId: ThreadId) => void;
-  settledThreadsCollapsed: boolean;
-  setSettledThreadsCollapsed: Dispatch<SetStateAction<boolean>>;
   historicalAssignments: ReadonlyArray<WorkbenchAssignment>;
   onAttachThread: (ticket: WorkbenchTicket) => void;
 };
@@ -2353,8 +2349,6 @@ function WorkbenchTicketThreadsPanel({
     | "onDeleteThread"
     | "onOpenAssignedThread"
     | "onReplaceThread"
-    | "settledThreadsCollapsed"
-    | "setSettledThreadsCollapsed"
     | "onAttachThread"
   >;
   presentation: Pick<
@@ -2404,8 +2398,6 @@ function WorkbenchTicketThreadsPanel({
     onDeleteThread,
     onOpenAssignedThread,
     onReplaceThread,
-    settledThreadsCollapsed,
-    setSettledThreadsCollapsed,
     onAttachThread,
   } = actions;
   const {
@@ -2440,116 +2432,160 @@ function WorkbenchTicketThreadsPanel({
     ticket,
     historicalAssignments,
   } = records;
-  const linkedThreadCount = new Set(
-    [...activeAssignments, ...settledAssignments, ...historicalAssignments]
+  const [sectionToggles, setSectionToggles] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const openThreadCount = new Set(
+    activeAssignments
       .filter(({ threadId }) => threadsById.has(threadId) || archivedThreadsById.has(threadId))
       .map(({ threadId }) => threadId),
   ).size;
+  const liveStatus = (threadId: ThreadId) => {
+    const liveThread = threadsById.get(threadId);
+    return liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
+  };
+  // A primary Thread the user cannot open gives way to the notice below, as do its actions.
+  const listedAssignments = canOpenThread
+    ? activeAssignments
+    : activeAssignments.filter((activeAssignment) => activeAssignment.id !== assignment?.id);
+  const sections = getWorkbenchThreadStatusSections({
+    active: listedAssignments.map((activeAssignment) => ({
+      threadId: activeAssignment.threadId,
+      status: liveStatus(activeAssignment.threadId),
+      assignment: activeAssignment,
+    })),
+    settled: settledAssignments.map((settledAssignment) => ({
+      threadId: settledAssignment.threadId,
+      status: null,
+      assignment: settledAssignment,
+    })),
+    showingThreadId: assignment?.threadId ?? null,
+  });
+  const primaryThread = (
+    <WorkbenchTicketPrimaryThread
+      context={{
+        threadProviderKind: threadProviderKind,
+        threadMutationsDisabled,
+        environmentId: environmentId,
+        linkedProjects: linkedProjects,
+      }}
+      records={{
+        displayedThread: displayedThread,
+        assignment: assignment,
+        actionableTicket: actionableTicket,
+        nativeThread: nativeThread,
+        archivedThread: archivedThread,
+        ticketWorkspace: ticketWorkspace,
+      }}
+      presentation={{
+        threadActionPending: threadActionPending,
+        thread: thread,
+        displayedTitle: displayedTitle,
+        pending: pending,
+        nativeStatus: nativeStatus,
+        agentTitle: agentTitle,
+        isArchived: isArchived,
+        supportsSettlement: supportsSettlement,
+      }}
+      actions={{
+        settledAssignments: settledAssignments,
+        onNewThread: onNewThread,
+        onOpenThread: onOpenThread,
+        onUnlinkThread: onUnlinkThread,
+        toggleThreadSettlement: toggleThreadSettlement,
+        settlementPendingThreadId: settlementPendingThreadId,
+        onDeleteThread: onDeleteThread,
+      }}
+    />
+  );
+  const activeThreadRow = (activeAssignment: WorkbenchAssignment) =>
+    activeAssignment.id === assignment?.id ? (
+      <div key={activeAssignment.id}>{primaryThread}</div>
+    ) : (
+      <WorkbenchTicketActiveThreadRow
+        key={activeAssignment.id}
+        context={{
+          threadProviderKind: threadProviderKind,
+          threadMutationsDisabled,
+          environmentId: environmentId,
+          linkedProjects: linkedProjects,
+          threadsById: threadsById,
+          archivedThreadsById: archivedThreadsById,
+          threadLookupReady: threadLookupReady,
+        }}
+        presentation={{
+          pending: pending,
+          isArchived: isArchived,
+          supportsSettlement: supportsSettlement,
+          activeAssignment: activeAssignment,
+        }}
+        actions={{
+          onUnlinkThread: onUnlinkThread,
+          toggleThreadSettlement: toggleThreadSettlement,
+          settlementPendingThreadId: settlementPendingThreadId,
+          onDeleteThread: onDeleteThread,
+          onOpenAssignedThread: onOpenAssignedThread,
+          onReplaceThread: onReplaceThread,
+        }}
+        records={{ ticketWorkspace: ticketWorkspace, ticket: ticket }}
+      />
+    );
+  const settledThreadRow = (settledAssignment: WorkbenchAssignment) => (
+    <WorkbenchTicketSettledThreadRow
+      key={settledAssignment.id}
+      threadProviderKind={threadProviderKind}
+      threadMutationsDisabled={threadMutationsDisabled}
+      pending={pending}
+      isArchived={isArchived}
+      onUnlinkThread={onUnlinkThread}
+      supportsSettlement={supportsSettlement}
+      toggleThreadSettlement={toggleThreadSettlement}
+      settlementPendingThreadId={settlementPendingThreadId}
+      onDeleteThread={onDeleteThread}
+      threadsById={threadsById}
+      archivedThreadsById={archivedThreadsById}
+      onOpenAssignedThread={onOpenAssignedThread}
+      settledAssignment={settledAssignment}
+    />
+  );
   return (
     <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketPanelHeader
         title="Agent Threads"
-        count={linkedThreadCount}
+        count={openThreadCount}
         collapsed={threadPanelCollapsed}
         onToggle={() => setThreadPanelCollapsed((collapsed) => !collapsed)}
         contentId="workbench-ticket-agent-threads"
       />
       <div id="workbench-ticket-agent-threads" hidden={threadPanelCollapsed}>
         <div className="min-w-0">
-          {canOpenThread ? (
-            <WorkbenchTicketPrimaryThread
-              context={{
-                threadProviderKind: threadProviderKind,
-                threadMutationsDisabled,
-                environmentId: environmentId,
-                linkedProjects: linkedProjects,
-              }}
-              records={{
-                displayedThread: displayedThread,
-                assignment: assignment,
-                actionableTicket: actionableTicket,
-                nativeThread: nativeThread,
-                archivedThread: archivedThread,
-                ticketWorkspace: ticketWorkspace,
-              }}
-              presentation={{
-                threadActionPending: threadActionPending,
-                thread: thread,
-                displayedTitle: displayedTitle,
-                pending: pending,
-                nativeStatus: nativeStatus,
-
-                agentTitle: agentTitle,
-                isArchived: isArchived,
-                supportsSettlement: supportsSettlement,
-              }}
-              actions={{
-                settledAssignments: settledAssignments,
-                onNewThread: onNewThread,
-                onOpenThread: onOpenThread,
-                onUnlinkThread: onUnlinkThread,
-                toggleThreadSettlement: toggleThreadSettlement,
-                settlementPendingThreadId: settlementPendingThreadId,
-                onDeleteThread: onDeleteThread,
-              }}
-            />
-          ) : (
+          {!canOpenThread ? (
             <p className="px-4 pb-3 text-sm text-muted-foreground">
               No Thread is available for this Ticket.
             </p>
+          ) : assignment ? null : (
+            <div className="px-2 pb-2">{primaryThread}</div>
           )}
-          {activeAssignments.length > 1 ? (
-            <WorkbenchTicketOtherThreads
-              context={{
-                threadProviderKind: threadProviderKind,
-                threadMutationsDisabled,
-                environmentId: environmentId,
-                linkedProjects: linkedProjects,
-                threadsById: threadsById,
-                archivedThreadsById: archivedThreadsById,
-                threadLookupReady: threadLookupReady,
-              }}
-              presentation={{
-                pending: pending,
-                isArchived: isArchived,
-                supportsSettlement: supportsSettlement,
-              }}
-              records={{
-                assignment: assignment,
-                ticketWorkspace: ticketWorkspace,
-                activeAssignments: activeAssignments,
-                ticket: ticket,
-              }}
-              actions={{
-                onUnlinkThread: onUnlinkThread,
-                toggleThreadSettlement: toggleThreadSettlement,
-                settlementPendingThreadId: settlementPendingThreadId,
-                onDeleteThread: onDeleteThread,
-                onOpenAssignedThread: onOpenAssignedThread,
-                onReplaceThread: onReplaceThread,
-              }}
-            />
-          ) : null}
-          {settledAssignments.length > 0 ? (
-            <WorkbenchTicketSettledThreads
-              threadProviderKind={threadProviderKind}
-              threadMutationsDisabled={threadMutationsDisabled}
-              pending={pending}
-              settledAssignments={settledAssignments}
-              isArchived={isArchived}
-              onUnlinkThread={onUnlinkThread}
-              supportsSettlement={supportsSettlement}
-              toggleThreadSettlement={toggleThreadSettlement}
-              settlementPendingThreadId={settlementPendingThreadId}
-              onDeleteThread={onDeleteThread}
-              threadsById={threadsById}
-              archivedThreadsById={archivedThreadsById}
-
-              onOpenAssignedThread={onOpenAssignedThread}
-              settledThreadsCollapsed={settledThreadsCollapsed}
-              setSettledThreadsCollapsed={setSettledThreadsCollapsed}
-            />
-          ) : null}
+          {sections.map((section) => {
+            const open = sectionToggles.get(section.id) ?? section.openByDefault;
+            return (
+              <WorkbenchTicketThreadSection
+                key={section.id}
+                id={section.id}
+                label={section.label}
+                count={section.threads.length}
+                hint={section.workingCount > 0 ? `${section.workingCount} working` : null}
+                open={open}
+                onToggle={() =>
+                  setSectionToggles((current) => new Map(current).set(section.id, !open))
+                }
+              >
+                {section.threads.map(({ assignment: rowAssignment }) =>
+                  section.id === "settled"
+                    ? settledThreadRow(rowAssignment)
+                    : activeThreadRow(rowAssignment),
+                )}
+              </WorkbenchTicketThreadSection>
+            );
+          })}
           {historicalAssignments.length > 0 ? (
             <WorkbenchTicketHistoricalThreads
               threadProviderKind={threadProviderKind}
@@ -3303,98 +3339,93 @@ function WorkbenchTicketPrimaryThread({
     onDeleteThread,
   } = actions;
   return (
-    <div className="px-2 pb-2">
-      <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
-        <WorkbenchThreadOpenButton
-          providerKind={threadProviderKind(displayedThread)}
-          actionLabel={thread.actionLabel}
-          ariaLabel={`${
-            threadActionPending ? thread.pendingActionLabel : thread.actionLabel
-          } for ${displayedTitle}`}
-          disabled={isWorkbenchThreadOpenDisabled({
-            pending,
-            threadMutationsDisabled,
-            thread: displayedThread,
-          })}
-          modelLabel={getWorkbenchThreadModelLabel(displayedThread)}
-          recencyLabel={displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null}
-          onClick={() => {
-            if (!assignment && settledAssignments.length > 0) {
-              onNewThread(actionableTicket);
-              return;
-            }
-            onOpenThread(actionableTicket, assignment?.threadId);
-          }}
-          stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
-          executionStatus={nativeStatus}
-          title={agentTitle}
-          actions={
-            assignment && displayedThread ? (
-              <>
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        aria-label={`Unlink Thread ${displayedThread.title}`}
-                        disabled={pending || threadMutationsDisabled || isArchived}
-                        onClick={() => onUnlinkThread(assignment.threadId)}
-                        size="icon-xs"
-                        type="button"
-                        variant="ghost"
-                      />
-                    }
-                  >
-                    <UnlinkIcon />
-                  </TooltipTrigger>
-                  <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
-                </Tooltip>
-                {supportsSettlement ? (
-                  <WorkbenchThreadSettlementButton
-                    archived={archivedThread !== undefined}
-                    disabled={
-                      pending ||
-                      threadMutationsDisabled ||
-                      isArchived ||
-                      archivedThread !== undefined
-                    }
-                    onClick={() => void toggleThreadSettlement(displayedThread)}
-                    pending={settlementPendingThreadId === displayedThread.id}
-                    settled={displayedThread.settledOverride === "settled"}
-                    title={displayedThread.title}
-                  />
-                ) : null}
-                <Tooltip>
-                  <TooltipTrigger
-                    render={
-                      <Button
-                        aria-label={`Delete Thread ${displayedThread.title}`}
-                        disabled={pending || threadMutationsDisabled || isArchived}
-                        onClick={() => onDeleteThread(assignment.threadId)}
-                        size="icon-xs"
-                        type="button"
-                        variant="ghost"
-                      />
-                    }
-                  >
-                    <Trash2Icon />
-                  </TooltipTrigger>
-                  <TooltipPopup>Delete Thread</TooltipPopup>
-                </Tooltip>
-              </>
-            ) : null
+    <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
+      <WorkbenchThreadOpenButton
+        providerKind={threadProviderKind(displayedThread)}
+        actionLabel={thread.actionLabel}
+        ariaLabel={`${
+          threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+        } for ${displayedTitle}`}
+        disabled={isWorkbenchThreadOpenDisabled({
+          pending,
+          threadMutationsDisabled,
+          thread: displayedThread,
+        })}
+        modelLabel={getWorkbenchThreadModelLabel(displayedThread)}
+        recencyLabel={displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null}
+        onClick={() => {
+          if (!assignment && settledAssignments.length > 0) {
+            onNewThread(actionableTicket);
+            return;
           }
-        />
-        {displayedThread ? (
-          <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
-            <WorkbenchThreadCheckoutDetails
-              environmentId={environmentId}
-              thread={displayedThread}
-              projects={linkedProjects}
-              workspace={ticketWorkspace}
-            />
-          </div>
-        ) : null}
-      </div>
+          onOpenThread(actionableTicket, assignment?.threadId);
+        }}
+        stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
+        executionStatus={nativeStatus}
+        title={agentTitle}
+        actions={
+          assignment && displayedThread ? (
+            <>
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label={`Unlink Thread ${displayedThread.title}`}
+                      disabled={pending || threadMutationsDisabled || isArchived}
+                      onClick={() => onUnlinkThread(assignment.threadId)}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    />
+                  }
+                >
+                  <UnlinkIcon />
+                </TooltipTrigger>
+                <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
+              </Tooltip>
+              {supportsSettlement ? (
+                <WorkbenchThreadSettlementButton
+                  archived={archivedThread !== undefined}
+                  disabled={
+                    pending || threadMutationsDisabled || isArchived || archivedThread !== undefined
+                  }
+                  onClick={() => void toggleThreadSettlement(displayedThread)}
+                  pending={settlementPendingThreadId === displayedThread.id}
+                  settled={displayedThread.settledOverride === "settled"}
+                  title={displayedThread.title}
+                />
+              ) : null}
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      aria-label={`Delete Thread ${displayedThread.title}`}
+                      disabled={pending || threadMutationsDisabled || isArchived}
+                      onClick={() => onDeleteThread(assignment.threadId)}
+                      size="icon-xs"
+                      type="button"
+                      variant="ghost"
+                    />
+                  }
+                >
+                  <Trash2Icon />
+                </TooltipTrigger>
+                <TooltipPopup>Delete Thread</TooltipPopup>
+              </Tooltip>
+            </>
+          ) : null
+        }
+      />
+      {displayedThread ? (
+        <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
+          <WorkbenchThreadCheckoutDetails
+            environmentId={environmentId}
+            thread={displayedThread}
+            projects={linkedProjects}
+            workspace={ticketWorkspace}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -3422,179 +3453,42 @@ type WorkbenchTicketOtherThreadsProps = Pick<
   | "onOpenAssignedThread"
   | "onReplaceThread"
 >;
-function WorkbenchTicketOtherThreads({
-  context,
-  presentation,
-  records,
-  actions,
+/** A status section of the Ticket's Threads, as in the floating chat's picker. */
+function WorkbenchTicketThreadSection({
+  id,
+  label,
+  count,
+  hint,
+  open,
+  onToggle,
+  children,
 }: {
-  context: Pick<
-    WorkbenchTicketOtherThreadsProps,
-    | "threadProviderKind"
-    | "threadMutationsDisabled"
-    | "environmentId"
-    | "linkedProjects"
-    | "threadsById"
-    | "archivedThreadsById"
-    | "threadLookupReady"
-  >;
-  presentation: Pick<
-    WorkbenchTicketOtherThreadsProps,
-    "pending" | "isArchived" | "supportsSettlement"
-  >;
-  records: Pick<
-    WorkbenchTicketOtherThreadsProps,
-    "assignment" | "ticketWorkspace" | "activeAssignments" | "ticket"
-  >;
-  actions: Pick<
-    WorkbenchTicketOtherThreadsProps,
-    | "onUnlinkThread"
-    | "toggleThreadSettlement"
-    | "settlementPendingThreadId"
-    | "onDeleteThread"
-    | "onOpenAssignedThread"
-    | "onReplaceThread"
-  >;
+  readonly id: string;
+  readonly label: string;
+  readonly count: number;
+  readonly hint: string | null;
+  readonly open: boolean;
+  readonly onToggle: () => void;
+  readonly children: ReactNode;
 }) {
-  const {
-    threadProviderKind,
-    threadMutationsDisabled,
-    environmentId,
-    linkedProjects,
-    threadsById,
-    archivedThreadsById,
-    threadLookupReady,
-  } = context;
-  const { pending, isArchived, supportsSettlement } = presentation;
-  const { assignment, ticketWorkspace, activeAssignments, ticket } = records;
-  const {
-    onUnlinkThread,
-    toggleThreadSettlement,
-    settlementPendingThreadId,
-    onDeleteThread,
-    onOpenAssignedThread,
-    onReplaceThread,
-  } = actions;
+  const panelId = `workbench-ticket-threads-${id}`;
   return (
-    <div className="border-t border-border/60 px-2 py-3">
-      <p className="mb-2 px-2 text-xs font-medium text-muted-foreground">Other active Threads</p>
-      <div className="space-y-1">
-        {activeAssignments
-          .filter((activeAssignment) => activeAssignment.id !== assignment?.id)
-          .map((activeAssignment) => (
-            <WorkbenchTicketActiveThreadRow
-              key={activeAssignment.id}
-              context={{
-                threadProviderKind: threadProviderKind,
-                threadMutationsDisabled,
-                environmentId: environmentId,
-                linkedProjects: linkedProjects,
-                threadsById: threadsById,
-                archivedThreadsById: archivedThreadsById,
-                threadLookupReady: threadLookupReady,
-              }}
-              presentation={{
-                pending: pending,
-                isArchived: isArchived,
-                supportsSettlement: supportsSettlement,
-                activeAssignment: activeAssignment,
-              }}
-              actions={{
-                onUnlinkThread: onUnlinkThread,
-                toggleThreadSettlement: toggleThreadSettlement,
-                settlementPendingThreadId: settlementPendingThreadId,
-                onDeleteThread: onDeleteThread,
-                onOpenAssignedThread: onOpenAssignedThread,
-                onReplaceThread: onReplaceThread,
-              }}
-              records={{ ticketWorkspace: ticketWorkspace, ticket: ticket }}
-            />
-          ))}
+    <section aria-label={label} className="px-2 pb-2">
+      <button
+        type="button"
+        aria-controls={panelId}
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted/45"
+      >
+        <ChevronRightIcon aria-hidden className={cn("size-3.5 shrink-0", open && "rotate-90")} />
+        <span className="font-medium text-foreground">{label}</span>
+        <span className="tabular-nums">{count}</span>
+        {hint ? <span className="ms-auto">{hint}</span> : null}
+      </button>
+      <div id={panelId} hidden={!open} className="space-y-1">
+        {open ? children : null}
       </div>
-    </div>
-  );
-}
-
-function WorkbenchTicketSettledThreads({
-  threadProviderKind,
-  threadMutationsDisabled,
-  pending,
-  settledAssignments,
-  isArchived,
-  onUnlinkThread,
-  supportsSettlement,
-  toggleThreadSettlement,
-  settlementPendingThreadId,
-  onDeleteThread,
-  threadsById,
-  archivedThreadsById,
-  onOpenAssignedThread,
-  settledThreadsCollapsed,
-  setSettledThreadsCollapsed,
-}: Pick<
-  WorkbenchTicketThreadsPanelProps,
-  | "threadProviderKind"
-  | "threadMutationsDisabled"
-  | "pending"
-  | "settledAssignments"
-  | "isArchived"
-  | "onUnlinkThread"
-  | "supportsSettlement"
-  | "toggleThreadSettlement"
-  | "settlementPendingThreadId"
-  | "onDeleteThread"
-  | "threadsById"
-  | "archivedThreadsById"
-  | "onOpenAssignedThread"
-  | "settledThreadsCollapsed"
-  | "setSettledThreadsCollapsed"
->) {
-  return (
-    <section className="border-t border-border/60">
-      <div className="flex items-center justify-between gap-3 px-4 py-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <h3 className="text-xs font-semibold">Settled Threads</h3>
-          <Badge size="sm" variant="secondary">
-            {settledAssignments.length}
-          </Badge>
-        </div>
-        <Button
-          aria-controls="workbench-ticket-settled-threads"
-          aria-expanded={!settledThreadsCollapsed}
-          aria-label={
-            settledThreadsCollapsed ? "Expand Settled Threads" : "Collapse Settled Threads"
-          }
-          onClick={() => setSettledThreadsCollapsed((collapsed) => !collapsed)}
-          size="icon-xs"
-          title={settledThreadsCollapsed ? "Expand Settled Threads" : "Collapse Settled Threads"}
-          type="button"
-          variant="ghost"
-        >
-          <ChevronDownIcon className={settledThreadsCollapsed ? "" : "rotate-180"} />
-        </Button>
-      </div>
-      {!settledThreadsCollapsed ? (
-        <div id="workbench-ticket-settled-threads" className="space-y-1 px-2 pb-3">
-          {settledAssignments.map((settledAssignment) => (
-            <WorkbenchTicketSettledThreadRow
-              key={settledAssignment.id}
-              threadProviderKind={threadProviderKind}
-              threadMutationsDisabled={threadMutationsDisabled}
-              pending={pending}
-              isArchived={isArchived}
-              onUnlinkThread={onUnlinkThread}
-              supportsSettlement={supportsSettlement}
-              toggleThreadSettlement={toggleThreadSettlement}
-              settlementPendingThreadId={settlementPendingThreadId}
-              onDeleteThread={onDeleteThread}
-              threadsById={threadsById}
-              archivedThreadsById={archivedThreadsById}
-              onOpenAssignedThread={onOpenAssignedThread}
-              settledAssignment={settledAssignment}
-            />
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -3952,7 +3846,7 @@ function WorkbenchTicketSettledThreadRow({
   onOpenAssignedThread,
   settledAssignment,
 }: Pick<
-  Parameters<typeof WorkbenchTicketSettledThreads>[0],
+  WorkbenchTicketThreadsPanelProps,
   | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
@@ -5262,7 +5156,6 @@ function useWorkbenchTicketDetailPanels() {
   const [resetConfirmationOpen, setResetConfirmationOpen] = useState(false);
   const [threadPanelCollapsed, setThreadPanelCollapsed] =
     useWorkbenchTicketPanelCollapsed("threads");
-  const [settledThreadsCollapsed, setSettledThreadsCollapsed] = useState(true);
   const [detailsPanelCollapsed, setDetailsPanelCollapsed] = useState(false);
   const [repositoryScopePanelCollapsed, setRepositoryScopePanelCollapsed] = useState(false);
   const [advancedWorkspaceSettingsCollapsed, setAdvancedWorkspaceSettingsCollapsed] =
@@ -5274,8 +5167,6 @@ function useWorkbenchTicketDetailPanels() {
     setResetConfirmationOpen,
     threadPanelCollapsed,
     setThreadPanelCollapsed,
-    settledThreadsCollapsed,
-    setSettledThreadsCollapsed,
     detailsPanelCollapsed,
     setDetailsPanelCollapsed,
     repositoryScopePanelCollapsed,

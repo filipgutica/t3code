@@ -6,6 +6,8 @@ import { describe, expect, it, vi } from "vite-plus/test";
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { WorkbenchPullRequestPreviewProvider } from "./WorkbenchPullRequestPreview";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
+import { WorkbenchDescription } from "./WorkbenchDescription";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 
@@ -204,6 +206,79 @@ describe("Workbench pull request navigation", () => {
       }
     },
   );
+
+  it("opens a page pull request in the panel of the Thread the floating chat shows", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
+    useWorkbenchFloatingChatStore.setState({ shownThread });
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <WorkbenchPullRequestPreviewProvider>
+            <WorkbenchPullRequestLink
+              environmentId={EnvironmentId.make("remote")}
+              pullRequest={{
+                number: 42,
+                url: "https://github.com/acme/repo/pull/42",
+                state: "open",
+              }}
+            />
+          </WorkbenchPullRequestPreviewProvider>,
+        );
+      });
+      await act(() => {
+        renderer?.root.findByProps({ href: "https://github.com/acme/repo/pull/42" }).props.onClick({
+          preventDefault: vi.fn(),
+          stopPropagation: vi.fn(),
+          metaKey: false,
+          ctrlKey: false,
+        });
+      });
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+      ).toMatchObject({ kind: "pull-request", environmentId: "remote", number: 42 });
+      expect(renderer?.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      await act(() => renderer?.unmount());
+      useWorkbenchFloatingChatStore.setState({ shownThread: null });
+      useRightPanelStore.setState({ byThreadKey: {} });
+      navigate.mockClear();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("opens a pull request link in a brief in the page's preview, and other links in a tab", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <WorkbenchPullRequestPreviewProvider>
+            <WorkbenchDescription markdown="See [the PR](https://github.com/acme/repo/pull/42) and [the docs](https://example.com/docs)." />
+          </WorkbenchPullRequestPreviewProvider>,
+        );
+      });
+      const [pullRequestLink, docsLink] = renderer?.root.findAllByType("a") ?? [];
+      const docsClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+      await act(() => docsLink?.props.onClick({ ...docsClick, metaKey: false, ctrlKey: false }));
+      expect(docsClick.preventDefault).not.toHaveBeenCalled();
+      expect(renderer?.root.findAllByProps({ role: "dialog" })).toHaveLength(0);
+
+      const pullRequestClick = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+      await act(() =>
+        pullRequestLink?.props.onClick({ ...pullRequestClick, metaKey: false, ctrlKey: false }),
+      );
+      expect(pullRequestClick.preventDefault).toHaveBeenCalled();
+      expect(renderer?.root.findByProps({ role: "dialog" }).children).toContain("42");
+      expect(navigate).not.toHaveBeenCalled();
+    } finally {
+      await act(() => renderer?.unmount());
+      navigate.mockClear();
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("preserves ticket context until navigation, then dismisses the pull request", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
