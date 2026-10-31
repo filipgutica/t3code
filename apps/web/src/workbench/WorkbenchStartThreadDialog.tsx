@@ -14,10 +14,8 @@ import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
 import {
-  applyProviderInstanceSettings,
-  deriveProviderInstanceEntries,
   isProviderInstancePickerReady,
-  sortProviderInstanceEntries,
+  providerInstanceEntriesFor,
   type ProviderInstanceEntry,
 } from "../providerInstances";
 import { ProviderModelPicker } from "../components/chat/ProviderModelPicker";
@@ -114,9 +112,7 @@ const useWorkbenchStartThreadSelection = ({
   readonly defaultModelSelection: ModelSelection | null;
   readonly stickyModelSelection: ModelSelection | null;
 }) => {
-  const instanceEntries = sortProviderInstanceEntries(
-    applyProviderInstanceSettings(deriveProviderInstanceEntries(providers), settings, projectId),
-  );
+  const instanceEntries = providerInstanceEntriesFor(providers, settings, projectId);
   const availableModelOptionsByInstance = getCustomModelOptionsByInstance(settings, providers);
   const [explicitSelection, setExplicitSelection] = useState<ModelSelection | null>(null);
   const resolvedSelection = resolveWorkbenchStartThreadSelectionWithFallback({

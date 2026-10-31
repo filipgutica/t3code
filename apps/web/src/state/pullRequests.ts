@@ -493,24 +493,41 @@ export function observedPullRequestTitle(
   );
 }
 
+const sharedPullRequestSummaryAtoms = Atom.family((key: string) => {
+  const [observationsKey, savedKey] = JSON.parse(key) as [string, string];
+  return Atom.make((get) =>
+    newestPullRequestSummary(
+      observedPullRequestSummary(get(pullRequestObservationsAtom(observationsKey))),
+      get(savedPullRequestSummaryAtom(savedKey)),
+    ),
+  );
+});
+
+// Workbench attention reads the native summary atom; remove when native exports this selector (U21).
+export function sharedPullRequestSummaryAtom(
+  environmentId: EnvironmentId | null,
+  reference: PullRequestRef | null,
+): Atom.Atom<PullRequestSummary | null> {
+  const key =
+    environmentId === null || reference === null
+      ? "none"
+      : pullRequestSummaryKey(environmentId, reference);
+  return sharedPullRequestSummaryAtoms(
+    JSON.stringify([
+      key,
+      environmentId === null || reference === null
+        ? ""
+        : savedPullRequestKey(environmentId, reference),
+    ]),
+  );
+}
+
 /** The newest of every list, detail, checks and linked-summary answer and the thread's saved link. */
 export function useSharedPullRequestSummary(
   environmentId: EnvironmentId | null,
   reference: PullRequestRef | null,
 ): PullRequestSummary | null {
-  const key =
-    environmentId === null || reference === null
-      ? "none"
-      : pullRequestSummaryKey(environmentId, reference);
-  const observations = useAtomValue(pullRequestObservationsAtom(key));
-  const saved = useAtomValue(
-    savedPullRequestSummaryAtom(
-      environmentId === null || reference === null
-        ? ""
-        : savedPullRequestKey(environmentId, reference),
-    ),
-  );
-  return newestPullRequestSummary(observedPullRequestSummary(observations), saved);
+  return useAtomValue(sharedPullRequestSummaryAtom(environmentId, reference));
 }
 export const pullRequestStackAtom = createPullRequestStackAtomFamily(
   connectionAtomRuntime,
@@ -547,7 +564,7 @@ function createMergedEnvironmentQuery<Input, A>(
         if (result._tag === "Failure" && error === null) {
           error = formatEnvironmentQueryError(result.cause);
         }
-        const value = Option.getOrNull(AsyncResult.value(result));
+        const value = AsyncResult.getOrElse(result, () => null);
         if (value !== null) values.push([target.environmentId, value]);
       }
       return { values, error, isPending };
@@ -603,7 +620,7 @@ export function usePullRequestTurnRefreshes(
 
 export function usePullRequestTurnRefresh(environmentId: EnvironmentId): number | null {
   const result = useAtomValue(pullRequestEnvironment.refreshes({ environmentId, input: {} }));
-  return Option.getOrNull(AsyncResult.value(result));
+  return AsyncResult.getOrElse(result, () => null);
 }
 
 export interface MergedPullRequestListView {

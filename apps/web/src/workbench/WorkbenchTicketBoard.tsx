@@ -65,7 +65,7 @@ import {
 import { Badge } from "../components/ui/badge";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "../components/ui/input-group";
 import { matchesWorkbenchTicketSearch, useWorkbenchTicketSearch } from "./useWorkbenchTicketSearch";
-import { useWorkbenchBoardView } from "./workbenchBoardViewState";
+import { useWorkbenchBoardView, useWorkbenchBoardViewStore } from "./workbenchBoardViewState";
 import {
   Select,
   SelectTrigger,
@@ -163,8 +163,12 @@ type WorkbenchTicketBoardProps = {
 };
 
 export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
+  const scopeKey = JSON.stringify([props.environmentId, props.projectId]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds this mounted Board's repository-preference lease so native snapshot updates leave inactive Workspace filters untouched
+  useEffect(() => useWorkbenchBoardViewStore.getState().mountBoard(scopeKey), [scopeKey]);
   const boardRef = useRef<HTMLElement>(null);
   const [wideBoard, setWideBoard] = useState(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- measures the Board DOM and owns resize/root-font observers for its drag breakpoint
   useLayoutEffect(() => {
     const board = boardRef.current;
     if (!board) return;
@@ -647,8 +651,6 @@ function WorkbenchBoardTicketActions({
 function useWorkbenchBoardData({
   environmentId,
   projectId,
-  repositoryProjectIds,
-  repositoriesReady,
   tickets,
   referencesByTicket,
   assignments,
@@ -660,8 +662,6 @@ function useWorkbenchBoardData({
   WorkbenchTicketBoardProps,
   | "environmentId"
   | "projectId"
-  | "repositoryProjectIds"
-  | "repositoriesReady"
   | "tickets"
   | "referencesByTicket"
   | "assignments"
@@ -675,15 +675,6 @@ function useWorkbenchBoardData({
   const { view, setView } = useWorkbenchBoardView(scope);
   const repositoryId = view.repositoryId;
   const setRepositoryId = (repositoryId: ProjectId | null) => setView({ repositoryId });
-  useEffect(() => {
-    if (
-      repositoriesReady &&
-      repositoryId !== null &&
-      !repositoryProjectIds.includes(repositoryId)
-    ) {
-      setView({ repositoryId: null });
-    }
-  }, [repositoriesReady, repositoryProjectIds, repositoryId, setView]);
   const attentionMode = view.attentionMode;
   const setAttentionMode = (attentionMode: WorkbenchAttentionMode) => setView({ attentionMode });
   const {

@@ -121,6 +121,7 @@ export function WorkbenchRepositoryScopeFields({
       null
     );
   };
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores DOM focus after adding/removing a repository replaces its action control
   useEffect(() => {
     const id = focusRowIdRef.current;
     if (id === null) return;

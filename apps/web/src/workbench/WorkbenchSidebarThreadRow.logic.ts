@@ -26,7 +26,7 @@ import { useNowMinute } from "../hooks/useNowMinute";
 import { useSnoozeWakeClock } from "../components/Sidebar.logic";
 import { useThreadActions } from "../hooks/useThreadActions";
 import {
-  readEnvironmentSupportsSettlement,
+  readEnvironmentServerConfigLoaded,
   readThreadShell,
   useProject,
   useThreadShell,
@@ -250,7 +250,7 @@ export function useWorkbenchSidebarThreadInteraction({
       settlementPending.current ||
       !current ||
       current.archivedAt !== null ||
-      !readEnvironmentSupportsSettlement(threadRef.environmentId) ||
+      !readEnvironmentServerConfigLoaded(threadRef.environmentId) ||
       !readEnvironmentScope(threadRef.environmentId, AuthOrchestrationOperateScope)
     )
       return;
@@ -298,15 +298,12 @@ export function useWorkbenchSidebarThreadInteraction({
     handleOpenPullRequest,
     handleOpenPullRequestStack,
     canToggleSettlement:
-      canOperate &&
-      config?.environment.capabilities.threadSettlement === true &&
-      shell !== null &&
-      shell.archivedAt === null,
+      canOperate && config !== null && shell !== null && shell.archivedAt === null,
     isSettled: shell?.settledOverride === "settled",
     settlementBusy,
     toggleSettlement,
-    canUnpin: canOperate && config?.environment.capabilities.threadPinning === true,
-    canWake: canOperate && config?.environment.capabilities.threadSnooze === true,
+    canUnpin: canOperate && config !== null,
+    canWake: canOperate && config !== null,
     unpin: () => runNativeAction("Failed to unpin thread", confirmAndUnpinThread),
     wake: () => runNativeAction("Failed to wake thread", unsnoozeThread),
   };

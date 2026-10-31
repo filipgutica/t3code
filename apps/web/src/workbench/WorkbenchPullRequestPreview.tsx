@@ -70,6 +70,7 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
       : null;
   });
   const previousDockedPullRequestKey = useRef(dockedPullRequestKey);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates native PR inspection when the routed native panel changes or closes, including actions outside the Workbench sheet
   useEffect(() => {
     if (
       previousDockedPullRequestKey.current !== null &&
@@ -81,12 +82,6 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   }, [dockedPullRequestKey, refreshAttention]);
   const [selection, setSelection] = useState<WorkbenchPullRequestSelection | null>(null);
   const [openedHref, setOpenedHref] = useState(href);
-  const wasOpen = useRef(false);
-  useEffect(() => {
-    const open = selection !== null;
-    if (wasOpen.current && !open) refreshAttention();
-    wasOpen.current = open;
-  }, [selection, refreshAttention]);
   if (openedHref !== href) {
     setOpenedHref(href);
     setSelection(null);

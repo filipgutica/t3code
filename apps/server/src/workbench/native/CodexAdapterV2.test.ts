@@ -30,10 +30,8 @@ import * as ProviderAdapter from "@t3tools/provider-core/server/ProviderAdapter"
 
 import packageJson from "../../../package.json" with { type: "json" };
 import * as CodexAdapterV2 from "../../orchestration-v2/Adapters/CodexAdapterV2.ts";
-import {
-  makeReplayServerConfig,
-  withCodexReplayChildMetadata,
-} from "../../orchestration-v2/Adapters/CodexAdapterV2.testkit.ts";
+import { withCodexReplayChildMetadata } from "../../orchestration-v2/Adapters/CodexAdapterV2.testkit.ts";
+import { makeReplayServerConfig } from "../../orchestration-v2/testkit/ProviderReplayHarness.ts";
 
 const DEFAULT_CODEX_SETTINGS = Schema.decodeSync(CodexSettings)({});
 const CODEX_TEST_MODEL_SELECTION = {

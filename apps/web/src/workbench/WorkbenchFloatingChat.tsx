@@ -220,6 +220,7 @@ function FloatingChatPlaceholder({
 function useOpenThreadOnPanelAction(threadRef: ScopedThreadRef, onOpen: () => void) {
   const threadKey = scopedThreadKey(threadRef);
   const open = useEffectEvent(onOpen);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to native panel actions so an embedded conversation can open its full Thread, then releases the subscription
   useEffect(() => {
     let revision = useRightPanelStore.getState().userActionRevisionByThreadKey[threadKey];
     return useRightPanelStore.subscribe((state) => {
@@ -507,6 +508,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   const launcherRef = useRef<HTMLButtonElement>(null);
   // Set by the control that changes the mode, so focus moves only after a user action.
   const pendingFocusRef = useRef(false);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the newly mounted chat control after the requested expand/minimize DOM change commits
   useEffect(() => {
     if (!pendingFocusRef.current) return;
     pendingFocusRef.current = false;

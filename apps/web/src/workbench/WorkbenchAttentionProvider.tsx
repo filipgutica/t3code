@@ -12,7 +12,6 @@ import { resolveThreadRouteRef } from "../threadRoutes";
 import { useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
-import { WorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
 import { useWorkbenchAttention } from "./useWorkbenchAttention";
 import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
 import { useWorkbenchSidebar } from "./useWorkbenchSidebar";
@@ -25,7 +24,6 @@ const emptyAttention: Attention = {
   refreshAttention: () => {},
   attentionReferences: [],
   attentionScope: "",
-  setAttentionObservations: () => {},
   attentionReasonsByTicket: new Map(),
   attentionSignalsByTicket: new Map(),
   attentionInspectionsByTicket: new Map(),
@@ -125,18 +123,5 @@ function WorkbenchEnvironmentAttention({
     threadsById,
     activeThreadRef: assignedThreadRef,
   });
-  return (
-    <AttentionContext value={attention}>
-      {isOnWorkbench && environmentId !== null ? (
-        <WorkbenchAttentionQueries
-          key={attention.attentionScope}
-          environmentId={environmentId}
-          references={attention.attentionReferences}
-          refresh={attention.attentionRefresh > 0}
-          onChange={attention.setAttentionObservations}
-        />
-      ) : null}
-      {children}
-    </AttentionContext>
-  );
+  return <AttentionContext value={attention}>{children}</AttentionContext>;
 }

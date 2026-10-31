@@ -28,7 +28,7 @@ import {
 import * as Schema from "effect/Schema";
 import packageJson from "../../../package.json" with { type: "json" };
 import * as CodexAdapterV2 from "./CodexAdapterV2.ts";
-import { makeReplayServerConfig } from "./CodexAdapterV2.testkit.ts";
+import { makeReplayServerConfig } from "../testkit/ProviderReplayHarness.ts";
 
 const DEFAULT_CODEX_SETTINGS = Schema.decodeSync(CodexSettings)({});
 const CODEX_TEST_MODEL_SELECTION = {

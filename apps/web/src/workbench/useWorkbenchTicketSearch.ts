@@ -25,6 +25,7 @@ export function useWorkbenchTicketSearch(scope: WorkbenchBoardScope) {
   const timer = useRef<
     { scopeKey: string | null; timeout: ReturnType<typeof setTimeout> } | undefined
   >(undefined);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- cancels the search debounce timer when its Workspace scope unmounts
   useEffect(
     () => () => {
       if (timer.current?.scopeKey === scopeKey) clearTimeout(timer.current.timeout);

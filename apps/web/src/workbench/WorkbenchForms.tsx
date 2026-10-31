@@ -64,7 +64,6 @@ import {
   UnlinkIcon,
 } from "lucide-react";
 import {
-  useEffect,
   useState,
   type Dispatch,
   type SetStateAction,
@@ -5071,12 +5070,6 @@ function useWorkbenchTicketDraftEditor({
     draft,
     workspaceReadOnly: workspaceReadOnly ?? false,
   });
-  useEffect(() => {
-    if (draftProjected) {
-      clearDraft(environmentId, ticket.id);
-    }
-  }, [clearDraft, draftProjected, environmentId, ticket.id]);
-
   const cancelEditing = () => {
     clearDraft(environmentId, ticket.id);
   };

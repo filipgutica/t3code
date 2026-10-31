@@ -4,9 +4,10 @@ import type {
   WorkbenchProjectId,
   WorkbenchSnapshot,
 } from "@t3tools/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { useNavigate } from "@tanstack/react-router";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
@@ -36,10 +37,7 @@ export function useWorkbenchWorkspaceActions({
     workbenchEnvironment.archiveProject.permissionAtom(environmentId),
   );
   const canDelete = useAtomValue(workbenchEnvironment.deleteProject.permissionAtom(environmentId));
-  const currentEnvironment = useRef(environmentId);
-  useEffect(() => {
-    currentEnvironment.current = environmentId;
-  }, [environmentId]);
+  const currentEnvironment = useStableCallback(() => environmentId);
   const [deletedWorkspaces, setDeletedWorkspaces] = useState<
     ReadonlyArray<{
       environmentId: EnvironmentId;
@@ -67,7 +65,7 @@ export function useWorkbenchWorkspaceActions({
       },
     });
     setPendingAction(null);
-    if (currentEnvironment.current !== environmentId) return;
+    if (currentEnvironment() !== environmentId) return;
     reportWorkbenchCommandFailure(result, setError);
   };
   const requestDeletion = (workspace: WorkbenchProject) => {
@@ -109,7 +107,7 @@ export function useWorkbenchWorkspaceActions({
           { environmentId, id: deletion.workspace.id },
         ]);
       }
-      if (currentEnvironment.current !== environmentId) return;
+      if (currentEnvironment() !== environmentId) return;
       if (reportWorkbenchCommandFailure(result, setError)) return;
       const next = snapshot?.projects.find(
         (workspace) =>
@@ -129,7 +127,7 @@ export function useWorkbenchWorkspaceActions({
           replace: true,
         });
       } catch (cause) {
-        if (currentEnvironment.current === environmentId) {
+        if (currentEnvironment() === environmentId) {
           const detail = cause instanceof Error ? ` ${cause.message}` : "";
           setError(`Workspace deleted, but Workbench could not open another Workspace.${detail}`);
         }

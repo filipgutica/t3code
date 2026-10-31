@@ -139,8 +139,9 @@ function UpdateAction() {
   const updates = useUpdateEverything("0.0.25");
   return (
     <button
-      data-skipped={updates.skipped
-        .map((machine) => `${machine.label}: ${machine.reason}`)
+      data-skipped={updates.rows
+        .filter((machine) => machine.skipped !== null)
+        .map((machine) => `${machine.label}: ${machine.skipped}`)
         .join("; ")}
       onClick={() => updates.run({ installLocal: state.installLocal })}
     >

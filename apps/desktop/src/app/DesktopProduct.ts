@@ -1,7 +1,7 @@
 import type { DesktopUpdateChannel } from "@t3tools/contracts";
 import type { codexAuthHandoffUrl } from "@t3tools/shared/codexAuthHandoff";
 import type { ElectronUpdaterFeedUrl } from "../electron/ElectronUpdater.ts";
-import { resolveDefaultDesktopUpdateChannel } from "../updates/updateChannels.ts";
+import { desktopUpdateChannelOf } from "@t3tools/shared/cliRelease";
 import { selectWorkbenchDesktopProduct } from "../workbench/desktopProduct.ts";
 
 export interface DesktopProductIdentity {
@@ -29,6 +29,7 @@ export interface DesktopProduct {
   readonly updates: {
     readonly feed: ElectronUpdaterFeedUrl | null;
     readonly disabledReason: (platform: NodeJS.Platform) => string | null;
+    readonly trackSwitchDisabledReason: string | null;
     readonly isVersionForChannel: (version: string, channel: DesktopUpdateChannel) => boolean;
     readonly releaseNotesChannel: (
       version: string,
@@ -70,8 +71,9 @@ const nativeProduct: DesktopProduct = Object.freeze({
   updates: Object.freeze({
     feed: null,
     disabledReason: () => null,
+    trackSwitchDisabledReason: null,
     isVersionForChannel: (version: string, channel: DesktopUpdateChannel) =>
-      resolveDefaultDesktopUpdateChannel(version) === channel,
+      desktopUpdateChannelOf(version) === channel,
     releaseNotesChannel: (_version: string, channel: DesktopUpdateChannel) => channel,
   }),
 });

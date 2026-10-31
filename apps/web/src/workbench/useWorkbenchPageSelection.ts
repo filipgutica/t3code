@@ -11,6 +11,44 @@ import { useNavigate } from "@tanstack/react-router";
 import type { WorkbenchSearch } from "./workbenchSearch";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 
+type WorkbenchSelectionIds = {
+  readonly projectId: WorkbenchProjectId | null;
+  readonly ticketId: WorkbenchTicketId | null;
+  readonly epicId: WorkbenchEpicId | null;
+};
+
+function workbenchRouteSelection(
+  projectId: WorkbenchProjectId | undefined,
+  ticketId: WorkbenchTicketId | undefined,
+  epicId: WorkbenchEpicId | undefined,
+): WorkbenchSelectionIds {
+  return { projectId: projectId ?? null, ticketId: ticketId ?? null, epicId: epicId ?? null };
+}
+
+function sameWorkbenchSelection(left: WorkbenchSelectionIds, right: WorkbenchSelectionIds) {
+  return (
+    left.projectId === right.projectId &&
+    left.ticketId === right.ticketId &&
+    left.epicId === right.epicId
+  );
+}
+
+function projectedWorkbenchCreationWaits(
+  snapshot: WorkbenchSnapshot | null,
+  awaiting: WorkbenchSelectionIds,
+) {
+  return {
+    project:
+      awaiting.projectId !== null &&
+      snapshot?.projects.some((project) => project.id === awaiting.projectId),
+    ticket:
+      awaiting.ticketId !== null &&
+      (snapshot?.tickets.some((ticket) => ticket.id === awaiting.ticketId) ||
+        snapshot?.ticketDrafts?.some((draft) => draft.id === awaiting.ticketId)),
+    epic: awaiting.epicId !== null && snapshot?.epics.some((epic) => epic.id === awaiting.epicId),
+  };
+}
+
 function isAwaitingRecord({
   awaitingId,
   selectedId,
@@ -49,18 +87,39 @@ export function useWorkbenchPageSelection({
   readonly excludedProjectIds?: ReadonlySet<WorkbenchProjectId>;
 }) {
   const navigate = useNavigate({ from: "/workbench" });
+  const routeSelection = workbenchRouteSelection(initialProjectId, initialTicketId, initialEpicId);
   const [selectedProjectId, setSelectedProjectId] = useState<WorkbenchProjectId | null>(
-    initialProjectId ?? null,
+    routeSelection.projectId,
   );
   const [selectedTicketId, setSelectedTicketId] = useState<WorkbenchTicketId | null>(
-    initialTicketId ?? null,
+    routeSelection.ticketId,
   );
   const [selectedEpicId, setSelectedEpicId] = useState<WorkbenchEpicId | null>(
-    initialEpicId ?? null,
+    routeSelection.epicId,
   );
   const [awaitingProjectId, setAwaitingProjectId] = useState<WorkbenchProjectId | null>(null);
   const [awaitingTicketId, setAwaitingTicketId] = useState<WorkbenchTicketId | null>(null);
   const [awaitingEpicId, setAwaitingEpicId] = useState<WorkbenchEpicId | null>(null);
+  const [previousRouteSelection, setPreviousRouteSelection] = useState(routeSelection);
+  if (!sameWorkbenchSelection(previousRouteSelection, routeSelection)) {
+    setPreviousRouteSelection(routeSelection);
+    setSelectedProjectId(routeSelection.projectId);
+    setSelectedTicketId(routeSelection.ticketId);
+    setSelectedEpicId(routeSelection.epicId);
+  }
+  const projectedCreationWaits = projectedWorkbenchCreationWaits(snapshot, {
+    projectId: awaitingProjectId,
+    ticketId: awaitingTicketId,
+    epicId: awaitingEpicId,
+  });
+  if (projectedCreationWaits.project) setAwaitingProjectId(null);
+  if (projectedCreationWaits.ticket) setAwaitingTicketId(null);
+  if (projectedCreationWaits.epic) setAwaitingEpicId(null);
+  const selectedRouteMatches = sameWorkbenchSelection(routeSelection, {
+    projectId: selectedProjectId,
+    ticketId: selectedTicketId,
+    epicId: selectedEpicId,
+  });
   const { awaitingSelectedProject, selectedProject, selectedEpic, selectedTicket } =
     resolveWorkbenchSelectedRecords({
       snapshot,
@@ -104,37 +163,11 @@ export function useWorkbenchPageSelection({
     if (selectedProject) void updateRouteSelection(selectedProject.id);
   };
 
-  useEffect(() => {
-    // Route search is an external selection source and can change through browser history.
-    // oxlint-disable-next-line react/set-state-in-effect
-    setSelectedProjectId(initialProjectId ?? null);
-    setSelectedTicketId(initialTicketId ?? null);
-    setSelectedEpicId(initialEpicId ?? null);
-  }, [initialEpicId, initialProjectId, initialTicketId]);
-
-  useEffect(() => {
-    // Creation markers only protect the gap before the server snapshot contains the record.
-    if (snapshot?.projects.some((project) => project.id === awaitingProjectId)) {
-      // oxlint-disable-next-line react/set-state-in-effect -- A server snapshot ends the creation wait.
-      setAwaitingProjectId(null);
-    }
-    if (
-      snapshot?.tickets.some((ticket) => ticket.id === awaitingTicketId) ||
-      snapshot?.ticketDrafts?.some((draft) => draft.id === awaitingTicketId)
-    )
-      setAwaitingTicketId(null);
-    if (snapshot?.epics.some((epic) => epic.id === awaitingEpicId)) setAwaitingEpicId(null);
-  }, [snapshot, awaitingProjectId, awaitingTicketId, awaitingEpicId]);
-
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- normalizes the external router after authoritative records disappear, while preserving pending creation routes
   useEffect(() => {
     if (snapshot === null) return;
     // Let a new route selection reach local state before normalizing missing records.
-    if (
-      selectedProjectId !== (initialProjectId ?? null) ||
-      selectedTicketId !== (initialTicketId ?? null) ||
-      selectedEpicId !== (initialEpicId ?? null)
-    )
-      return;
+    if (!selectedRouteMatches) return;
     if (
       isAwaitingRecord({
         awaitingId: awaitingProjectId,
@@ -198,9 +231,7 @@ export function useWorkbenchPageSelection({
     selectedTicket,
     selectedTicketId,
     snapshot,
-    initialProjectId,
-    initialTicketId,
-    initialEpicId,
+    selectedRouteMatches,
   ]);
 
   const openWorkspaceDialog = () => {

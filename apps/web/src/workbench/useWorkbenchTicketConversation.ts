@@ -35,7 +35,7 @@ export function useRefreshOnThreadActivity(
   const itemCount = useThreadShell(threadRef)?.itemCount;
   const seen = useRef(itemCount);
   const refresh = useStableCallback(refreshSnapshot);
-  // oxlint-disable-next-line t3code/react-effect-budget -- syncs the snapshot with the live Thread
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- owns the debounced snapshot refresh timer for changes arriving from the mounted native Thread
   useEffect(() => {
     if (itemCount === undefined || itemCount === seen.current) return;
     seen.current = itemCount;
@@ -106,6 +106,7 @@ export function useTicketDraftBegin({
   const [state, setState] = useState<BeginState>({ status: "idle" });
   const scope = `${environmentId}:${workspaceId}:${requestedDraftId ?? "new"}`;
   const scopeRef = useRef<string | null>(scope);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- invalidates the in-flight planning request's committed scope when its route changes or unmounts
   useEffect(() => {
     scopeRef.current = scope;
     return () => {
@@ -164,6 +165,7 @@ export function useTicketDraftBegin({
   const needsBegin =
     enabled && (draft === null ? modelSelection !== null : draft.phase === "creating");
   const beginScope = `${scope}:${draft?.id ?? "new"}`;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts or recovers the server planning resource requested by the mounted route, including direct links and reloads without a click handler
   useEffect(() => {
     if (!needsBegin || startedScopeRef.current === beginScope) return;
     startedScopeRef.current = beginScope;
@@ -250,10 +252,12 @@ export function useTicketDraftEditor({
     void flush();
   };
 
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- offers native snapshot revisions to the mounted imperative editor's serialized save/conflict controller
   useEffect(() => {
     sync.adopt(draft);
   }, [draft, sync]);
   // Leaving the page by any route still saves the last edits; the command outlives the component.
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- releases the editor's debounce timer and flushes pending edits when its route unmounts
   useEffect(
     () => () => {
       clearTimer();

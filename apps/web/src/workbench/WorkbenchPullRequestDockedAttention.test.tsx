@@ -1,4 +1,3 @@
-import { useStableCallback } from "../hooks/useStableCallback";
 import { makeThreadFixture } from "../test-fixtures";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
@@ -13,7 +12,9 @@ import {
   type PullRequestReviewThread,
   type WorkbenchSnapshot,
 } from "@t3tools/contracts";
-import { act, useEffect, useState } from "react";
+import { act } from "react";
+import { RegistryContext } from "@effect/atom-react";
+import { createAttentionNativeFixture } from "./workbenchAttention.testkit";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { expect, it, vi } from "vite-plus/test";
 
@@ -24,11 +25,7 @@ import {
   WorkbenchPullRequestPreviewProvider,
 } from "./WorkbenchPullRequestPreview";
 
-const native = vi.hoisted(() => ({
-  active: new Set<string>(),
-  summary: { state: "open", checksState: "passing", reviewDecision: "approved" },
-  reviewThreads: [] as PullRequestReviewThread[],
-}));
+let native: ReturnType<typeof createAttentionNativeFixture>;
 const environmentId = EnvironmentId.make("local");
 const projectId = ProjectId.make("repo");
 const threadId = ThreadId.make("reading");
@@ -124,42 +121,23 @@ vi.mock("@tanstack/react-router", () => ({
 vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
 vi.mock("./state", () => ({
-  workbenchEnvironment: { snapshot: () => ({ kind: "snapshot" }), pullRequestViewer: () => null },
+  workbenchEnvironment: {
+    snapshot: () => ({ kind: "snapshot" }),
+    pullRequestViewer: (target: Parameters<typeof native.viewerQuery>[0]) =>
+      native.viewerQuery(target),
+  },
 }));
 vi.mock("../state/pullRequests", () => ({
-  linkedPullRequestDetailAtom: () => ({ kind: "summary" }),
-  pullRequestEnvironment: { activity: () => ({ kind: "activity" }) },
-  // Native summary reads record their answers in the shared summary.
-  useSharedPullRequestSummary: () => native.summary,
+  linkedPullRequestDetailAtom: (target: Parameters<typeof native.summaryQuery>[0]) =>
+    native.summaryQuery(target),
+  pullRequestEnvironment: {
+    activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+  },
+  sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
+    native.sharedSummary(...args),
 }));
 vi.mock("../state/query", () => ({
-  useEnvironmentQuery: (target: { kind: string } | null) => {
-    if (!target || target.kind === "snapshot") return { data: target ? snapshot : null };
-    const { kind } = target;
-    const read = () => ({
-      data:
-        kind === "summary"
-          ? native.summary
-          : { reviewThreads: native.reviewThreads, commentsTruncated: false },
-      resultIdentity: {},
-    });
-    const [result, setResult] = useState(read);
-    const refresh = useStableCallback(() => setResult(read()));
-    useEffect(() => {
-      native.active.add(kind);
-      return () => {
-        native.active.delete(kind);
-      };
-    }, [kind]);
-    return {
-      ...result,
-      dataUpdatedAt: 1,
-      error: null,
-      isPending: false,
-      isSuccess: true,
-      refresh,
-    };
-  },
+  useEnvironmentQuery: (target: { kind: string } | null) => ({ data: target ? snapshot : null }),
 }));
 
 function TicketAttention() {
@@ -180,8 +158,8 @@ function TicketAttention() {
 
 it("clears resolved discussion attention after closing the docked PR without a metadata change", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  native.active.clear();
-  native.reviewThreads = [
+  native = createAttentionNativeFixture();
+  const reviewThreads: PullRequestReviewThread[] = [
     {
       id: "review-discussion",
       path: "src/invitations.ts",
@@ -192,14 +170,37 @@ it("clears resolved discussion attention after closing the docked PR without a m
       comments: [],
     },
   ];
+  const target = {
+    environmentId,
+    input: {
+      projectId,
+      repository: reference.repository,
+      number: reference.number,
+      host: "github.com",
+    },
+  };
+  const input = {
+    reference,
+    summary: {
+      state: "open" as const,
+      checksState: "passing" as const,
+      reviewDecision: "approved" as const,
+    },
+    activity: { reviewThreads, commentsTruncated: false },
+    loading: false,
+    error: false,
+  };
+  native.stage(target, input);
   const threadRef = scopeThreadRef(environmentId, threadId);
   let renderer: ReactTestRenderer | undefined;
   try {
     await act(() => {
       renderer = create(
-        <WorkbenchPullRequestPreviewProvider>
-          <TicketAttention />
-        </WorkbenchPullRequestPreviewProvider>,
+        <RegistryContext.Provider value={native.registry}>
+          <WorkbenchPullRequestPreviewProvider>
+            <TicketAttention />
+          </WorkbenchPullRequestPreviewProvider>
+        </RegistryContext.Provider>,
       );
     });
     expect(renderer?.root.findByProps({ "aria-label": "Unresolved discussions" }).children).toEqual(
@@ -213,11 +214,26 @@ it("clears resolved discussion attention after closing the docked PR without a m
     expect(
       selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, threadRef),
     ).toMatchObject({ kind: "pull-request", number: 7 });
-    native.reviewThreads = native.reviewThreads.map((thread) => ({ ...thread, isResolved: true }));
+    native.stage(target, {
+      ...input,
+      activity: {
+        commentsTruncated: false,
+        reviewThreads: reviewThreads.map((thread) => ({ ...thread, isResolved: true })),
+      },
+    });
     expect(renderer?.root.findByProps({ "aria-label": "Unresolved discussions" }).children).toEqual(
       ["1"],
     );
     await act(() => useRightPanelStore.getState().close(threadRef));
+    await act(async () =>
+      native.publish(target, {
+        ...input,
+        activity: {
+          commentsTruncated: false,
+          reviewThreads: reviewThreads.map((thread) => ({ ...thread, isResolved: true })),
+        },
+      }),
+    );
     expect(renderer?.root.findByProps({ "aria-label": "Unresolved discussions" }).children).toEqual(
       ["0"],
     );
@@ -227,6 +243,7 @@ it("clears resolved discussion attention after closing the docked PR without a m
     expect(native.active.size).toBe(0);
   } finally {
     await act(() => renderer?.unmount());
+    native.registry.dispose();
     useRightPanelStore.setState({ byThreadKey: {} });
     vi.unstubAllGlobals();
   }

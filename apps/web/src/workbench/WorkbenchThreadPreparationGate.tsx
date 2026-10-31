@@ -27,6 +27,7 @@ export function WorkbenchThreadPreparationGate({
       : query.data?.find((item) => item.threadId === threadRef.threadId);
   const navigate = useNavigate();
   const environmentId = threadRef?.environmentId;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- redirects the external router when a directly opened native Thread belongs to an unfinished Workbench preparation
   useEffect(() => {
     if (!preparation || environmentId === undefined) return;
     const ticketId = preparation.ticketId ?? preparation.draftId;

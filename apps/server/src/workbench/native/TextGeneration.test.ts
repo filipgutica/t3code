@@ -14,6 +14,7 @@ import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegist
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
 import * as SourceControlProviderRegistry from "../../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
+import { ServerSettingsService } from "../../serverSettings.ts";
 
 const makeStubTextGeneration = (
   overrides: Partial<TextGeneration.TextGeneration["Service"]>,
@@ -83,9 +84,12 @@ describe("TextGeneration.make", () => {
           makeStubRegistry([instance]),
         ),
         Effect.provide(
-          Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
-            resolveLink: () => Effect.die("No link lookup expected"),
-          }),
+          Layer.mergeAll(
+            Layer.mock(SourceControlProviderRegistry.SourceControlProviderRegistry)({
+              resolveLink: () => Effect.die("No link lookup expected"),
+            }),
+            Layer.mock(ServerSettingsService)({}),
+          ),
         ),
       );
 

@@ -77,6 +77,7 @@ export function useWorkbenchOmittedThreads(
     environmentId === null ? NO_OMITTED_THREADS : omittedThreadIdsAtom(assignedKey),
   );
   const omittedKey = `[${JSON.stringify(environmentId)},${omittedThreadIds}]`;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds native Thread-family subscriptions for assigned records omitted from the shell and releases every lease on unmount
   useEffect(() => {
     const [mountedEnvironmentId, threadIds] = JSON.parse(omittedKey) as [
       EnvironmentId | null,

@@ -1,7 +1,8 @@
 import { useAtomRefresh, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId, WorkbenchTicketId } from "@t3tools/contracts";
-import { useLayoutEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
+import { useStableCallback } from "../hooks/useStableCallback";
 import { useAtomCommand } from "../state/use-atom-command";
 import { failureMessage } from "./workbenchPageCommands";
 import { workbenchEnvironment } from "./state";
@@ -20,11 +21,16 @@ export function useWorkbenchDraftActions({
   readOnly,
   readOnlyDraftIds,
   drafts,
+  onDiscarded,
 }: {
   readonly environmentId: EnvironmentId;
   readonly readOnly?: boolean;
   readonly readOnlyDraftIds?: ReadonlySet<WorkbenchTicketId>;
   readonly drafts: ReadonlyArray<WorkbenchConversationDraft>;
+  readonly onDiscarded?: (
+    drafts: ReadonlyArray<WorkbenchConversationDraft>,
+    environmentId: EnvironmentId,
+  ) => void;
 }) {
   const permission = useAtomValue(
     workbenchEnvironment.discardTicketDraftInBatch.permissionAtom(environmentId),
@@ -33,10 +39,11 @@ export function useWorkbenchDraftActions({
     reportFailure: false,
   });
   const canMutate = !readOnly && permission;
-  const eligibility = useRef({ canMutate, readOnlyDraftIds });
-  useLayoutEffect(() => {
-    eligibility.current = { canMutate, readOnlyDraftIds };
-  }, [canMutate, readOnlyDraftIds]);
+  const currentEligibility = useStableCallback(() => ({ canMutate, readOnlyDraftIds }));
+  const reportDiscarded = useStableCallback(
+    (discarded: ReadonlyArray<WorkbenchConversationDraft>, owner: EnvironmentId) =>
+      onDiscarded?.(discarded, owner),
+  );
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<WorkbenchTicketId>>(new Set());
   const [confirmation, setConfirmation] = useState<{
     environmentId: EnvironmentId;
@@ -85,9 +92,11 @@ export function useWorkbenchDraftActions({
     const failed: WorkbenchConversationDraft[] = [];
     const messages: string[] = [];
     let attempted = false;
+    let succeeded = false;
     await (async () => {
       for (const draft of confirmation.drafts) {
-        if (!eligibility.current.canMutate || eligibility.current.readOnlyDraftIds?.has(draft.id)) {
+        const eligibility = currentEligibility();
+        if (!eligibility.canMutate || eligibility.readOnlyDraftIds?.has(draft.id)) {
           failed.push(draft);
           messages.push("This workspace is read-only or your permission changed.");
           continue;
@@ -111,7 +120,8 @@ export function useWorkbenchDraftActions({
         for (const draft of failed) next.add(draft.id);
         return next;
       });
-      setDiscardSucceeded(failed.length === 0);
+      succeeded = failed.length === 0;
+      setDiscardSucceeded(succeeded);
       if (failed.length > 0) {
         const removed = confirmation.drafts.length - failed.length;
         setError(
@@ -126,6 +136,7 @@ export function useWorkbenchDraftActions({
       running.current = false;
       setBusy(false);
     });
+    if (succeeded) reportDiscarded(confirmation.drafts, confirmation.environmentId);
     return false;
   };
   return {

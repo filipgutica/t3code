@@ -86,13 +86,15 @@ function Harness({
   drafts = defaultDrafts,
   readOnlyDraftIds = noReadOnlyDrafts,
   selectedTicketId = draft.id,
+  environment = environmentId,
 }: {
   drafts?: ReadonlyArray<WorkbenchSidebarDraft>;
   readOnlyDraftIds?: ReadonlySet<WorkbenchTicketId>;
   selectedTicketId?: WorkbenchTicketId;
+  environment?: EnvironmentId;
 }) {
   const result = useWorkbenchSidebarDrafts({
-    environmentId,
+    environmentId: environment,
     drafts,
     writableWorkspaceIds: readOnlyDraftIds.has(draft.id) ? new Set() : new Set([workspaceId]),
     selectedWorkspaceId: workspaceId,
@@ -212,6 +214,50 @@ it("leaves a newly selected ticket open when a different draft finishes discardi
     ticketId: other,
   });
 });
+
+it.each(["unmount", "environment switch"] as const)(
+  "does not navigate back after %s while a draft discard is pending",
+  async (departure) => {
+    let finish!: (result: { _tag: "Success"; value: undefined }) => void;
+    mocks.discard.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    await act(async () => {
+      await request();
+    });
+    let pending!: Promise<boolean>;
+    act(() => {
+      pending = menu.actions.discard();
+    });
+    await act(async () => {
+      if (departure === "unmount") renderer.unmount();
+      else renderer.update(<Harness environment={EnvironmentId.make("other-host")} />);
+      await router.navigate({
+        to: "/workbench",
+        search: {
+          workbenchProjectId: WorkbenchProjectId.make("other-workspace"),
+          ticketId: WorkbenchTicketId.make("other-ticket"),
+        },
+      });
+    });
+    await act(async () => {
+      finish({ _tag: "Success", value: undefined });
+      await pending;
+      await router.load();
+    });
+    expect(router.state.location.search).toEqual({
+      workbenchProjectId: "other-workspace",
+      ticketId: "other-ticket",
+    });
+    expect(mocks.discard).toHaveBeenCalledExactlyOnceWith({
+      environmentId,
+      input: { id: draft.id, expectedRevision: 4 },
+    });
+  },
+);
 
 it("dismisses pending draft menus and ignores late choices after the workspace becomes read-only", async () => {
   let choose!: (value: string) => void;
