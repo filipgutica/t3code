@@ -144,7 +144,6 @@ function AttentionItems({
       void navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId },
-        search: { workbench: true },
       });
   };
   const openSignal = (signal: WorkbenchAttentionSignal) => {

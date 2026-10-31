@@ -156,10 +156,14 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     page,
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-008"),
   );
-  await page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }).click();
-  await expect(
-    page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }),
-  ).not.toBeVisible();
+  const settleThread = page.getByRole("button", {
+    name: `Settle Thread ${thread.title}`,
+    exact: true,
+  });
+  // Unlink sits in the row's right-click menu, as on native sidebar rows.
+  await settleThread.click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Unlink from Ticket", exact: true }).click();
+  await expect(settleThread).not.toBeVisible();
   expect(
     (await snapshot(demo)).assignments.some((candidate) => candidate.threadId === thread.id),
   ).toBe(false);
@@ -190,7 +194,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   await dialog.getByRole("button", { name: /Link Thread/i, exact: true }).click();
   await expect(dialog).not.toBeVisible();
   await expect(page).toHaveURL(
-    (url) => url.pathname.endsWith(`/${thread.id}`) && url.searchParams.get("workbench") === "true",
+    (url) => url.pathname.endsWith(`/${thread.id}`) && url.searchParams.get("workbench") === null,
   );
   await page
     .getByRole("link", {
@@ -198,9 +202,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
       exact: true,
     })
     .click();
-  await expect(
-    page.getByRole("button", { name: `Unlink Thread ${thread.title}`, exact: true }),
-  ).toBeVisible();
+  await expect(settleThread).toBeVisible();
   expect(
     (await snapshot(demo)).assignments.find((candidate) => candidate.threadId === thread.id)
       ?.ticketId,

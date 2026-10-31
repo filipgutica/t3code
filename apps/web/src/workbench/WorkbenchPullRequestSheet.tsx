@@ -79,7 +79,6 @@ export function WorkbenchPullRequestSheet({
                       environmentId: selection.environmentId,
                       threadId: linkedThread.threadId,
                     },
-                    search: { workbench: true },
                   });
               }}
             >

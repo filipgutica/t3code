@@ -102,6 +102,7 @@ const thread = (
 ): WorkbenchFloatingChatThread => ({
   threadId: ThreadId.make(id),
   title: `Thread ${id}`,
+  unread: false,
   status:
     kind === null
       ? null
@@ -180,7 +181,7 @@ it("switches Threads from the picker without moving focus into the composer", as
   await expect.element(screen.getByLabelText("Composer for a")).not.toHaveFocus();
 });
 
-it("opens on the first other Thread waiting on the user, above the idle and working ones", async () => {
+it("opens on the first other Thread waiting on the user, above the working ones", async () => {
   setup();
   await using screen = await render(
     <Harness
@@ -200,9 +201,9 @@ it("opens on the first other Thread waiting on the user, above the idle and work
   await userEvent.click(pill);
 
   await expect.element(screen.getByRole("menuitemradio", { name: /Thread c/ })).toHaveFocus();
-  const idle = screen.getByRole("menuitem", { name: "Idle and working, 1 Thread, 1 working" });
-  await expect.element(idle).toHaveAttribute("aria-expanded", "false");
-  await userEvent.click(idle);
+  const working = screen.getByRole("menuitem", { name: "Working, 1 Thread" });
+  await expect.element(working).toHaveAttribute("aria-expanded", "false");
+  await userEvent.click(working);
   await expect.element(screen.getByText("Added the board chat picker.")).toBeVisible();
 });
 
@@ -229,7 +230,7 @@ it("opens a collapsed section to focus its waiting Thread from the pill", async 
     />,
   );
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
-  const attention = screen.getByRole("menuitem", { name: "Needs attention, 1 Thread" });
+  const attention = screen.getByRole("menuitem", { name: "Unread, 1 Thread" });
   await userEvent.click(attention);
   await expect.element(attention).toHaveAttribute("aria-expanded", "false");
   await userEvent.keyboard("{Escape}");
@@ -261,7 +262,7 @@ it("scrolls to the showing Thread whenever the menu opens, even after its sectio
   await userEvent.click(menu);
   await expect.element(showing).toBeInViewport();
 
-  await userEvent.click(screen.getByRole("menuitem", { name: "Idle and working, 20 Threads" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Idle, 20 Threads" }));
   await expect.element(showing).not.toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   await userEvent.click(menu);
@@ -308,7 +309,7 @@ it("collapses a section in search results, and forgets it with the search", asyn
   await using screen = await render(<Harness kind="board" threads={threads} />);
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads/ }));
   await userEvent.type(screen.getByRole("textbox", { name: "Search Threads" }), "Thread");
-  const group = screen.getByRole("menuitem", { name: "Idle and working, 8 Threads" });
+  const group = screen.getByRole("menuitem", { name: "Idle, 8 Threads" });
   await expect.element(group).toHaveAttribute("aria-expanded", "true");
 
   await userEvent.click(group);

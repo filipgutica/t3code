@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toastManager } from "../components/ui/toast";
 import { useThreadHasUnsentDraft } from "../composerDraftStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useUiStateStore } from "../uiStateStore";
 import { randomUUID } from "../lib/utils";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
@@ -196,6 +197,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       showThread(threadId);
     },
   });
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const threads = getWorkbenchBoardChatThreads({
     projectId,
     tickets: props.tickets,
@@ -205,6 +207,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     archivedThreadsById: props.archivedThreadsById,
     recaps: useWorkbenchThreadRecaps(environmentId),
     referencesByTicket: props.referencesByTicket,
+    localVisits,
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,

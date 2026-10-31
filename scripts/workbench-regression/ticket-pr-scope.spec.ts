@@ -309,7 +309,7 @@ test("ticket PR References show without changing Ticket scope", async ({
   await page.screenshot({ path: testInfo.outputPath("ticket-metadata-narrow.png") });
   await threadBadge.click();
   await expect(page).toHaveURL(
-    (url) => url.pathname.includes(threadId) && url.searchParams.get("workbench") === "true",
+    (url) => url.pathname.includes(threadId) && url.searchParams.get("workbench") === null,
   );
   // Showing the PR must not add its repository to the Ticket's saved preparation scope.
   expect((await snapshot(demo)).tickets.find((candidate) => candidate.id === ticket.id)).toEqual(

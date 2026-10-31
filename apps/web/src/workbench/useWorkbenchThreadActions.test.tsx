@@ -375,7 +375,7 @@ describe("linked Thread failure recovery", () => {
     expect(error).toBeNull();
     expect(pending).toBeNull();
     expect(router.state.location.pathname).toBe("/remote/linked-thread");
-    expect(router.state.location.search).toEqual({ workbench: true });
+    expect(router.state.location.search).toEqual({});
     expect(commands.createThread).not.toHaveBeenCalled();
   });
 
@@ -478,7 +478,7 @@ describe("Thread repository review", () => {
     });
     await act(async () => actions.requestTicketThread(ticket, assignment.threadId));
     expect(router.state.location.pathname).toBe("/remote/linked-thread");
-    expect(router.state.location.search).toEqual({ workbench: true });
+    expect(router.state.location.search).toEqual({});
     expect(actions.startThreadRequest).toBeNull();
     expect(error).toBeNull();
     expect(pending).toBeNull();

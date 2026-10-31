@@ -143,7 +143,6 @@ export function useWorkbenchThreadActions({
               navigate({
                 to: "/$environmentId/$threadId",
                 params: { environmentId, threadId },
-                search: { workbench: true },
               }),
           },
         );

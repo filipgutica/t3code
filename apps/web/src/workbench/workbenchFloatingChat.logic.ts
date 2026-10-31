@@ -18,6 +18,7 @@ import {
 import { getConversationDraftTitle } from "./workbenchTicketDraft.logic";
 import {
   getWorkbenchThreadExecutionStatus,
+  hasWorkbenchUnreadReply,
   type WorkbenchThreadExecutionStatus,
 } from "./workbenchThreadStatus.logic";
 
@@ -33,6 +34,8 @@ export interface WorkbenchFloatingChatThread {
   readonly threadId: ThreadId;
   readonly title: string;
   readonly status: WorkbenchThreadExecutionStatus | null;
+  /** A finished reply the user has not opened. */
+  readonly unread: boolean;
   /** Null for a ticket draft that has no ticket yet. */
   readonly ticket: WorkbenchFloatingChatTicket | null;
   /** A generated summary of the Thread's latest finished run. */
@@ -55,6 +58,7 @@ export const getWorkbenchBoardChatThreads = ({
   archivedThreadsById,
   recaps,
   referencesByTicket,
+  localVisits,
 }: {
   readonly projectId: WorkbenchProjectId;
   /** Tickets in board order, before any board search or status filtering. */
@@ -65,6 +69,7 @@ export const getWorkbenchBoardChatThreads = ({
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly recaps: ReadonlyMap<ThreadId, string>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
+  readonly localVisits: Readonly<Record<string, string>>;
 }) => {
   const boardTickets = tickets.filter((ticket) => ticket.projectId === projectId);
   const ticketsById = new Map(boardTickets.map((ticket) => [ticket.id, ticket]));
@@ -86,6 +91,7 @@ export const getWorkbenchBoardChatThreads = ({
       threadId,
       title: title(thread),
       status: getWorkbenchThreadExecutionStatus(thread),
+      unread: hasWorkbenchUnreadReply(thread, localVisits),
       ticket: ticket
         ? {
             id: ticket.id,
@@ -164,20 +170,38 @@ export function resolveWorkbenchFloatingChat({
   };
 }
 
-type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status">;
+type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status" | "unread">;
+
+type WorkbenchThreadSectionId = "unread" | "idle" | "working" | "settled";
+
+// Like an inbox: anything that needs the user is unread until they act on it.
+const SECTION_BY_STATUS = {
+  approval: "unread",
+  input: "unread",
+  request: "unread",
+  failed: "unread",
+  limited: "unread",
+  working: "working",
+  waiting: "working",
+} as const satisfies Record<WorkbenchThreadExecutionStatus["kind"], WorkbenchThreadSectionId>;
+
+const SECTION_LABELS = {
+  unread: "Unread",
+  idle: "Idle",
+  working: "Working",
+  settled: "Settled",
+} as const satisfies Record<WorkbenchThreadSectionId, string>;
 
 export interface WorkbenchThreadStatusSection<Thread extends WorkbenchStatusThread> {
-  readonly id: "attention" | "idle" | "settled";
+  readonly id: WorkbenchThreadSectionId;
   readonly label: string;
   readonly threads: ReadonlyArray<Thread>;
-  /** Working Threads among the idle ones, so a collapsed section still shows activity. */
-  readonly workingCount: number;
   readonly openByDefault: boolean;
 }
 
 /**
- * Threads by what they need from the user: waiting on them, then idle or working, then settled.
- * Needs attention starts open, as does the section holding the showing Thread; empty ones drop.
+ * Threads as an inbox: unread replies and requests, then idle, working, and settled Threads.
+ * Unread and Idle start open, as does the section holding the showing Thread; empty ones drop.
  */
 export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusThread>({
   active,
@@ -188,26 +212,25 @@ export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusT
   readonly settled: ReadonlyArray<Thread>;
   readonly showingThreadId: ThreadId | null;
 }): ReadonlyArray<WorkbenchThreadStatusSection<Thread>> => {
-  const needsAttention = (thread: Thread) =>
-    thread.status !== null && WORKBENCH_ATTENTION_KINDS.has(thread.status.kind);
-  const idle = active.filter((thread) => !needsAttention(thread));
-  const sections = [
-    { id: "attention", label: "Needs attention", threads: active.filter(needsAttention) },
-    { id: "idle", label: "Idle and working", threads: idle },
-    { id: "settled", label: "Settled", threads: settled },
-  ] as const;
-  return sections
-    .filter((section) => section.threads.length > 0)
-    .map((section) => ({
-      ...section,
-      workingCount:
-        section.id === "idle"
-          ? idle.filter((thread) => thread.status?.kind === "working").length
-          : 0,
-      openByDefault:
-        section.id === "attention" ||
-        section.threads.some((thread) => thread.threadId === showingThreadId),
-    }));
+  const sectionOf = (thread: Thread): WorkbenchThreadSectionId =>
+    thread.status ? SECTION_BY_STATUS[thread.status.kind] : thread.unread ? "unread" : "idle";
+  const threadsIn = (id: WorkbenchThreadSectionId) =>
+    id === "settled" ? settled : active.filter((thread) => sectionOf(thread) === id);
+  return (["unread", "idle", "working", "settled"] as const).flatMap((id) => {
+    const threads = threadsIn(id);
+    if (threads.length === 0) return [];
+    return [
+      {
+        id,
+        label: SECTION_LABELS[id],
+        threads,
+        openByDefault:
+          id === "unread" ||
+          id === "idle" ||
+          threads.some((thread) => thread.threadId === showingThreadId),
+      },
+    ];
+  });
 };
 
 export interface WorkbenchFloatingChatPickerRow {

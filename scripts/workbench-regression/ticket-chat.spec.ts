@@ -58,7 +58,7 @@ test("C1: the ticket chat embeds the Thread view and continues terminal actions 
 
     await chat.getByRole("button", { name: "Run in terminal", exact: true }).click();
     await expect(page).toHaveURL(
-      (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
+      (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === null,
     );
     await expect.poll(() => NodeFS.existsSync(marker)).toBe(true);
   } finally {

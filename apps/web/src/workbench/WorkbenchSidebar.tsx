@@ -153,7 +153,6 @@ function useWorkbenchSidebarNavigation({
     void navigate({
       to: "/$environmentId/$threadId",
       params: { environmentId: thread.environmentId, threadId: thread.id },
-      search: { workbench: true },
     });
   };
   const leaveWorkbench = () => {

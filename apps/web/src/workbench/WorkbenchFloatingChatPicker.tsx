@@ -7,12 +7,11 @@ import {
   FilePenLineIcon,
   MessageSquareIcon,
 } from "lucide-react";
-import { useId, useRef, useState, type ReactElement, type ReactNode } from "react";
+import { useId, useRef, useState, type ReactNode } from "react";
 
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
 import { resolveThreadPullRequestBadgePresentation } from "../components/ThreadStatusIndicators";
 import { Badge } from "../components/ui/badge";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import {
   Menu,
   MenuGroup,
@@ -25,7 +24,7 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
-import { WorkbenchSidebarThreadPreview } from "./WorkbenchSidebarThreadPreview";
+import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import {
   filterWorkbenchFloatingChatThreads,
   getWorkbenchFloatingChatPickerRow,
@@ -48,47 +47,6 @@ type FloatingChat = ReturnType<typeof resolveWorkbenchFloatingChat>;
 
 // Fewer Threads than this fit without scrolling, so a filter would only add noise.
 const SEARCH_THRESHOLD = 8;
-
-/** The sidebar's hover preview beside a picker row. Its content, and data, mount only while shown. */
-function PickerRowPreview({
-  preview,
-  children,
-}: {
-  readonly preview: ReactNode;
-  readonly children: ReactElement;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={children} />
-      <TooltipPopup align="start" side="right" variant="glass" className="text-left">
-        {preview}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function PickerThreadPreview({
-  environmentId,
-  thread,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly thread: WorkbenchFloatingChatThread;
-}) {
-  const data = useWorkbenchSidebarThreadRowData({
-    thread: { environmentId },
-    threadRef: scopeThreadRef(environmentId, thread.threadId),
-  });
-  return (
-    <WorkbenchSidebarThreadPreview
-      thread={thread}
-      shell={data.shell}
-      project={data.project}
-      environment={data.environment}
-      providerEntry={data.providerEntry}
-      pullRequests={data.pullRequests}
-    />
-  );
-}
 
 function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatThread }) {
   return (
@@ -117,8 +75,10 @@ function PickerThreadItem({
   // Flex layout drops the spaces between these parts from the computed name.
   const name = [ticketLabel, title, status?.presentation.label].filter(Boolean).join(" ");
   return (
-    <PickerRowPreview
-      preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
+    <WorkbenchThreadHoverPreview
+      environmentId={environmentId}
+      threadId={thread.threadId}
+      title={thread.title}
     >
       <MenuRadioItem
         value={thread.threadId}
@@ -157,7 +117,7 @@ function PickerThreadItem({
           </span>
         </span>
       </MenuRadioItem>
-    </PickerRowPreview>
+    </WorkbenchThreadHoverPreview>
   );
 }
 
@@ -192,16 +152,18 @@ function PickerArchived({
       {open ? (
         <div className="ms-3.5 max-h-40 overflow-y-auto border-s border-muted-foreground/30 ps-2">
           {threads.map((thread) => (
-            <PickerRowPreview
+            <WorkbenchThreadHoverPreview
               key={thread.threadId}
-              preview={<PickerThreadPreview environmentId={environmentId} thread={thread} />}
+              environmentId={environmentId}
+              threadId={thread.threadId}
+              title={thread.title}
             >
               <MenuItem onClick={() => onRestore(thread.threadId)}>
                 <span className="truncate">
                   Restore and open {getWorkbenchFloatingChatThreadLabel(thread)}
                 </span>
               </MenuItem>
-            </PickerRowPreview>
+            </WorkbenchThreadHoverPreview>
           ))}
         </div>
       ) : null}
@@ -312,14 +274,11 @@ function PickerTriggerContent({
 function PickerSectionHeader({
   label,
   count,
-  hint,
   open,
   onToggle,
 }: {
   readonly label: string;
   readonly count: number;
-  /** Shown at the end of the heading, such as how many collapsed Threads are working. */
-  readonly hint: string | null;
   readonly open: boolean;
   readonly onToggle: () => void;
 }) {
@@ -327,9 +286,7 @@ function PickerSectionHeader({
     <MenuItem
       closeOnClick={false}
       aria-expanded={open}
-      aria-label={[label, `${count} ${count === 1 ? "Thread" : "Threads"}`, hint]
-        .filter(Boolean)
-        .join(", ")}
+      aria-label={`${label}, ${count} ${count === 1 ? "Thread" : "Threads"}`}
       onClick={onToggle}
     >
       <ChevronRightIcon
@@ -338,9 +295,6 @@ function PickerSectionHeader({
       />
       <span className="min-w-0 truncate text-xs font-medium">{label}</span>
       <span className="text-2xs text-muted-foreground tabular-nums">{count}</span>
-      {hint ? (
-        <span className="ms-auto shrink-0 text-2xs text-muted-foreground">{hint}</span>
-      ) : null}
     </MenuItem>
   );
 }
@@ -349,7 +303,6 @@ interface PickerSectionLayout {
   readonly id: string;
   readonly label: string;
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
-  readonly hint: string | null;
   readonly openByDefault: boolean;
 }
 
@@ -370,15 +323,9 @@ const getPickerSections = ({
     active: active.filter((thread) => !drafts.includes(thread)),
     settled,
     showingThreadId,
-  }).map((section) => ({
-    ...section,
-    hint: section.workingCount > 0 ? `${section.workingCount} working` : null,
-  }));
+  });
   return drafts.length > 0
-    ? [
-        { id: "drafts", label: "Drafts", threads: drafts, hint: null, openByDefault: true },
-        ...statusSections,
-      ]
+    ? [{ id: "drafts", label: "Drafts", threads: drafts, openByDefault: true }, ...statusSections]
     : statusSections;
 };
 
@@ -413,7 +360,6 @@ function PickerThreadSections({
             <PickerSectionHeader
               label={section.label}
               count={section.threads.length}
-              hint={section.hint}
               open={open}
               onToggle={() => onToggleGroup(section.id, !open)}
             />

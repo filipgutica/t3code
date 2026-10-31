@@ -78,7 +78,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   expect(complete.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
   await chat.getByRole("button", { name: "Open full Thread", exact: true }).click();
   await expect(page).toHaveURL(
-    (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === "true",
+    (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === null,
   );
   const workspaceBreadcrumb = page.getByRole("link", {
     name: "Back to Workspace Orbit Board",
@@ -96,8 +96,11 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await expect(ticketBreadcrumb).toBeVisible();
   await page.setViewportSize({ width: 1600, height: 900 });
   await expect(workspaceBreadcrumb).toBeVisible();
+  // The full Thread is the native page, so the regular sidebar replaces the Workbench one.
+  await expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toHaveCount(
+    0,
+  );
   await page.reload();
-  await waitForWorkbench(page);
   await expect(workspaceBreadcrumb).toBeVisible();
   await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
   await expect(

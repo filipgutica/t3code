@@ -1,7 +1,12 @@
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { resolveThreadWorkingStartedAt } from "@t3tools/client-runtime/state/models";
 import type { EnvironmentId, WorkbenchAssignment, WorkbenchTicketId } from "@t3tools/contracts";
-import { resolveSidebarThreadStatus } from "../components/Sidebar.logic";
+import {
+  hasUnseenCompletion,
+  resolveSidebarThreadStatus,
+  resolveThreadLastVisitedAt,
+} from "../components/Sidebar.logic";
 import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
 
 type ExecutionThread = Pick<
@@ -32,6 +37,22 @@ export function getWorkbenchThreadExecutionStatus(thread: ExecutionThread) {
 export type WorkbenchThreadExecutionStatus = NonNullable<
   ReturnType<typeof getWorkbenchThreadExecutionStatus>
 >;
+
+/**
+ * A finished reply the user has not opened, by the native sidebar's rule. `localVisits` is the
+ * UI store's visit watermarks, which lead the server's until it records the visit.
+ */
+export function hasWorkbenchUnreadReply(
+  thread: EnvironmentThreadShell,
+  localVisits: Readonly<Record<string, string>>,
+) {
+  const localLastVisitedAt =
+    localVisits[scopedThreadKey(scopeThreadRef(thread.environmentId, thread.id))];
+  return hasUnseenCompletion({
+    ...thread,
+    lastVisitedAt: resolveThreadLastVisitedAt(thread.lastVisitedAt, localLastVisitedAt),
+  });
+}
 
 // A Ticket can own concurrent Threads. Surface actionable states before progress;
 // the individual rows still show every Thread's own state.

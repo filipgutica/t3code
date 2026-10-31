@@ -33,6 +33,7 @@ const thread = (
 ): WorkbenchFloatingChatThread => ({
   threadId: ThreadId.make(id),
   title: `Thread ${id}`,
+  unread: false,
   ticket: null,
   recap: null,
   ...extra,
@@ -106,6 +107,7 @@ const boardInput = () => ({
   threadsById: new Map([liveThread("first"), liveThread("second")].map((t) => [t.id, t])),
   archivedThreadsById: new Map<ThreadId, ReturnType<typeof liveThread>>(),
   recaps: new Map<ThreadId, string>(),
+  localVisits: {},
   referencesByTicket: new Map([
     [
       ticket.id,
@@ -363,18 +365,18 @@ describe("getWorkbenchThreadStatusSections", () => {
     sections.map((section) => ({
       id: section.id,
       threads: ids(section.threads),
-      workingCount: section.workingCount,
       openByDefault: section.openByDefault,
     }));
 
-  it("puts Threads waiting on the user first, then idle and working, then settled", () => {
+  it("lists Threads like an inbox: unread, idle, then working and settled collapsed", () => {
     const sections = getWorkbenchThreadStatusSections({
       active: [
         thread("idle"),
         thread("approval", "approval"),
         thread("working", "working"),
-        thread("input", "input"),
-        thread("limited", "limited"),
+        thread("replied", null, { unread: true }),
+        thread("request", "request"),
+        thread("waiting", "waiting"),
         thread("failed", "failed"),
       ],
       settled: [thread("done")],
@@ -383,45 +385,37 @@ describe("getWorkbenchThreadStatusSections", () => {
 
     expect(shape(sections)).toEqual([
       {
-        id: "attention",
-        threads: ["approval", "input", "failed"],
-        workingCount: 0,
+        id: "unread",
+        threads: ["approval", "replied", "request", "failed"],
         openByDefault: true,
       },
-      {
-        id: "idle",
-        threads: ["idle", "working", "limited"],
-        workingCount: 1,
-        openByDefault: false,
-      },
-      { id: "settled", threads: ["done"], workingCount: 0, openByDefault: false },
+      { id: "idle", threads: ["idle"], openByDefault: true },
+      { id: "working", threads: ["working", "waiting"], openByDefault: false },
+      { id: "settled", threads: ["done"], openByDefault: false },
     ]);
   });
 
   it("omits empty sections and opens the one holding the showing Thread", () => {
     const sections = getWorkbenchThreadStatusSections({
-      active: [thread("a")],
+      active: [thread("a", "working")],
       settled: [thread("s")],
       showingThreadId: ThreadId.make("s"),
     });
 
     expect(shape(sections)).toEqual([
-      { id: "idle", threads: ["a"], workingCount: 0, openByDefault: false },
-      { id: "settled", threads: ["s"], workingCount: 0, openByDefault: true },
+      { id: "working", threads: ["a"], openByDefault: false },
+      { id: "settled", threads: ["s"], openByDefault: true },
     ]);
   });
 
-  it("moves a Thread to Needs attention when it starts waiting on the user", () => {
-    const sectionOf = (kind: WorkbenchThreadExecutionStatus["kind"] | null) =>
-      getWorkbenchThreadStatusSections({
-        active: [thread("a", kind), thread("b")],
-        settled: [],
-        showingThreadId: null,
-      }).find((section) => section.threads.some((entry) => entry.threadId === "a"))?.id;
+  it("moves a Thread to Unread when its reply arrives, and to Idle once read", () => {
+    const sectionOf = (entry: WorkbenchFloatingChatThread) =>
+      getWorkbenchThreadStatusSections({ active: [entry], settled: [], showingThreadId: null })[0]
+        ?.id;
 
-    expect(sectionOf("working")).toBe("idle");
-    expect(sectionOf("approval")).toBe("attention");
-    expect(sectionOf(null)).toBe("idle");
+    expect(sectionOf(thread("a", "working"))).toBe("working");
+    expect(sectionOf(thread("a", null, { unread: true }))).toBe("unread");
+    expect(sectionOf(thread("a"))).toBe("idle");
   });
 });
 

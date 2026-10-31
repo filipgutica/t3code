@@ -27,7 +27,6 @@ import {
   EnvironmentId,
   type EditorId,
   ProjectId,
-  type ProviderDriverKind,
   type ResolvedKeybindingsConfig,
   type ThreadId,
   type WorkbenchAssignment,
@@ -56,32 +55,37 @@ import {
   Layers3Icon,
   ListChecksIcon,
   LoaderCircleIcon,
+  MessageSquareIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
   RefreshCwIcon,
   RotateCcwIcon,
   Trash2Icon,
-  UnlinkIcon,
 } from "lucide-react";
 import {
   useState,
   type Dispatch,
   type SetStateAction,
   type FormEvent,
+  type MouseEvent,
   type ReactNode,
 } from "react";
 import { WorkbenchTicketStatusMenu } from "./WorkbenchTicketStatusMenu";
 
-import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
+import {
+  WorkbenchThreadExecutionStatus,
+  WorkbenchThreadExecutionStatusIcon,
+} from "./WorkbenchThreadExecutionStatus";
+import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
+import { readLocalApi } from "../localApi";
 import {
   getWorkbenchThreadExecutionStatus,
   getWorkbenchTicketExecutionStatuses,
+  hasWorkbenchUnreadReply,
   type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
 import { getWorkbenchThreadStatusSections } from "./workbenchFloatingChat.logic";
-import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
-import { deriveProviderInstanceEntries } from "../providerInstances";
 import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { cn } from "../lib/utils";
@@ -137,6 +141,7 @@ import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useThreadActions } from "../hooks/useThreadActions";
+import { useUiStateStore } from "../uiStateStore";
 import { randomUUID } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { Project } from "../types";
@@ -166,7 +171,6 @@ import {
   useWorkbenchCheckoutStatusRefresh,
   WorkbenchCheckoutDirectory,
   WorkbenchCheckoutDetails,
-  WorkbenchThreadCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import {
   WorkbenchJiraIssueKeyLink,
@@ -961,12 +965,6 @@ function WorkbenchTicketDetailController({
   const { assignments, threadActionPending, threadActionLabel } = threads;
   const { supportsSettlement, settlementPendingThreadId, toggleThreadSettlement } =
     useWorkbenchTicketSettlement(environmentId);
-  const providers = useAtomValue(serverEnvironment.providersValueAtom(environmentId));
-  const providerEntries = deriveProviderInstanceEntries(providers ?? []);
-  const threadProviderKind = (thread: EnvironmentThreadShell | undefined) => {
-    const instanceId = thread?.runtime?.providerInstanceId ?? thread?.modelSelection.instanceId;
-    return providerEntries.find((entry) => entry.instanceId === instanceId)?.driverKind;
-  };
   const {
     deleteConfirmationOpen,
     setDeleteConfirmationOpen,
@@ -1056,14 +1054,6 @@ function WorkbenchTicketDetailController({
     cwds: [
       ...repositories.map((repository) => repository.openInCwd),
       ...retainedRepositories.map((repository) => repository.openInCwd),
-      ...activeAssignments.map(({ threadId }) => {
-        const linkedThread = threadsById.get(threadId) ?? archivedThreadsById.get(threadId);
-        return linkedThread
-          ? (linkedThread.worktreePath ??
-              linkedProjects.find((project) => project.id === linkedThread.projectId)
-                ?.workspaceRoot)
-          : null;
-      }),
     ],
   });
   const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
@@ -1304,10 +1294,7 @@ function WorkbenchTicketDetailController({
                   supportsSettlement: supportsSettlement,
                 }}
                 context={{
-                  threadProviderKind: threadProviderKind,
                   threadMutationsDisabled,
-                  environmentId: environmentId,
-                  linkedProjects: linkedProjects,
                   threadsById: threadsById,
                   archivedThreadsById: archivedThreadsById,
                   threadLookupReady: threadLookupReady,
@@ -1318,7 +1305,6 @@ function WorkbenchTicketDetailController({
                   actionableTicket: actionableTicket,
                   nativeThread: nativeThread,
                   archivedThread: archivedThread,
-                  ticketWorkspace: ticketWorkspace,
                   activeAssignments: activeAssignments,
                   ticket: ticket,
                   historicalAssignments: historicalAssignments,
@@ -1615,51 +1601,6 @@ function WorkbenchTicketRepositoryIdentity({
   );
 }
 
-function WorkbenchThreadTitle({
-  className,
-  title,
-}: {
-  readonly className: string;
-  readonly title: string;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className={className} />}>{title}</TooltipTrigger>
-      <TooltipPopup className="max-w-[min(40rem,calc(100vw-2rem))] break-words">
-        {title}
-      </TooltipPopup>
-    </Tooltip>
-  );
-}
-
-function WorkbenchThreadMetadataRow({
-  actions,
-  modelLabel,
-  recencyLabel,
-}: {
-  readonly actions?: ReactNode;
-  readonly modelLabel: string | null;
-  readonly recencyLabel: string | null;
-}) {
-  if (!modelLabel && !recencyLabel && !actions) return null;
-  return (
-    <div className="relative z-10 mt-0.5 flex min-w-0 items-center gap-2 ps-9 text-muted-foreground">
-      <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-2xs">
-        {modelLabel ? (
-          <span className="min-w-0 break-words [overflow-wrap:anywhere]">{modelLabel}</span>
-        ) : null}
-        {recencyLabel ? (
-          <span className="shrink-0 whitespace-nowrap">
-            {modelLabel ? <span aria-hidden>· </span> : null}
-            {recencyLabel}
-          </span>
-        ) : null}
-      </span>
-      {actions ? <span className="flex shrink-0 items-center gap-0.5">{actions}</span> : null}
-    </div>
-  );
-}
-
 function isWorkbenchThreadOpenDisabled({
   pending,
   threadMutationsDisabled,
@@ -1674,87 +1615,131 @@ function isWorkbenchThreadOpenDisabled({
   );
 }
 
-function WorkbenchThreadOpenButton({
-  actions,
+interface WorkbenchThreadRowMenu {
+  readonly disabled: boolean;
+  readonly onUnlink: () => void;
+  readonly onDelete: () => void;
+}
+
+/** A Ticket's Thread laid out like a native sidebar row: hover for details, right-click for more. */
+function WorkbenchThreadRow({
   actionLabel,
   ariaLabel,
   disabled,
-  modelLabel,
+  executionStatus,
+  menu,
   onClick,
-  providerKind,
+  quickAction,
   recencyLabel,
   stateLabel,
-  executionStatus,
+  thread,
   title,
 }: {
-  readonly actions?: ReactNode;
   readonly actionLabel?: string | undefined;
   readonly ariaLabel: string;
   readonly disabled: boolean;
-  readonly modelLabel: string | null;
+  readonly executionStatus?: WorkbenchThreadExecutionStatusData | null;
+  /** Unlink and Delete, on right-click. */
+  readonly menu?: WorkbenchThreadRowMenu | undefined;
   readonly onClick: () => void;
-  readonly providerKind: ProviderDriverKind | undefined;
+  /** Takes the recency label's place on hover, as Settle does on native rows. */
+  readonly quickAction?: ReactNode;
   readonly recencyLabel: string | null;
   readonly stateLabel: string | null;
-  readonly executionStatus?: WorkbenchThreadExecutionStatusData | null;
+  /** The Thread to preview on hover; absent while it loads or once deleted. */
+  readonly thread: EnvironmentThreadShell | undefined;
   readonly title: string;
 }) {
-  return (
-    <div className="min-w-0 flex-1 basis-full">
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const unread = thread ? hasWorkbenchUnreadReply(thread, localVisits) : false;
+  const openMenu = (event: MouseEvent<HTMLDivElement>) => {
+    const api = readLocalApi();
+    if (!menu || !api) return;
+    event.preventDefault();
+    void api.contextMenu
+      .show(
+        [
+          { id: "unlink", label: "Unlink from Ticket", disabled: menu.disabled },
+          {
+            id: "delete",
+            label: "Delete Thread",
+            icon: "trash",
+            destructive: true,
+            disabled: menu.disabled,
+          },
+        ],
+        { x: event.clientX, y: event.clientY },
+      )
+      .then((selected) => {
+        if (selected === "unlink") menu.onUnlink();
+        if (selected === "delete") menu.onDelete();
+      })
+      .catch(() => {
+        toastManager.add({ type: "error", title: "Could not open Thread actions" });
+      });
+  };
+  const visibleActionLabel =
+    actionLabel === "Restore and open" || actionLabel === "Create replacement Thread";
+  const row = (
+    <div
+      className="group/thread-row relative isolate flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/45 focus-within:bg-muted/45"
+      onContextMenu={openMenu}
+    >
       <button
         aria-label={ariaLabel}
-        className="group relative flex w-full min-w-0 cursor-pointer items-start gap-2 text-left text-sm outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring enabled:after:absolute enabled:after:inset-0 enabled:after:content-[''] disabled:cursor-default disabled:opacity-50"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring disabled:cursor-default disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
         type="button"
       >
-        <span className="flex size-7 shrink-0 items-center justify-center rounded-lg bg-muted">
-          {providerKind ? (
-            <ProviderInstanceIcon
-              driverKind={providerKind}
-              displayName={providerKind}
-              iconClassName="size-3.5"
-              badgeContent="none"
-            />
+        <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+          {executionStatus ? (
+            <WorkbenchThreadExecutionStatusIcon status={executionStatus.presentation} />
+          ) : unread ? (
+            <span aria-hidden className="size-2 rounded-full bg-success" />
           ) : (
-            <BotIcon aria-hidden className="size-3.5 text-muted-foreground" />
+            <MessageSquareIcon aria-hidden className="size-3.5" />
           )}
         </span>
-        <span className="min-w-0 flex-1">
-          <WorkbenchThreadTitle
-            className="relative z-10 line-clamp-2 break-words font-medium [overflow-wrap:anywhere]"
-            title={title}
-          />
-          <span className="mt-0.5 flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-            {executionStatus ? (
-              <WorkbenchThreadExecutionStatus
-                status={executionStatus.presentation}
-                startedAt={executionStatus.startedAt}
-              />
-            ) : stateLabel ? (
-              <span className="min-w-0 break-words [overflow-wrap:anywhere]">{stateLabel}</span>
-            ) : null}
-          </span>
-        </span>
-        <span className="flex shrink-0 items-center text-muted-foreground group-hover:text-foreground">
-          <span
-            className={
-              actionLabel === "Restore and open" || actionLabel === "Create replacement Thread"
-                ? "text-xs"
-                : "sr-only"
-            }
-          >
-            {actionLabel ?? "Open Thread"}
-          </span>
-          <ArrowRightIcon className="size-3.5" />
+        <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>{title}</span>
+        <span className={visibleActionLabel ? "shrink-0 text-xs text-muted-foreground" : "sr-only"}>
+          {actionLabel ?? "Open Thread"}
         </span>
       </button>
-      <WorkbenchThreadMetadataRow
-        actions={actions}
-        modelLabel={modelLabel}
-        recencyLabel={recencyLabel}
-      />
+      <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+        {executionStatus ? (
+          <WorkbenchThreadExecutionStatus
+            status={executionStatus.presentation}
+            startedAt={executionStatus.startedAt}
+          />
+        ) : stateLabel ? (
+          <span>{stateLabel}</span>
+        ) : null}
+        {recencyLabel && quickAction ? (
+          <span className="relative flex items-center">
+            <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
+              {recencyLabel}
+            </span>
+            <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
+              {quickAction}
+            </span>
+          </span>
+        ) : (
+          (quickAction ?? (recencyLabel ? <span>{recencyLabel}</span> : null))
+        )}
+      </span>
     </div>
+  );
+  return thread ? (
+    <WorkbenchThreadHoverPreview
+      environmentId={thread.environmentId}
+      threadId={thread.id}
+      title={title}
+    >
+      {row}
+    </WorkbenchThreadHoverPreview>
+  ) : (
+    row
   );
 }
 
@@ -2292,9 +2277,6 @@ type WorkbenchTicketThreadsPanelProps = {
   threadMutationsDisabled: boolean;
   setThreadPanelCollapsed: Dispatch<SetStateAction<boolean>>;
   canOpenThread: boolean;
-  threadProviderKind: (
-    thread: EnvironmentThreadShell | undefined,
-  ) => ProviderDriverKind | undefined;
   displayedThread: EnvironmentThreadShell | undefined;
   threadActionPending: boolean;
   thread: ReturnType<typeof getWorkbenchThreadPresentation>;
@@ -2316,9 +2298,6 @@ type WorkbenchTicketThreadsPanelProps = {
   toggleThreadSettlement: (thread: EnvironmentThreadShell) => Promise<void>;
   settlementPendingThreadId: ThreadId | null;
   onDeleteThread: (threadId: ThreadId) => void;
-  environmentId: EnvironmentId;
-  linkedProjects: ReadonlyArray<Project>;
-  ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   activeAssignments: ReadonlyArray<WorkbenchAssignment>;
   threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
@@ -2365,13 +2344,7 @@ function WorkbenchTicketThreadsPanel({
   >;
   context: Pick<
     WorkbenchTicketThreadsPanelProps,
-    | "threadProviderKind"
-    | "threadMutationsDisabled"
-    | "environmentId"
-    | "linkedProjects"
-    | "threadsById"
-    | "archivedThreadsById"
-    | "threadLookupReady"
+    "threadMutationsDisabled" | "threadsById" | "archivedThreadsById" | "threadLookupReady"
   >;
   records: Pick<
     WorkbenchTicketThreadsPanelProps,
@@ -2380,7 +2353,6 @@ function WorkbenchTicketThreadsPanel({
     | "actionableTicket"
     | "nativeThread"
     | "archivedThread"
-    | "ticketWorkspace"
     | "activeAssignments"
     | "ticket"
     | "historicalAssignments"
@@ -2412,22 +2384,13 @@ function WorkbenchTicketThreadsPanel({
     isArchived,
     supportsSettlement,
   } = presentation;
-  const {
-    threadProviderKind,
-    threadMutationsDisabled,
-    environmentId,
-    linkedProjects,
-    threadsById,
-    archivedThreadsById,
-    threadLookupReady,
-  } = context;
+  const { threadMutationsDisabled, threadsById, archivedThreadsById, threadLookupReady } = context;
   const {
     displayedThread,
     assignment,
     actionableTicket,
     nativeThread,
     archivedThread,
-    ticketWorkspace,
     activeAssignments,
     ticket,
     historicalAssignments,
@@ -2438,9 +2401,15 @@ function WorkbenchTicketThreadsPanel({
       .filter(({ threadId }) => threadsById.has(threadId) || archivedThreadsById.has(threadId))
       .map(({ threadId }) => threadId),
   ).size;
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const liveStatus = (threadId: ThreadId) => {
     const liveThread = threadsById.get(threadId);
-    return liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
+    return liveThread
+      ? {
+          status: getWorkbenchThreadExecutionStatus(liveThread),
+          unread: hasWorkbenchUnreadReply(liveThread, localVisits),
+        }
+      : { status: null, unread: false };
   };
   // A primary Thread the user cannot open gives way to the notice below, as do its actions.
   const listedAssignments = canOpenThread
@@ -2449,31 +2418,26 @@ function WorkbenchTicketThreadsPanel({
   const sections = getWorkbenchThreadStatusSections({
     active: listedAssignments.map((activeAssignment) => ({
       threadId: activeAssignment.threadId,
-      status: liveStatus(activeAssignment.threadId),
+      ...liveStatus(activeAssignment.threadId),
       assignment: activeAssignment,
     })),
     settled: settledAssignments.map((settledAssignment) => ({
       threadId: settledAssignment.threadId,
       status: null,
+      unread: false,
       assignment: settledAssignment,
     })),
     showingThreadId: assignment?.threadId ?? null,
   });
   const primaryThread = (
     <WorkbenchTicketPrimaryThread
-      context={{
-        threadProviderKind: threadProviderKind,
-        threadMutationsDisabled,
-        environmentId: environmentId,
-        linkedProjects: linkedProjects,
-      }}
+      context={{ threadMutationsDisabled }}
       records={{
         displayedThread: displayedThread,
         assignment: assignment,
         actionableTicket: actionableTicket,
         nativeThread: nativeThread,
         archivedThread: archivedThread,
-        ticketWorkspace: ticketWorkspace,
       }}
       presentation={{
         threadActionPending: threadActionPending,
@@ -2503,10 +2467,7 @@ function WorkbenchTicketThreadsPanel({
       <WorkbenchTicketActiveThreadRow
         key={activeAssignment.id}
         context={{
-          threadProviderKind: threadProviderKind,
           threadMutationsDisabled,
-          environmentId: environmentId,
-          linkedProjects: linkedProjects,
           threadsById: threadsById,
           archivedThreadsById: archivedThreadsById,
           threadLookupReady: threadLookupReady,
@@ -2525,13 +2486,12 @@ function WorkbenchTicketThreadsPanel({
           onOpenAssignedThread: onOpenAssignedThread,
           onReplaceThread: onReplaceThread,
         }}
-        records={{ ticketWorkspace: ticketWorkspace, ticket: ticket }}
+        records={{ ticket: ticket }}
       />
     );
   const settledThreadRow = (settledAssignment: WorkbenchAssignment) => (
     <WorkbenchTicketSettledThreadRow
       key={settledAssignment.id}
-      threadProviderKind={threadProviderKind}
       threadMutationsDisabled={threadMutationsDisabled}
       pending={pending}
       isArchived={isArchived}
@@ -2572,7 +2532,6 @@ function WorkbenchTicketThreadsPanel({
                 id={section.id}
                 label={section.label}
                 count={section.threads.length}
-                hint={section.workingCount > 0 ? `${section.workingCount} working` : null}
                 open={open}
                 onToggle={() =>
                   setSectionToggles((current) => new Map(current).set(section.id, !open))
@@ -2588,7 +2547,6 @@ function WorkbenchTicketThreadsPanel({
           })}
           {historicalAssignments.length > 0 ? (
             <WorkbenchTicketHistoricalThreads
-              threadProviderKind={threadProviderKind}
               threadMutationsDisabled={threadMutationsDisabled}
 
               pending={pending}
@@ -3242,7 +3200,6 @@ function WorkbenchTicketLocalDetails({
 
 type WorkbenchTicketPrimaryThreadProps = Pick<
   WorkbenchTicketThreadsPanelProps,
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "displayedThread"
   | "threadActionPending"
@@ -3264,9 +3221,6 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "toggleThreadSettlement"
   | "settlementPendingThreadId"
   | "onDeleteThread"
-  | "environmentId"
-  | "linkedProjects"
-  | "ticketWorkspace"
 >;
 function WorkbenchTicketPrimaryThread({
   context,
@@ -3274,18 +3228,10 @@ function WorkbenchTicketPrimaryThread({
   presentation,
   actions,
 }: {
-  context: Pick<
-    WorkbenchTicketPrimaryThreadProps,
-    "threadProviderKind" | "threadMutationsDisabled" | "environmentId" | "linkedProjects"
-  >;
+  context: Pick<WorkbenchTicketPrimaryThreadProps, "threadMutationsDisabled">;
   records: Pick<
     WorkbenchTicketPrimaryThreadProps,
-    | "displayedThread"
-    | "assignment"
-    | "actionableTicket"
-    | "nativeThread"
-    | "archivedThread"
-    | "ticketWorkspace"
+    "displayedThread" | "assignment" | "actionableTicket" | "nativeThread" | "archivedThread"
   >;
   presentation: Pick<
     WorkbenchTicketPrimaryThreadProps,
@@ -3309,15 +3255,8 @@ function WorkbenchTicketPrimaryThread({
     | "onDeleteThread"
   >;
 }) {
-  const { threadProviderKind, threadMutationsDisabled, environmentId, linkedProjects } = context;
-  const {
-    displayedThread,
-    assignment,
-    actionableTicket,
-    nativeThread,
-    archivedThread,
-    ticketWorkspace,
-  } = records;
+  const { threadMutationsDisabled } = context;
+  const { displayedThread, assignment, actionableTicket, nativeThread, archivedThread } = records;
   const {
     threadActionPending,
     thread,
@@ -3339,100 +3278,57 @@ function WorkbenchTicketPrimaryThread({
     onDeleteThread,
   } = actions;
   return (
-    <div className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45">
-      <WorkbenchThreadOpenButton
-        providerKind={threadProviderKind(displayedThread)}
-        actionLabel={thread.actionLabel}
-        ariaLabel={`${
-          threadActionPending ? thread.pendingActionLabel : thread.actionLabel
-        } for ${displayedTitle}`}
-        disabled={isWorkbenchThreadOpenDisabled({
-          pending,
-          threadMutationsDisabled,
-          thread: displayedThread,
-        })}
-        modelLabel={getWorkbenchThreadModelLabel(displayedThread)}
-        recencyLabel={displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null}
-        onClick={() => {
-          if (!assignment && settledAssignments.length > 0) {
-            onNewThread(actionableTicket);
-            return;
-          }
-          onOpenThread(actionableTicket, assignment?.threadId);
-        }}
-        stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
-        executionStatus={nativeStatus}
-        title={agentTitle}
-        actions={
-          assignment && displayedThread ? (
-            <>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label={`Unlink Thread ${displayedThread.title}`}
-                      disabled={pending || threadMutationsDisabled || isArchived}
-                      onClick={() => onUnlinkThread(assignment.threadId)}
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    />
-                  }
-                >
-                  <UnlinkIcon />
-                </TooltipTrigger>
-                <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
-              </Tooltip>
-              {supportsSettlement ? (
-                <WorkbenchThreadSettlementButton
-                  archived={archivedThread !== undefined}
-                  disabled={
-                    pending || threadMutationsDisabled || isArchived || archivedThread !== undefined
-                  }
-                  onClick={() => void toggleThreadSettlement(displayedThread)}
-                  pending={settlementPendingThreadId === displayedThread.id}
-                  settled={displayedThread.settledOverride === "settled"}
-                  title={displayedThread.title}
-                />
-              ) : null}
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      aria-label={`Delete Thread ${displayedThread.title}`}
-                      disabled={pending || threadMutationsDisabled || isArchived}
-                      onClick={() => onDeleteThread(assignment.threadId)}
-                      size="icon-xs"
-                      type="button"
-                      variant="ghost"
-                    />
-                  }
-                >
-                  <Trash2Icon />
-                </TooltipTrigger>
-                <TooltipPopup>Delete Thread</TooltipPopup>
-              </Tooltip>
-            </>
-          ) : null
+    <WorkbenchThreadRow
+      thread={displayedThread}
+      actionLabel={thread.actionLabel}
+      ariaLabel={`${
+        threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+      } for ${displayedTitle}`}
+      disabled={isWorkbenchThreadOpenDisabled({
+        pending,
+        threadMutationsDisabled,
+        thread: displayedThread,
+      })}
+      recencyLabel={displayedThread ? getWorkbenchThreadRecencyLabel(displayedThread) : null}
+      onClick={() => {
+        if (!assignment && settledAssignments.length > 0) {
+          onNewThread(actionableTicket);
+          return;
         }
-      />
-      {displayedThread ? (
-        <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
-          <WorkbenchThreadCheckoutDetails
-            environmentId={environmentId}
-            thread={displayedThread}
-            projects={linkedProjects}
-            workspace={ticketWorkspace}
+        onOpenThread(actionableTicket, assignment?.threadId);
+      }}
+      stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
+      executionStatus={nativeStatus}
+      title={agentTitle}
+      menu={
+        assignment && displayedThread
+          ? {
+              disabled: pending || threadMutationsDisabled || isArchived,
+              onUnlink: () => onUnlinkThread(assignment.threadId),
+              onDelete: () => onDeleteThread(assignment.threadId),
+            }
+          : undefined
+      }
+      quickAction={
+        assignment && displayedThread && supportsSettlement ? (
+          <WorkbenchThreadSettlementButton
+            archived={archivedThread !== undefined}
+            disabled={
+              pending || threadMutationsDisabled || isArchived || archivedThread !== undefined
+            }
+            onClick={() => void toggleThreadSettlement(displayedThread)}
+            pending={settlementPendingThreadId === displayedThread.id}
+            settled={displayedThread.settledOverride === "settled"}
+            title={displayedThread.title}
           />
-        </div>
-      ) : null}
-    </div>
+        ) : undefined
+      }
+    />
   );
 }
 
 type WorkbenchTicketOtherThreadsProps = Pick<
   WorkbenchTicketThreadsPanelProps,
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
   | "assignment"
@@ -3442,9 +3338,6 @@ type WorkbenchTicketOtherThreadsProps = Pick<
   | "toggleThreadSettlement"
   | "settlementPendingThreadId"
   | "onDeleteThread"
-  | "environmentId"
-  | "linkedProjects"
-  | "ticketWorkspace"
   | "activeAssignments"
   | "threadsById"
   | "archivedThreadsById"
@@ -3458,7 +3351,6 @@ function WorkbenchTicketThreadSection({
   id,
   label,
   count,
-  hint,
   open,
   onToggle,
   children,
@@ -3466,7 +3358,6 @@ function WorkbenchTicketThreadSection({
   readonly id: string;
   readonly label: string;
   readonly count: number;
-  readonly hint: string | null;
   readonly open: boolean;
   readonly onToggle: () => void;
   readonly children: ReactNode;
@@ -3484,7 +3375,6 @@ function WorkbenchTicketThreadSection({
         <ChevronRightIcon aria-hidden className={cn("size-3.5 shrink-0", open && "rotate-90")} />
         <span className="font-medium text-foreground">{label}</span>
         <span className="tabular-nums">{count}</span>
-        {hint ? <span className="ms-auto">{hint}</span> : null}
       </button>
       <div id={panelId} hidden={!open} className="space-y-1">
         {open ? children : null}
@@ -3494,7 +3384,6 @@ function WorkbenchTicketThreadSection({
 }
 
 function WorkbenchTicketHistoricalThreads({
-  threadProviderKind,
   threadMutationsDisabled,
   pending,
   isArchived,
@@ -3511,7 +3400,6 @@ function WorkbenchTicketHistoricalThreads({
   historicalAssignments,
 }: Pick<
   WorkbenchTicketThreadsPanelProps,
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
   | "isArchived"
@@ -3535,7 +3423,6 @@ function WorkbenchTicketHistoricalThreads({
           <WorkbenchTicketHistoricalThreadRow
             key={historicalAssignment.id}
             context={{
-              threadProviderKind: threadProviderKind,
               threadMutationsDisabled,
               threadsById: threadsById,
               archivedThreadsById: archivedThreadsById,
@@ -3564,7 +3451,6 @@ function WorkbenchTicketHistoricalThreads({
 
 type WorkbenchTicketActiveThreadRowProps = Pick<
   WorkbenchTicketOtherThreadsProps,
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
   | "isArchived"
@@ -3573,9 +3459,6 @@ type WorkbenchTicketActiveThreadRowProps = Pick<
   | "toggleThreadSettlement"
   | "settlementPendingThreadId"
   | "onDeleteThread"
-  | "environmentId"
-  | "linkedProjects"
-  | "ticketWorkspace"
   | "threadsById"
   | "archivedThreadsById"
   | "ticket"
@@ -3591,13 +3474,7 @@ function WorkbenchTicketActiveThreadRow({
 }: {
   context: Pick<
     WorkbenchTicketActiveThreadRowProps,
-    | "threadProviderKind"
-    | "threadMutationsDisabled"
-    | "environmentId"
-    | "linkedProjects"
-    | "threadsById"
-    | "archivedThreadsById"
-    | "threadLookupReady"
+    "threadMutationsDisabled" | "threadsById" | "archivedThreadsById" | "threadLookupReady"
   >;
   presentation: Pick<
     WorkbenchTicketActiveThreadRowProps,
@@ -3612,17 +3489,9 @@ function WorkbenchTicketActiveThreadRow({
     | "onOpenAssignedThread"
     | "onReplaceThread"
   >;
-  records: Pick<WorkbenchTicketActiveThreadRowProps, "ticketWorkspace" | "ticket">;
+  records: Pick<WorkbenchTicketActiveThreadRowProps, "ticket">;
 }) {
-  const {
-    threadProviderKind,
-    threadMutationsDisabled,
-    environmentId,
-    linkedProjects,
-    threadsById,
-    archivedThreadsById,
-    threadLookupReady,
-  } = context;
+  const { threadMutationsDisabled, threadsById, archivedThreadsById, threadLookupReady } = context;
   const { pending, isArchived, supportsSettlement, activeAssignment } = presentation;
   const {
     onUnlinkThread,
@@ -3632,7 +3501,7 @@ function WorkbenchTicketActiveThreadRow({
     onOpenAssignedThread,
     onReplaceThread,
   } = actions;
-  const { ticketWorkspace, ticket } = records;
+  const { ticket } = records;
   const {
     archivedActiveThread,
     displayedActiveThread,
@@ -3655,71 +3524,62 @@ function WorkbenchTicketActiveThreadRow({
     activeThreadRecency,
     threadLookupReady,
   });
+  const mutationDisabled = pending || threadMutationsDisabled || isArchived;
   return (
-    <div
-      key={activeAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
-    >
-      <WorkbenchThreadOpenButton
-        providerKind={threadProviderKind(displayedActiveThread)}
-        actionLabel={archivedActiveThread ? "Restore and open" : undefined}
-        ariaLabel={rowPresentation.ariaLabel}
-        disabled={
-          pending ||
-          displayedActiveThread === undefined ||
-          (threadMutationsDisabled && displayedActiveThread.archivedAt != null)
-        }
-        modelLabel={rowPresentation.modelLabel}
-        recencyLabel={rowPresentation.recencyLabel}
-        onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
-        stateLabel={rowPresentation.stateLabel}
-        executionStatus={rowPresentation.executionStatus}
-        title={rowPresentation.title}
-        actions={
-          displayedActiveThread ? (
-            <WorkbenchActiveThreadActions
-              pending={pending || threadMutationsDisabled}
-              isArchived={isArchived}
-              onUnlinkThread={onUnlinkThread}
-              supportsSettlement={supportsSettlement}
-              toggleThreadSettlement={toggleThreadSettlement}
-              settlementPendingThreadId={settlementPendingThreadId}
-              onDeleteThread={onDeleteThread}
-              activeAssignment={activeAssignment}
-              displayedActiveThread={displayedActiveThread}
-              archivedActiveThread={archivedActiveThread}
+    <WorkbenchThreadRow
+      thread={displayedActiveThread}
+      actionLabel={archivedActiveThread ? "Restore and open" : undefined}
+      ariaLabel={rowPresentation.ariaLabel}
+      disabled={
+        pending ||
+        displayedActiveThread === undefined ||
+        (threadMutationsDisabled && displayedActiveThread.archivedAt != null)
+      }
+      recencyLabel={rowPresentation.recencyLabel}
+      onClick={() => onOpenAssignedThread(activeAssignment.threadId)}
+      stateLabel={rowPresentation.stateLabel}
+      executionStatus={rowPresentation.executionStatus}
+      title={rowPresentation.title}
+      menu={
+        displayedActiveThread
+          ? {
+              disabled: mutationDisabled,
+              onUnlink: () => onUnlinkThread(activeAssignment.threadId),
+              onDelete: () => onDeleteThread(activeAssignment.threadId),
+            }
+          : undefined
+      }
+      quickAction={
+        displayedActiveThread ? (
+          supportsSettlement ? (
+            <WorkbenchThreadSettlementButton
+              archived={archivedActiveThread !== undefined}
+              disabled={mutationDisabled || archivedActiveThread !== undefined}
+              onClick={() => void toggleThreadSettlement(displayedActiveThread)}
+              pending={settlementPendingThreadId === displayedActiveThread.id}
+              settled={displayedActiveThread.settledOverride === "settled"}
+              title={displayedActiveThread.title}
             />
-          ) : threadLookupReady ? (
-            <Button
-              aria-label={`Create replacement Thread for ${ticket.title}`}
-              disabled={pending || threadMutationsDisabled || isArchived}
-              onClick={() => onReplaceThread(ticket, activeAssignment.threadId)}
-              size="xs"
-              type="button"
-              variant="ghost"
-            >
-              Create replacement Thread
-            </Button>
-          ) : null
-        }
-      />
-      {displayedActiveThread ? (
-        <div className="pointer-events-none relative z-10 min-w-0 basis-full [&_a]:pointer-events-auto [&_button]:pointer-events-auto [&_summary]:pointer-events-auto">
-          <WorkbenchThreadCheckoutDetails
-            environmentId={environmentId}
-            thread={displayedActiveThread}
-            projects={linkedProjects}
-            workspace={ticketWorkspace}
-          />
-        </div>
-      ) : null}
-    </div>
+          ) : undefined
+        ) : threadLookupReady ? (
+          <Button
+            aria-label={`Create replacement Thread for ${ticket.title}`}
+            disabled={mutationDisabled}
+            onClick={() => onReplaceThread(ticket, activeAssignment.threadId)}
+            size="xs"
+            type="button"
+            variant="ghost"
+          >
+            Create replacement Thread
+          </Button>
+        ) : undefined
+      }
+    />
   );
 }
 
 type WorkbenchTicketHistoricalThreadRowProps = Pick<
   Parameters<typeof WorkbenchTicketHistoricalThreads>[0],
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
   | "isArchived"
@@ -3742,11 +3602,7 @@ function WorkbenchTicketHistoricalThreadRow({
 }: {
   context: Pick<
     WorkbenchTicketHistoricalThreadRowProps,
-    | "threadProviderKind"
-    | "threadMutationsDisabled"
-    | "threadsById"
-    | "archivedThreadsById"
-    | "threadLookupReady"
+    "threadMutationsDisabled" | "threadsById" | "archivedThreadsById" | "threadLookupReady"
   >;
   presentation: Pick<
     WorkbenchTicketHistoricalThreadRowProps,
@@ -3762,13 +3618,7 @@ function WorkbenchTicketHistoricalThreadRow({
   >;
   records: Pick<WorkbenchTicketHistoricalThreadRowProps, "ticket">;
 }) {
-  const {
-    threadProviderKind,
-    threadMutationsDisabled,
-    threadsById,
-    archivedThreadsById,
-    threadLookupReady,
-  } = context;
+  const { threadMutationsDisabled, threadsById, archivedThreadsById, threadLookupReady } = context;
   const { pending, isArchived, supportsSettlement, historicalAssignment } = presentation;
   const {
     onUnlinkThread,
@@ -3790,49 +3640,48 @@ function WorkbenchTicketHistoricalThreadRow({
     historicalAgentState,
     threadLookupReady,
   });
+  const mutationDisabled = pending || threadMutationsDisabled || isArchived;
   return (
-    <div
-      key={historicalAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
-    >
-      <WorkbenchThreadOpenButton
-        providerKind={threadProviderKind(displayedHistoricalThread)}
-        actionLabel={historicalArchivedThread ? "Restore and open" : undefined}
-        ariaLabel={rowPresentation.ariaLabel}
-        disabled={
-          pending ||
-          !displayedHistoricalThread ||
-          (threadMutationsDisabled && displayedHistoricalThread.archivedAt != null)
-        }
-        modelLabel={rowPresentation.modelLabel}
-        recencyLabel={rowPresentation.recencyLabel}
-        onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
-        stateLabel={rowPresentation.stateLabel}
-        executionStatus={rowPresentation.executionStatus}
-        title={rowPresentation.title}
-        actions={
-          displayedHistoricalThread ? (
-            <WorkbenchHistoricalThreadActions
-              pending={pending || threadMutationsDisabled}
-              isArchived={isArchived}
-              onUnlinkThread={onUnlinkThread}
-              supportsSettlement={supportsSettlement}
-              toggleThreadSettlement={toggleThreadSettlement}
-              settlementPendingThreadId={settlementPendingThreadId}
-              onDeleteThread={onDeleteThread}
-              historicalAssignment={historicalAssignment}
-              displayedHistoricalThread={displayedHistoricalThread}
-              historicalArchivedThread={historicalArchivedThread}
-            />
-          ) : null
-        }
-      />
-    </div>
+    <WorkbenchThreadRow
+      thread={displayedHistoricalThread}
+      actionLabel={historicalArchivedThread ? "Restore and open" : undefined}
+      ariaLabel={rowPresentation.ariaLabel}
+      disabled={
+        pending ||
+        !displayedHistoricalThread ||
+        (threadMutationsDisabled && displayedHistoricalThread.archivedAt != null)
+      }
+      recencyLabel={rowPresentation.recencyLabel}
+      onClick={() => onOpenAssignedThread(historicalAssignment.threadId)}
+      stateLabel={rowPresentation.stateLabel}
+      executionStatus={rowPresentation.executionStatus}
+      title={rowPresentation.title}
+      menu={
+        displayedHistoricalThread
+          ? {
+              disabled: mutationDisabled,
+              onUnlink: () => onUnlinkThread(historicalAssignment.threadId),
+              onDelete: () => onDeleteThread(historicalAssignment.threadId),
+            }
+          : undefined
+      }
+      quickAction={
+        displayedHistoricalThread && supportsSettlement ? (
+          <WorkbenchThreadSettlementButton
+            archived={historicalArchivedThread !== undefined}
+            disabled={mutationDisabled || historicalArchivedThread !== undefined}
+            onClick={() => void toggleThreadSettlement(displayedHistoricalThread)}
+            pending={settlementPendingThreadId === displayedHistoricalThread.id}
+            settled={displayedHistoricalThread.settledOverride === "settled"}
+            title={displayedHistoricalThread.title}
+          />
+        ) : undefined
+      }
+    />
   );
 }
 
 function WorkbenchTicketSettledThreadRow({
-  threadProviderKind,
   threadMutationsDisabled,
   pending,
   isArchived,
@@ -3847,7 +3696,6 @@ function WorkbenchTicketSettledThreadRow({
   settledAssignment,
 }: Pick<
   WorkbenchTicketThreadsPanelProps,
-  | "threadProviderKind"
   | "threadMutationsDisabled"
   | "pending"
   | "isArchived"
@@ -3872,75 +3720,38 @@ function WorkbenchTicketSettledThreadRow({
   );
   const mutationDisabled = pending || threadMutationsDisabled || isArchived;
   return (
-    <div
-      key={settledAssignment.id}
-      className="relative isolate flex min-w-0 flex-wrap items-start gap-2 rounded-md px-2 py-2 hover:bg-muted/45 focus-within:bg-muted/45"
-    >
-      <WorkbenchThreadOpenButton
-        providerKind={threadProviderKind(settledThread)}
-        actionLabel={thread.actionLabel}
-        ariaLabel={`${thread.actionLabel} ${settledThread.title}`}
-        disabled={isWorkbenchThreadOpenDisabled({
-          pending,
-          threadMutationsDisabled,
-          thread: settledThread,
-        })}
-        modelLabel={getWorkbenchThreadModelLabel(settledThread)}
-        recencyLabel={getWorkbenchThreadRecencyLabel(settledThread)}
-        onClick={() => onOpenAssignedThread(settledAssignment.threadId)}
-        stateLabel={thread.stateLabel}
-        executionStatus={executionStatus}
-        title={settledThread.title}
-        actions={
-          <>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label={`Unlink Thread ${settledThread.title}`}
-                    disabled={mutationDisabled}
-                    onClick={() => onUnlinkThread(settledAssignment.threadId)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  />
-                }
-              >
-                <UnlinkIcon />
-              </TooltipTrigger>
-              <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
-            </Tooltip>
-            {supportsSettlement ? (
-              <WorkbenchThreadSettlementButton
-                archived={settledThread.archivedAt !== null}
-                disabled={mutationDisabled || settledThread.archivedAt !== null}
-                onClick={() => void toggleThreadSettlement(settledThread)}
-                pending={settlementPendingThreadId === settledThread.id}
-                settled
-                title={settledThread.title}
-              />
-            ) : null}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    aria-label={`Delete Thread ${settledThread.title}`}
-                    disabled={mutationDisabled}
-                    onClick={() => onDeleteThread(settledAssignment.threadId)}
-                    size="icon-xs"
-                    type="button"
-                    variant="ghost"
-                  />
-                }
-              >
-                <Trash2Icon />
-              </TooltipTrigger>
-              <TooltipPopup>Delete Thread</TooltipPopup>
-            </Tooltip>
-          </>
-        }
-      />
-    </div>
+    <WorkbenchThreadRow
+      thread={settledThread}
+      actionLabel={thread.actionLabel}
+      ariaLabel={`${thread.actionLabel} ${settledThread.title}`}
+      disabled={isWorkbenchThreadOpenDisabled({
+        pending,
+        threadMutationsDisabled,
+        thread: settledThread,
+      })}
+      recencyLabel={getWorkbenchThreadRecencyLabel(settledThread)}
+      onClick={() => onOpenAssignedThread(settledAssignment.threadId)}
+      stateLabel={thread.stateLabel}
+      executionStatus={executionStatus}
+      title={settledThread.title}
+      menu={{
+        disabled: mutationDisabled,
+        onUnlink: () => onUnlinkThread(settledAssignment.threadId),
+        onDelete: () => onDeleteThread(settledAssignment.threadId),
+      }}
+      quickAction={
+        supportsSettlement ? (
+          <WorkbenchThreadSettlementButton
+            archived={settledThread.archivedAt !== null}
+            disabled={mutationDisabled || settledThread.archivedAt !== null}
+            onClick={() => void toggleThreadSettlement(settledThread)}
+            pending={settlementPendingThreadId === settledThread.id}
+            settled
+            title={settledThread.title}
+          />
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -4780,156 +4591,6 @@ function getWorkbenchHistoricalThreadRow({
     displayedHistoricalThread,
     historicalAgentState,
   };
-}
-
-function WorkbenchActiveThreadActions({
-  pending,
-  isArchived,
-  onUnlinkThread,
-  supportsSettlement,
-  toggleThreadSettlement,
-  settlementPendingThreadId,
-  onDeleteThread,
-  activeAssignment,
-  displayedActiveThread,
-  archivedActiveThread,
-}: Pick<
-  WorkbenchTicketActiveThreadRowProps,
-  | "pending"
-  | "isArchived"
-  | "onUnlinkThread"
-  | "supportsSettlement"
-  | "toggleThreadSettlement"
-  | "settlementPendingThreadId"
-  | "onDeleteThread"
-  | "activeAssignment"
-> & {
-  displayedActiveThread: EnvironmentThreadShell;
-  archivedActiveThread: EnvironmentThreadShell | undefined;
-}) {
-  return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              aria-label={`Unlink Thread ${displayedActiveThread.title}`}
-              disabled={pending || isArchived}
-              onClick={() => onUnlinkThread(activeAssignment.threadId)}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            />
-          }
-        >
-          <UnlinkIcon />
-        </TooltipTrigger>
-        <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
-      </Tooltip>
-      {supportsSettlement ? (
-        <WorkbenchThreadSettlementButton
-          archived={archivedActiveThread !== undefined}
-          disabled={pending || isArchived || archivedActiveThread !== undefined}
-          onClick={() => void toggleThreadSettlement(displayedActiveThread)}
-          pending={settlementPendingThreadId === displayedActiveThread.id}
-          settled={displayedActiveThread.settledOverride === "settled"}
-          title={displayedActiveThread.title}
-        />
-      ) : null}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              aria-label={`Delete Thread ${displayedActiveThread.title}`}
-              disabled={pending || isArchived}
-              onClick={() => onDeleteThread(activeAssignment.threadId)}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            />
-          }
-        >
-          <Trash2Icon />
-        </TooltipTrigger>
-        <TooltipPopup>Delete Thread</TooltipPopup>
-      </Tooltip>
-    </>
-  );
-}
-
-function WorkbenchHistoricalThreadActions({
-  pending,
-  isArchived,
-  onUnlinkThread,
-  supportsSettlement,
-  toggleThreadSettlement,
-  settlementPendingThreadId,
-  onDeleteThread,
-  historicalAssignment,
-  displayedHistoricalThread,
-  historicalArchivedThread,
-}: Pick<
-  WorkbenchTicketHistoricalThreadRowProps,
-  | "pending"
-  | "isArchived"
-  | "onUnlinkThread"
-  | "supportsSettlement"
-  | "toggleThreadSettlement"
-  | "settlementPendingThreadId"
-  | "onDeleteThread"
-  | "historicalAssignment"
-> & {
-  displayedHistoricalThread: EnvironmentThreadShell;
-  historicalArchivedThread: EnvironmentThreadShell | undefined;
-}) {
-  return (
-    <>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              aria-label={`Unlink Thread ${displayedHistoricalThread.title}`}
-              disabled={pending || isArchived}
-              onClick={() => onUnlinkThread(historicalAssignment.threadId)}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            />
-          }
-        >
-          <UnlinkIcon />
-        </TooltipTrigger>
-        <TooltipPopup>Unlink Thread from Ticket</TooltipPopup>
-      </Tooltip>
-      {supportsSettlement ? (
-        <WorkbenchThreadSettlementButton
-          archived={historicalArchivedThread !== undefined}
-          disabled={pending || isArchived || historicalArchivedThread !== undefined}
-          onClick={() => void toggleThreadSettlement(displayedHistoricalThread)}
-          pending={settlementPendingThreadId === displayedHistoricalThread.id}
-          settled={displayedHistoricalThread.settledOverride === "settled"}
-          title={displayedHistoricalThread.title}
-        />
-      ) : null}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              aria-label={`Delete Thread ${displayedHistoricalThread.title}`}
-              disabled={pending || isArchived}
-              onClick={() => onDeleteThread(historicalAssignment.threadId)}
-              size="icon-xs"
-              type="button"
-              variant="ghost"
-            />
-          }
-        >
-          <Trash2Icon />
-        </TooltipTrigger>
-        <TooltipPopup>Delete Thread</TooltipPopup>
-      </Tooltip>
-    </>
-  );
 }
 
 function useWorkbenchTicketDraftEditor({

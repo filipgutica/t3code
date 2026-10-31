@@ -271,7 +271,7 @@ describe("ticket planning conversation navigation", () => {
       await act(async () => latestDialogs.openDraftThread({ ...draft, phase: "working" }));
       await settle();
       expect(router.state.location.pathname).toBe(`/remote/${draft.threadId}`);
-      expect(router.state.location.search).toEqual({ workbench: true });
+      expect(router.state.location.search).toEqual({});
       // Navigation only: no Thread is created or started from this path.
       expect(command).not.toHaveBeenCalled();
     } finally {

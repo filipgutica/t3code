@@ -6,10 +6,12 @@ import {
   ThreadId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { makeThreadFixture } from "../test-fixtures";
 import {
   getWorkbenchThreadExecutionStatus,
   getWorkbenchTicketExecutionStatuses,
+  hasWorkbenchUnreadReply,
 } from "./workbenchThreadStatus.logic";
 
 const environmentId = EnvironmentId.make("local");
@@ -161,5 +163,37 @@ describe("Workbench native execution indicators", () => {
       getWorkbenchTicketExecutionStatuses({ ...inputs, assignments: inputs.assignments.slice(1) })
         .size,
     ).toBe(0);
+  });
+});
+
+describe("hasWorkbenchUnreadReply", () => {
+  const replied = makeThreadFixture({
+    id: ThreadId.make("replied"),
+    environmentId,
+    latestRun: {
+      runId: RunId.make("run"),
+      status: "completed",
+      assistantMessageId: null,
+      requestedAt: "2026-10-09T10:00:00.000Z",
+      startedAt: "2026-10-09T10:00:00.000Z",
+      completedAt: "2026-10-09T10:05:00.000Z",
+    },
+    lastVisitedAt: "2026-10-09T10:01:00.000Z",
+  });
+  const localVisit = {
+    [scopedThreadKey(scopeThreadRef(environmentId, replied.id))]: "2026-10-09T10:06:00.000Z",
+  };
+
+  it("counts a reply finished after the last visit until a later visit reads it", () => {
+    expect(hasWorkbenchUnreadReply(replied, {})).toBe(true);
+    expect(
+      hasWorkbenchUnreadReply({ ...replied, lastVisitedAt: "2026-10-09T10:06:00.000Z" }, {}),
+    ).toBe(false);
+  });
+
+  it("reads the local visit only when the server records none, as the native sidebar does", () => {
+    const { lastVisitedAt: _serverVisit, ...olderServer } = replied;
+    expect(hasWorkbenchUnreadReply(replied, localVisit)).toBe(true);
+    expect(hasWorkbenchUnreadReply(olderServer, localVisit)).toBe(false);
   });
 });

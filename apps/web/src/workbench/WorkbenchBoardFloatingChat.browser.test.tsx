@@ -251,11 +251,8 @@ it("lists drafts first, then the board's Threads by status, each naming its tick
   await expect.element(drafts).toHaveAttribute("aria-expanded", "true");
   await expect.element(screen.getByRole("menuitemradio", { name: /Plan exports/ })).toBeVisible();
   const idle = headings.nth(1);
-  await expect.element(idle).toHaveAccessibleName("Idle and working, 2 Threads");
-  await expect.element(idle).toHaveAttribute("aria-expanded", "false");
-
-  // A section heading opens to its Threads instead of opening a Thread itself.
-  await userEvent.click(idle);
+  await expect.element(idle).toHaveAccessibleName("Idle, 2 Threads");
+  await expect.element(idle).toHaveAttribute("aria-expanded", "true");
   const first = screen.getByRole("menuitemradio", { name: "PAY-1 Thread first" });
   await expect.element(first).toHaveAccessibleDescription("Refunded the duplicate charge.");
   await expect.element(first.getByText("Refunded the duplicate charge.")).toBeVisible();
@@ -288,7 +285,7 @@ it("starts another Thread on the showing Thread's ticket, but not on a draft's",
       onNewTicketThread={onNewTicketThread}
     />,
   );
-  await pickThread(screen, /Thread first/, /^Idle and working/);
+  await pickThread(screen, /Thread first/);
   await userEvent.click(threadMenu(screen));
   await userEvent.click(screen.getByRole("menuitem", { name: "New Thread on PAY-1" }));
   expect(onNewTicketThread).toHaveBeenCalledWith(
@@ -438,7 +435,7 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
     .element(strip.getByRole("status"))
     .toHaveTextContent("Select a repository to create the ticket.");
 
-  await pickThread(screen, /Thread first/, /^Idle and working/);
+  await pickThread(screen, /Thread first/);
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for first" }))
     .not.toHaveAttribute("readonly");
@@ -537,7 +534,7 @@ it("opens ticket Threads, including settled ones, as Threads and drafts as draft
       onOpenThread={onOpenThread}
     />,
   );
-  await pickThread(screen, /Thread first/, /^Idle and working/);
+  await pickThread(screen, /Thread first/);
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("first");
   await pickThread(screen, /Plan exports/);

@@ -38,6 +38,8 @@ vi.mock("../state/server", async (importOriginal) => {
     serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => config },
   };
 });
+const contextMenu = vi.hoisted(() => ({ show: vi.fn(async () => null) }));
+vi.mock("../localApi", () => ({ readLocalApi: () => ({ contextMenu }) }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -562,7 +564,7 @@ it("shows the deleted assignment and a visible replacement action in Ticket deta
   const replacement = [...container.querySelectorAll("button")].find(
     (candidate) =>
       candidate.getAttribute("aria-label") === "Create replacement Thread for Ship the release" &&
-      candidate.textContent?.includes("Thread deleted"),
+      candidate.parentElement?.textContent?.includes("Thread deleted"),
   );
   if (!replacement) throw new Error("Missing deleted Thread row action");
   const label = [...replacement.querySelectorAll("span")].find(
@@ -735,16 +737,22 @@ it("does not start a fresh planning conversation through the URL without operate
 it("disables Ticket Thread mutations when permission is revoked and restores them when granted", async () => {
   for (const canOperate of [true, false, true]) {
     await render({ detail: true, canOperate });
-    for (const label of [
-      "Create Thread",
-      "Link existing Thread",
-      "Unlink Thread Release agent",
-      "Delete Thread Release agent",
-      "Settle Thread Release agent",
-    ]) {
+    for (const label of ["Create Thread", "Link existing Thread", "Settle Thread Release agent"]) {
       expect(button(label).disabled, label).toBe(!canOperate);
     }
-    expect(button("Open Thread for Ship the release").disabled).toBe(false);
+    const open = button("Open Thread for Ship the release");
+    expect(open.disabled).toBe(false);
+    contextMenu.show.mockClear();
+    await act(async () => {
+      open.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(
+      [
+        expect.objectContaining({ label: "Unlink from Ticket", disabled: !canOperate }),
+        expect.objectContaining({ label: "Delete Thread", disabled: !canOperate }),
+      ],
+      expect.anything(),
+    );
   }
 });
 

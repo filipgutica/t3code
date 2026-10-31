@@ -156,7 +156,6 @@ it("keeps the native status in the slot, counts other reasons, and opens the own
   expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
     to: "/$environmentId/$threadId",
     params: { environmentId, threadId },
-    search: { workbench: true },
   });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
 });

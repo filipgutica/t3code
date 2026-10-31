@@ -130,18 +130,20 @@ in **Work area**, review the repositories, and confirm.
   <img src="./media/workbench/thread.png" alt="The same native Thread continues from planning into the prepared Ticket work area.">
 </picture>
 
-Use **Create Thread** for another conversation on the same Ticket. Use **Link existing
-Thread** to add an unassigned native conversation, or **Unlink Thread from Ticket**
-to remove the association without deleting it. **Settle** moves a conversation out
-of the active group; **Thread history** keeps earlier conversations available.
+Use **Create Thread** for another conversation on the same Ticket, or **Link existing
+Thread** to add an unassigned native conversation. Hover a Thread for its details, or
+right-click it to unlink it from the Ticket without deleting it, or to delete it.
+**Settle** moves a conversation out of the active group; **Thread history** keeps
+earlier conversations available.
 
-Opening a Thread from a Ticket keeps the Workbench context visible. Use the Board
-or Ticket links to return to the work, or choose **Back to Threads** to restore the
-regular T3 sidebar. The command palette also offers **Open Workbench**, **New
-Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
+Opening a Thread from a Ticket opens the regular Thread page. Use its Board or
+Ticket links to return to the work. The command palette also offers **Open
+Workbench**, **New Ticket** for the current Workspace, and **Back to Ticket** from a
+linked Thread.
 
 The Workbench sidebar lists Tickets. Reach a Ticket's Threads from its page or its
-chat, which list Threads that need attention first.
+chat, which list them like an inbox: **Unread** holds new replies and Threads waiting
+on you, then **Idle**, with **Working** and **Settled** collapsed.
 
 ## Chat with Threads
 
