@@ -742,17 +742,23 @@ it("disables Ticket Thread mutations when permission is revoked and restores the
     }
     const open = button("Open Thread for Ship the release");
     expect(open.disabled).toBe(false);
+    const menuItems = [
+      expect.objectContaining({ label: "Unlink from Ticket", disabled: !canOperate }),
+      expect.objectContaining({ label: "Delete Thread", disabled: !canOperate }),
+    ];
     contextMenu.show.mockClear();
     await act(async () => {
       open.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
     });
-    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(
-      [
-        expect.objectContaining({ label: "Unlink from Ticket", disabled: !canOperate }),
-        expect.objectContaining({ label: "Delete Thread", disabled: !canOperate }),
-      ],
-      expect.anything(),
-    );
+    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(menuItems, expect.anything());
+    // Keyboard users reach the same menu with Shift+F10, as on Workbench sidebar rows.
+    contextMenu.show.mockClear();
+    await act(async () => {
+      open.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true }),
+      );
+    });
+    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(menuItems, expect.anything());
   }
 });
 

@@ -69,11 +69,14 @@ function resolveThreadPullRequestState(
 export function useWorkbenchSidebarThreadRowData({
   thread,
   threadRef,
+  fallbackShell,
 }: {
   thread: Pick<WorkbenchSidebarThread, "environmentId">;
   threadRef: ThreadRef;
+  /** Used when the live shell store lacks the Thread, as it does for archived Threads. */
+  fallbackShell?: ThreadShell | undefined;
 }): WorkbenchSidebarThreadRowData {
-  const shell = useThreadShell(threadRef);
+  const shell = useThreadShell(threadRef) ?? fallbackShell ?? null;
   const project = useProject(shell ? scopeProjectRef(shell.environmentId, shell.projectId) : null);
   const environment = useEnvironment(thread.environmentId);
   const providers = useAtomValue(serverEnvironment.providersValueAtom(thread.environmentId));

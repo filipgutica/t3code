@@ -1,4 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import type { ReactElement } from "react";
 
@@ -10,14 +11,17 @@ function WorkbenchThreadPreviewContent({
   environmentId,
   threadId,
   title,
+  shell,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly title: string;
+  readonly shell: EnvironmentThreadShell | undefined;
 }) {
   const data = useWorkbenchSidebarThreadRowData({
     thread: { environmentId },
     threadRef: scopeThreadRef(environmentId, threadId),
+    fallbackShell: shell,
   });
   return (
     <WorkbenchSidebarThreadPreview
@@ -36,11 +40,14 @@ export function WorkbenchThreadHoverPreview({
   environmentId,
   threadId,
   title,
+  shell,
   children,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
   readonly title: string;
+  /** The caller's shell, for archived Threads the live shell store omits. */
+  readonly shell?: EnvironmentThreadShell | undefined;
   readonly children: ReactElement;
 }) {
   return (
@@ -51,6 +58,7 @@ export function WorkbenchThreadHoverPreview({
           environmentId={environmentId}
           threadId={threadId}
           title={title}
+          shell={shell}
         />
       </TooltipPopup>
     </Tooltip>

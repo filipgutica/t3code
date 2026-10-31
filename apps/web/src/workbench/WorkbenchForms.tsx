@@ -68,7 +68,6 @@ import {
   type Dispatch,
   type SetStateAction,
   type FormEvent,
-  type MouseEvent,
   type ReactNode,
 } from "react";
 import { WorkbenchTicketStatusMenu } from "./WorkbenchTicketStatusMenu";
@@ -79,6 +78,7 @@ import {
 } from "./WorkbenchThreadExecutionStatus";
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import { readLocalApi } from "../localApi";
+import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 import {
   getWorkbenchThreadExecutionStatus,
   getWorkbenchTicketExecutionStatuses,
@@ -1621,6 +1621,96 @@ interface WorkbenchThreadRowMenu {
   readonly onDelete: () => void;
 }
 
+/** Opens Unlink and Delete at a point, as a native sidebar row's context menu does. */
+function openWorkbenchThreadRowMenu(
+  menu: WorkbenchThreadRowMenu,
+  position: { x: number; y: number },
+) {
+  const api = readLocalApi();
+  if (!api) return;
+  void api.contextMenu
+    .show(
+      [
+        { id: "unlink", label: "Unlink from Ticket", disabled: menu.disabled },
+        {
+          id: "delete",
+          label: "Delete Thread",
+          icon: "trash",
+          destructive: true,
+          disabled: menu.disabled,
+        },
+      ],
+      position,
+    )
+    .then((selected) => {
+      if (selected === "unlink") menu.onUnlink();
+      if (selected === "delete") menu.onDelete();
+    })
+    .catch(() => {
+      toastManager.add({ type: "error", title: "Could not open Thread actions" });
+    });
+}
+
+function WorkbenchThreadRowIcon({
+  executionStatus,
+  unread,
+}: {
+  readonly executionStatus: WorkbenchThreadExecutionStatusData | null | undefined;
+  readonly unread: boolean;
+}) {
+  return (
+    <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
+      {executionStatus ? (
+        <WorkbenchThreadExecutionStatusIcon status={executionStatus.presentation} />
+      ) : unread ? (
+        <span aria-hidden className="size-2 rounded-full bg-success" />
+      ) : (
+        <MessageSquareIcon aria-hidden className="size-3.5" />
+      )}
+    </span>
+  );
+}
+
+/** The row's state, then its time, which the quick action replaces on hover or focus. */
+function WorkbenchThreadRowTrailing({
+  executionStatus,
+  quickAction,
+  recencyLabel,
+  stateLabel,
+}: {
+  readonly executionStatus: WorkbenchThreadExecutionStatusData | null | undefined;
+  readonly quickAction: ReactNode;
+  readonly recencyLabel: string | null;
+  readonly stateLabel: string | null;
+}) {
+  return (
+    <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      {executionStatus ? (
+        <WorkbenchThreadExecutionStatus
+          status={executionStatus.presentation}
+          startedAt={executionStatus.startedAt}
+        />
+      ) : stateLabel ? (
+        <span>{stateLabel}</span>
+      ) : null}
+      {recencyLabel && quickAction ? (
+        <span className="relative flex items-center">
+          <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
+            {recencyLabel}
+          </span>
+          <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
+            {quickAction}
+          </span>
+        </span>
+      ) : (
+        (quickAction ?? (recencyLabel ? <span>{recencyLabel}</span> : null))
+      )}
+    </span>
+  );
+}
+
+const VISIBLE_THREAD_ROW_ACTIONS = new Set(["Restore and open", "Create replacement Thread"]);
+
 /** A Ticket's Thread laid out like a native sidebar row: hover for details, right-click for more. */
 function WorkbenchThreadRow({
   actionLabel,
@@ -1639,7 +1729,7 @@ function WorkbenchThreadRow({
   readonly ariaLabel: string;
   readonly disabled: boolean;
   readonly executionStatus?: WorkbenchThreadExecutionStatusData | null;
-  /** Unlink and Delete, on right-click. */
+  /** Unlink and Delete, on right-click or the context-menu key. */
   readonly menu?: WorkbenchThreadRowMenu | undefined;
   readonly onClick: () => void;
   /** Takes the recency label's place on hover, as Settle does on native rows. */
@@ -1652,82 +1742,48 @@ function WorkbenchThreadRow({
 }) {
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const unread = thread ? hasWorkbenchUnreadReply(thread, localVisits) : false;
-  const openMenu = (event: MouseEvent<HTMLDivElement>) => {
-    const api = readLocalApi();
-    if (!menu || !api) return;
-    event.preventDefault();
-    void api.contextMenu
-      .show(
-        [
-          { id: "unlink", label: "Unlink from Ticket", disabled: menu.disabled },
-          {
-            id: "delete",
-            label: "Delete Thread",
-            icon: "trash",
-            destructive: true,
-            disabled: menu.disabled,
-          },
-        ],
-        { x: event.clientX, y: event.clientY },
-      )
-      .then((selected) => {
-        if (selected === "unlink") menu.onUnlink();
-        if (selected === "delete") menu.onDelete();
-      })
-      .catch(() => {
-        toastManager.add({ type: "error", title: "Could not open Thread actions" });
-      });
-  };
-  const visibleActionLabel =
-    actionLabel === "Restore and open" || actionLabel === "Create replacement Thread";
   const row = (
     <div
       className="group/thread-row relative isolate flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/45 focus-within:bg-muted/45"
-      onContextMenu={openMenu}
+      onContextMenu={(event) => {
+        if (!menu) return;
+        event.preventDefault();
+        openWorkbenchThreadRowMenu(menu, { x: event.clientX, y: event.clientY });
+      }}
     >
       <button
         aria-label={ariaLabel}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring disabled:cursor-default disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
+        onKeyDown={
+          menu
+            ? (event) =>
+                handleWorkbenchSidebarMenuKeyDown(event, (position) =>
+                  openWorkbenchThreadRowMenu(menu, position),
+                )
+            : undefined
+        }
         type="button"
       >
-        <span className="flex size-3.5 shrink-0 items-center justify-center text-muted-foreground">
-          {executionStatus ? (
-            <WorkbenchThreadExecutionStatusIcon status={executionStatus.presentation} />
-          ) : unread ? (
-            <span aria-hidden className="size-2 rounded-full bg-success" />
-          ) : (
-            <MessageSquareIcon aria-hidden className="size-3.5" />
-          )}
-        </span>
+        <WorkbenchThreadRowIcon executionStatus={executionStatus} unread={unread} />
         <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>{title}</span>
-        <span className={visibleActionLabel ? "shrink-0 text-xs text-muted-foreground" : "sr-only"}>
+        <span
+          className={
+            actionLabel && VISIBLE_THREAD_ROW_ACTIONS.has(actionLabel)
+              ? "shrink-0 text-xs text-muted-foreground"
+              : "sr-only"
+          }
+        >
           {actionLabel ?? "Open Thread"}
         </span>
       </button>
-      <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        {executionStatus ? (
-          <WorkbenchThreadExecutionStatus
-            status={executionStatus.presentation}
-            startedAt={executionStatus.startedAt}
-          />
-        ) : stateLabel ? (
-          <span>{stateLabel}</span>
-        ) : null}
-        {recencyLabel && quickAction ? (
-          <span className="relative flex items-center">
-            <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
-              {recencyLabel}
-            </span>
-            <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
-              {quickAction}
-            </span>
-          </span>
-        ) : (
-          (quickAction ?? (recencyLabel ? <span>{recencyLabel}</span> : null))
-        )}
-      </span>
+      <WorkbenchThreadRowTrailing
+        executionStatus={executionStatus}
+        quickAction={quickAction}
+        recencyLabel={recencyLabel}
+        stateLabel={stateLabel}
+      />
     </div>
   );
   return thread ? (
@@ -1735,6 +1791,7 @@ function WorkbenchThreadRow({
       environmentId={thread.environmentId}
       threadId={thread.id}
       title={title}
+      shell={thread}
     >
       {row}
     </WorkbenchThreadHoverPreview>
