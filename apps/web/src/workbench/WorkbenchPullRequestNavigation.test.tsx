@@ -55,6 +55,8 @@ vi.mock("../state/entities", () => {
   return {
     useThreadShells: () => emptyThreadShells,
     readProjects: projects,
+    readProject: () => null,
+    readThreadShell: () => null,
     useProjects: projects,
     useServerConfigs: () =>
       new Map([

@@ -260,7 +260,7 @@ function FloatingChatThread({
         routeKind="server"
         hideHeader
         readOnlyPlanning={planningThread}
-        embedded={{ composerFocusRequest, openThread }}
+        workbenchEmbed={{ composerFocusRequest, openThread }}
       />
     </ChangeRequestLinkOpenProvider>
   );

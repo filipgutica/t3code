@@ -7,8 +7,6 @@ import type { ServerUpdateOutcome, ServerUpdateTarget } from "../components/Serv
 
 const state = vi.hoisted(() => ({
   machines: new Array<UpdateEverythingMachine>(),
-  npmPublished: true,
-  checkNpm: vi.fn(),
   updateServer: vi.fn(async (_target: ServerUpdateTarget): Promise<ServerUpdateOutcome> => ({
     status: "updated",
   })),
@@ -54,12 +52,6 @@ vi.mock("~/state/environments", () => ({
 }));
 vi.mock("~/state/session", () => ({ environmentSessionStatesAtom: () => "sessions" }));
 vi.mock("~/state/server", () => ({ environmentUpdateStatesAtom: () => "updates" }));
-vi.mock("~/state/npmRelease", () => ({
-  useNpmReleasePublished: (version: string | null) => {
-    state.checkNpm(version);
-    return state.npmPublished;
-  },
-}));
 vi.mock("../components/ServerUpdateAction", () => ({
   canUpdateServer: (allowed: boolean) => allowed,
   useServerUpdate: () => state.updateServer,
@@ -105,7 +97,6 @@ afterAll(() => vi.unstubAllEnvs());
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
-  state.npmPublished = true;
   state.machines = ["npm", "other-desktop", "this-app"].map((id) => ({
     environmentId: EnvironmentId.make(id),
     label: id,
@@ -158,39 +149,33 @@ it("retains the native npm server target and remote desktop updates", async () =
     "Update this app, 2 servers, and 1 provider",
   ]);
   await act(() => renderer!.root.findByType("button").props.onClick());
-  expect(state.checkNpm).toHaveBeenCalledWith("0.0.25");
   expect(state.updateServer.mock.calls.map(([target]) => target.serverLabel)).toEqual([
     "npm",
     "other-desktop",
   ]);
 });
 
-it.each([false, true])(
-  "excludes npm targets under Workbench even when its version is published: %s",
-  async (published) => {
-    state.npmPublished = published;
-    await act(() => {
-      renderer = create(
-        <provider.WorkbenchHostProvider>
-          <UpdateAction />
-        </provider.WorkbenchHostProvider>,
-      );
-    });
-    expect(renderer!.root.findByType("button").children).toEqual([
-      "Update this app, 1 server, and 1 provider",
-    ]);
-    expect(state.checkNpm).toHaveBeenCalledWith(null);
-    expect(renderer!.root.findByType("button").props["data-skipped"]).toContain(
-      "npm: npm server updates are disabled for this app",
+it("excludes npm targets under Workbench", async () => {
+  await act(() => {
+    renderer = create(
+      <provider.WorkbenchHostProvider>
+        <UpdateAction />
+      </provider.WorkbenchHostProvider>,
     );
-    await act(() => renderer!.root.findByType("button").props.onClick());
-    expect(state.updateServer.mock.calls.map(([target]) => target.serverLabel)).toEqual([
-      "other-desktop",
-    ]);
-    expect(state.updateProviders).toHaveBeenCalledOnce();
-    expect(state.installLocal).toHaveBeenCalledOnce();
-  },
-);
+  });
+  expect(renderer!.root.findByType("button").children).toEqual([
+    "Update this app, 1 server, and 1 provider",
+  ]);
+  expect(renderer!.root.findByType("button").props["data-skipped"]).toContain(
+    "npm: npm server updates are disabled for this app",
+  );
+  await act(() => renderer!.root.findByType("button").props.onClick());
+  expect(state.updateServer.mock.calls.map(([target]) => target.serverLabel)).toEqual([
+    "other-desktop",
+  ]);
+  expect(state.updateProviders).toHaveBeenCalledOnce();
+  expect(state.installLocal).toHaveBeenCalledOnce();
+});
 
 it("preserves unreachable machine reporting when Workbench disables npm updates", async () => {
   state.machines.push({
