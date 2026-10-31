@@ -6,7 +6,6 @@ import { isDesktopLocalConnectionTarget } from "~/connection/desktopLocal";
 import { isElectron } from "~/env";
 import { useHostIntegrations } from "~/hostIntegrations";
 import { useEnvironments } from "~/state/environments";
-import { useNpmReleasePublished } from "~/state/npmRelease";
 import { environmentIdsKey } from "~/state/environmentAtomList";
 import { environmentUpdateStatesAtom } from "~/state/server";
 import { environmentSessionStatesAtom } from "~/state/session";
@@ -70,38 +69,20 @@ export function useUpdateEverything(
     canMaintain: canUpdateServer(sessionStates[index]!),
     updateState: updateStates[index]!,
   }));
-  // A track switch's target came from npm already.
-  const {
-    targets,
-    skipped: unreachable,
-    waitForNpm,
-  } = channelSwitch
-    ? { ...collectChannelSwitchTargets(machines, channelSwitch), waitForNpm: [] }
-    : collectServerUpdateTargets(machines, targetVersion, localUpdateVersion !== null);
-  const behindServers = targets.filter(
+  const { targets, skipped: unreachable } = channelSwitch
+    ? collectChannelSwitchTargets(machines, channelSwitch)
+    : collectServerUpdateTargets(machines, targetVersion);
+  const servers = targets.filter(
     (server) => allowNpmServerUpdates || server.selfUpdate === "desktop-managed",
   );
-  const published = useNpmReleasePublished(
-    waitForNpm.some((server) => behindServers.includes(server)) ? targetVersion : null,
-  );
-  const servers = published
-    ? behindServers
-    : behindServers.filter((server) => !waitForNpm.includes(server));
   const skipped: ReadonlyArray<SkippedMachine> = [
     ...unreachable,
     ...targets
-      .filter((server) => !behindServers.includes(server))
-      .map((server) => ({
-        environmentId: server.environmentId,
-        label: server.serverLabel,
-        reason: "npm server updates are disabled for this app",
-      })),
-    ...behindServers
       .filter((server) => !servers.includes(server))
       .map((server) => ({
         environmentId: server.environmentId,
         label: server.serverLabel,
-        reason: `t3@${targetVersion} is not on npm yet`,
+        reason: "npm server updates are disabled for this app",
       })),
   ];
   // Track-only hosts save a setting and restart nothing, so they are neither listed nor counted.
