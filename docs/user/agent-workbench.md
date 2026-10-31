@@ -140,7 +140,8 @@ or Ticket links to return to the work, or choose **Back to Threads** to restore 
 regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
-Workbench sidebar Thread rows offer the same pin and snooze actions as native Threads.
+The Workbench sidebar lists Tickets. Reach a Ticket's Threads from its page or its
+chat, which list Threads that need attention first.
 
 ## Chat with Threads
 
