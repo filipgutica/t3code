@@ -164,44 +164,61 @@ export function resolveWorkbenchFloatingChat({
   };
 }
 
-/** Ticket drafts first, then one group per ticket in list order. */
-const groupWorkbenchFloatingChatThreads = (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => {
-  const groups = new Map<
-    WorkbenchTicketId | null,
-    { ticket: WorkbenchFloatingChatTicket | null; threads: WorkbenchFloatingChatThread[] }
-  >();
-  for (const thread of threads) {
-    const key = thread.ticket?.id ?? null;
-    const group = groups.get(key) ?? { ticket: thread.ticket, threads: [] };
-    group.threads.push(thread);
-    groups.set(key, group);
-  }
-  const drafts = groups.get(null);
-  groups.delete(null);
-  return drafts ? [drafts, ...groups.values()] : [...groups.values()];
+type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status">;
+
+export interface WorkbenchThreadStatusSection<Thread extends WorkbenchStatusThread> {
+  readonly id: "attention" | "idle" | "settled";
+  readonly label: string;
+  readonly threads: ReadonlyArray<Thread>;
+  /** Working Threads among the idle ones, so a collapsed section still shows activity. */
+  readonly workingCount: number;
+  readonly openByDefault: boolean;
+}
+
+/**
+ * Threads by what they need from the user: waiting on them, then idle or working, then settled.
+ * Needs attention starts open, as does the section holding the showing Thread; empty ones drop.
+ */
+export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusThread>({
+  active,
+  settled,
+  showingThreadId,
+}: {
+  readonly active: ReadonlyArray<Thread>;
+  readonly settled: ReadonlyArray<Thread>;
+  readonly showingThreadId: ThreadId | null;
+}): ReadonlyArray<WorkbenchThreadStatusSection<Thread>> => {
+  const needsAttention = (thread: Thread) =>
+    thread.status !== null && WORKBENCH_ATTENTION_KINDS.has(thread.status.kind);
+  const idle = active.filter((thread) => !needsAttention(thread));
+  const sections = [
+    { id: "attention", label: "Needs attention", threads: active.filter(needsAttention) },
+    { id: "idle", label: "Idle and working", threads: idle },
+    { id: "settled", label: "Settled", threads: settled },
+  ] as const;
+  return sections
+    .filter((section) => section.threads.length > 0)
+    .map((section) => ({
+      ...section,
+      workingCount:
+        section.id === "idle"
+          ? idle.filter((thread) => thread.status?.kind === "working").length
+          : 0,
+      openByDefault:
+        section.id === "attention" ||
+        section.threads.some((thread) => thread.threadId === showingThreadId),
+    }));
 };
 
 export interface WorkbenchFloatingChatPickerRow {
   readonly thread: WorkbenchFloatingChatThread;
-  /** The Thread title, less a leading ticket title its group already shows. */
+  /** The row's ticket, named on the board where several tickets' Threads mix. */
+  readonly ticketLabel: string | null;
+  /** The Thread title, less a leading ticket title the row or chat already shows. */
   readonly title: string;
 }
 
-/** A plain list of Threads, or a collapsible group of drafts or of one ticket's Threads. */
-export type WorkbenchFloatingChatPickerSection =
-  | {
-      readonly type: "rows";
-      readonly id: string;
-      readonly rows: ReadonlyArray<WorkbenchFloatingChatPickerRow>;
-    }
-  | {
-      readonly type: "group";
-      readonly id: string;
-      readonly ticket: WorkbenchFloatingChatTicket | null;
-      readonly rows: ReadonlyArray<WorkbenchFloatingChatPickerRow>;
-    };
-
-// Threads often start with their ticket's title; under its heading only the rest tells them apart.
+// Threads often start with their ticket's title; beside it only the rest tells them apart.
 const titleUnderHeading = (title: string, ticketTitle: string) => {
   const match = title.startsWith(ticketTitle)
     ? /^[\s\-–—:·|]+(.+)$/.exec(title.slice(ticketTitle.length))
@@ -209,37 +226,21 @@ const titleUnderHeading = (title: string, ticketTitle: string) => {
   return match?.[1] ?? title;
 };
 
-/**
- * The picker's layout. The ticket chat lists its one ticket's Threads as plain rows. The board
- * always groups drafts and each ticket, so a ticket always opens to its Threads.
- */
-export const getWorkbenchFloatingChatPickerSections = (
-  threads: ReadonlyArray<WorkbenchFloatingChatThread>,
-  grouped: boolean,
-): ReadonlyArray<WorkbenchFloatingChatPickerSection> =>
-  groupWorkbenchFloatingChatThreads(threads).map(({ ticket, threads: members }) => {
-    const id = ticket?.id ?? "drafts";
-    const rows = members.map((thread) => ({
-      thread,
-      title: ticket ? titleUnderHeading(thread.title, ticket.title) : thread.title,
-    }));
-    return grouped ? { type: "group", id, ticket, rows } : { type: "rows", id, rows };
-  });
-
-/**
- * Drafts start open as work in progress; a ticket's group starts open when it holds the
- * showing Thread or one waiting on the user.
- */
-export const isWorkbenchFloatingChatGroupOpenByDefault = (
-  { ticket, rows }: Extract<WorkbenchFloatingChatPickerSection, { type: "group" }>,
-  selectedThreadId: ThreadId | null,
-) =>
-  ticket === null ||
-  rows.some(
-    ({ thread }) =>
-      thread.threadId === selectedThreadId ||
-      (thread.status !== null && WORKBENCH_ATTENTION_KINDS.has(thread.status.kind)),
-  );
+/** The ticket chat names its ticket in the header; a board row names it by key, else title. */
+export const getWorkbenchFloatingChatPickerRow = (
+  thread: WorkbenchFloatingChatThread,
+  board: boolean,
+): WorkbenchFloatingChatPickerRow => {
+  const { ticket } = thread;
+  if (ticket === null) return { thread, ticketLabel: null, title: thread.title };
+  const ticketLabel = board ? (ticket.key ?? ticket.title) : null;
+  const keyShown = board && ticket.key !== null;
+  return {
+    thread,
+    ticketLabel,
+    title: keyShown ? thread.title : titleUnderHeading(thread.title, ticket.title),
+  };
+};
 
 export const filterWorkbenchFloatingChatThreads = (
   threads: ReadonlyArray<WorkbenchFloatingChatThread>,

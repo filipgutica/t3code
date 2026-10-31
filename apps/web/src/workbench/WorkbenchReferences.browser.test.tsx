@@ -30,10 +30,12 @@ vi.mock("./state", () => ({
     removeReference: { kind: "remove" },
   },
 }));
-vi.mock("../state/projects", () => ({
+vi.mock("../state/projects", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/projects")>()),
   projectEnvironment: { readFile: (request: unknown) => request },
 }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: (request: unknown) => mocks.readFile(request),
 }));
 

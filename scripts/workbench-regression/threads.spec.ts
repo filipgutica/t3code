@@ -120,12 +120,13 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
     (entry) => entry.id === assignment.threadId,
   )!;
   await page.screenshot({ path: testInfo.outputPath("settlement-active.png"), fullPage: true });
+  const settledToggle = page
+    .getByRole("region", { name: "Settled", exact: true })
+    .getByRole("button", { name: "Settled 1", exact: true });
   await page
     .getByRole("button", { name: `Settle Thread ${nativeThread.title}`, exact: true })
     .click();
-  await expect(
-    page.getByRole("button", { name: "Expand Settled Threads", exact: true }),
-  ).toBeVisible();
+  await expect(settledToggle).toHaveAttribute("aria-expanded", "false");
   await expect(
     page.getByRole("button", { name: `Un-settle Thread ${nativeThread.title}`, exact: true }),
   ).not.toBeVisible();
@@ -135,9 +136,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   ).toBe("settled");
   await page.reload();
   await waitForWorkbench(page);
-  await expect(
-    page.getByRole("button", { name: "Expand Settled Threads", exact: true }),
-  ).toBeVisible();
+  await expect(settledToggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText("No active Threads", { exact: true })).toBeVisible();
   await page
     .getByRole("button", {
@@ -152,101 +151,12 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await expect(
     sidebar.getByRole("button", { name: "Fix focus after creating a project", exact: true }),
   ).toHaveCount(1);
-  await sidebar
-    .getByRole("button", {
-      name: "Expand Settled Threads in Fix focus after creating a project",
-      exact: true,
-    })
-    .click();
-  const settledSidebar = sidebar.getByRole("region", {
-    name: "Settled Threads in Fix focus after creating a project",
-    exact: true,
-  });
-  await settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }).click();
-  await expect(page).toHaveURL(
-    (url) =>
-      url.pathname.endsWith(`/${nativeThread.id}`) && url.searchParams.get("workbench") === "true",
+  // The sidebar lists Tickets only; Threads are reached from the Ticket and its chat.
+  await expect(sidebar.getByRole("button", { name: nativeThread.title, exact: true })).toHaveCount(
+    0,
   );
-  await expect(
-    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
-  ).toBeVisible();
-  await settledSidebar
-    .getByRole("button", { name: nativeThread.title, exact: true })
-    .click({ button: "right" });
-  await expect(page.getByRole("menuitem", { name: /^New thread on / })).not.toBeVisible();
-  // Pin and Snooze match native rows; the row shows and reverses both states.
-  await expect(page.getByRole("menuitem", { name: "Pin thread", exact: true })).toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Snooze", exact: true })).toBeVisible();
-  await expect(
-    page.getByRole("menuitem", { name: "Project settings", exact: true }),
-  ).not.toBeVisible();
-  await expect(
-    page.getByRole("menuitem", { name: "Archive thread", exact: true }),
-  ).not.toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Delete", exact: true })).not.toBeVisible();
-  await expect(page.getByRole("menuitem", { name: "Un-settle thread", exact: true })).toBeVisible();
-  await page.screenshot({ path: testInfo.outputPath("workbench-thread-menu.png") });
-  await page.getByRole("menuitem", { name: "Rename thread", exact: true }).click();
-  await sidebar
-    .getByRole("textbox", { name: `Rename Thread ${nativeThread.title}`, exact: true })
-    .fill("Sidebar renamed thread");
-  await sidebar
-    .getByRole("textbox", { name: `Rename Thread ${nativeThread.title}`, exact: true })
-    .press("Enter");
-  await expect(
-    sidebar.getByRole("button", { name: "Sidebar renamed thread", exact: true }),
-  ).toBeVisible();
-  await settledSidebar
-    .getByRole("button", { name: "Sidebar renamed thread", exact: true })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Rename thread", exact: true }).click();
-  await sidebar
-    .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
-    .fill(nativeThread.title);
-  await sidebar
-    .getByRole("textbox", { name: "Rename Thread Sidebar renamed thread", exact: true })
-    .press("Enter");
-  await expect(
-    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
-  ).toBeVisible();
-  await settledSidebar
-    .getByRole("button", { name: nativeThread.title, exact: true })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Un-settle thread", exact: true }).click();
-  await expect(
-    sidebar
-      .locator("#workbench-sidebar-ticket-orbit-004-active")
-      .getByRole("button", { name: nativeThread.title, exact: true }),
-  ).toBeVisible();
-  await sidebar
-    .locator("#workbench-sidebar-ticket-orbit-004-active")
-    .getByRole("button", { name: nativeThread.title, exact: true })
-    .click({ button: "right" });
-  await page.getByRole("menuitem", { name: "Settle thread", exact: true }).click();
-  await expect(
-    settledSidebar.getByRole("button", { name: nativeThread.title, exact: true }),
-  ).toBeVisible();
-  await expect(
-    sidebar.getByRole("button", {
-      name: "Collapse Settled Threads in Fix focus after creating a project",
-      exact: true,
-    }),
-  ).toBeVisible();
-  await page.screenshot({
-    path: testInfo.outputPath("sidebar-settled-thread.png"),
-    fullPage: true,
-  });
-  await page
-    .getByRole("link", {
-      name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Expand Settled Threads", exact: true }),
-  ).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("settlement-collapsed.png"), fullPage: true });
-  await page.getByRole("button", { name: "Expand Settled Threads", exact: true }).click();
+  await settledToggle.click();
   await expect(
     page.getByRole("button", { name: `Un-settle Thread ${nativeThread.title}`, exact: true }),
   ).toBeVisible();

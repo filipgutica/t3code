@@ -51,7 +51,6 @@ import {
   groupWorkbenchReferences,
   type WorkbenchReferencesByTicket,
 } from "./workbenchReferences.logic";
-import { WorkbenchSidebarThreadRow } from "./WorkbenchSidebarThreadRow";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import {
@@ -549,7 +548,7 @@ function WorkbenchSidebarNothingNeedsYou({
       <p>Agents are working or done.</p>
       {inspectionIncomplete ? <p>Some linked PRs couldn't be checked yet.</p> : null}
       <Button size="xs" variant="link" onClick={onShowAll}>
-        Show all threads
+        Show all Tickets
       </Button>
     </div>
   );
@@ -687,14 +686,13 @@ function isWorkbenchSidebarSelectionVisible({
   projects: WorkbenchSidebarNavigationFields["projects"];
   groups: WorkbenchSidebarNavigationFields["ticketGroupsByWorkspace"];
 }) {
-  const { selectedWorkspaceId, selectedTicketId, contextThreadId } = selection;
+  const { selectedWorkspaceId, selectedTicketId } = selection;
   if (!selectedWorkspaceId) return true;
   if (!selectedTicketId) return projects.some((project) => project.id === selectedWorkspaceId);
-  const group = groups
-    .get(selectedWorkspaceId)
-    ?.active.find((group) => group.ticket.id === selectedTicketId);
-  if (!group) return false;
-  return !contextThreadId || group.threads.some((thread) => thread.id === contextThreadId);
+  return (
+    groups.get(selectedWorkspaceId)?.active.some((group) => group.ticket.id === selectedTicketId) ??
+    false
+  );
 }
 
 function WorkbenchSidebarFilterLocationCue({
@@ -751,51 +749,39 @@ function getWorkbenchSidebarSearchSelection(
   const ticketId = result.kind === "workspace" ? undefined : result.ticketId;
   const ticketIsDone =
     groups.get(result.workspaceId)?.done.some((group) => group.ticket.id === ticketId) ?? false;
-  return { workspaceId: result.workspaceId, ticketId, ticketIsDone };
+  return { workspaceId: result.workspaceId, ticketIsDone };
 }
 
 const emptySidebarDrafts: WorkbenchSidebarNavigationFields["draftsByWorkspace"] = new Map();
 
-/** Ticket status and native settlement move rows between lists, removing focused actions. */
+/** Ticket status moves rows between lists, removing focused actions. */
 function useWorkbenchSidebarRowFocus(navigationRef: RefObject<HTMLElement | null>) {
   const previousFocus = useRef<{
-    threadId: string | undefined;
     ticketId: string | undefined;
     trigger: HTMLElement;
   } | null>(null);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores DOM focus when a status or settlement commit replaces the focused sidebar action
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- restores DOM focus when a status commit replaces the focused sidebar action
   useLayoutEffect(() => {
     const previous = previousFocus.current;
     if (!previous || previous.trigger.isConnected) return;
     previousFocus.current = null;
     if (document.activeElement !== document.body) return;
-    const navigation = navigationRef.current;
-    const threadRow = Array.from(
-      navigation?.querySelectorAll<HTMLElement>("[data-workbench-sidebar-thread-id]") ?? [],
-    ).find((row) => row.dataset.workbenchSidebarThreadId === previous.threadId);
     const ticketRow = Array.from(
-      navigation?.querySelectorAll<HTMLElement>("[data-workbench-sidebar-ticket-row-id]") ?? [],
+      navigationRef.current?.querySelectorAll<HTMLElement>(
+        "[data-workbench-sidebar-ticket-row-id]",
+      ) ?? [],
     ).find((row) => row.dataset.workbenchSidebarTicketRowId === previous.ticketId);
     const target =
-      threadRow?.querySelector<HTMLButtonElement>("[data-workbench-sidebar-navigation]") ??
       ticketRow?.querySelector<HTMLButtonElement>("[data-workbench-sidebar-navigation]") ??
       document.querySelector<HTMLInputElement>('input[aria-label="Search Workbench sidebar"]');
     target?.focus({ preventScroll: true });
   });
   return (event: FocusEvent<HTMLElement>) => {
     if (!(event.target instanceof HTMLElement)) return;
-    const threadRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-thread-id]");
     const ticketRow = event.target.closest<HTMLElement>("[data-workbench-sidebar-ticket-row-id]");
-    previousFocus.current =
-      threadRow || ticketRow
-        ? {
-            threadId: threadRow?.dataset.workbenchSidebarThreadId,
-            ticketId:
-              threadRow?.dataset.workbenchSidebarOwnerTicketId ??
-              ticketRow?.dataset.workbenchSidebarTicketRowId,
-            trigger: event.target,
-          }
-        : null;
+    previousFocus.current = ticketRow
+      ? { ticketId: ticketRow.dataset.workbenchSidebarTicketRowId, trigger: event.target }
+      : null;
   };
 }
 
@@ -888,11 +874,7 @@ function WorkbenchSidebarNavigation({
     selectedTicketIsDone,
     contextThreadId,
   ]);
-  const selection = {
-    workspaceId: selectedWorkspaceId,
-    ticketId: selectedTicketId,
-    ticketIsDone: selectedTicketIsDone,
-  };
+  const selection = { workspaceId: selectedWorkspaceId, ticketIsDone: selectedTicketIsDone };
   const {
     expansion,
     setExpansion,
@@ -957,8 +939,6 @@ function WorkbenchSidebarNavigation({
     isSearching,
   });
   const navigation = {
-    contextThreadId,
-    onOpenThread,
     onSelectTicket,
     onSelectWorkspace,
     selectedEpicId,
@@ -1159,8 +1139,6 @@ type WorkbenchSidebarWorkspaceRowProps = {
   readonly onToggle: (action: WorkbenchSidebarExpansionAction) => void;
   readonly navigation: Pick<
     WorkbenchSidebarNavigationFields,
-    | "contextThreadId"
-    | "onOpenThread"
     | "onSelectTicket"
     | "onSelectWorkspace"
     | "onCreateTicket"
@@ -1187,14 +1165,7 @@ function WorkbenchSidebarWorkspaceRow({
   navigation,
 }: WorkbenchSidebarWorkspaceRowProps) {
   const workspaceButtonRef = useRef<HTMLButtonElement>(null);
-  const {
-    contextThreadId,
-    onOpenThread,
-    onSelectTicket,
-    selectedEpicId,
-    selectedTicketId,
-    ticketDetailsById,
-  } = navigation;
+  const { onSelectTicket, selectedEpicId, selectedTicketId, ticketDetailsById } = navigation;
   const activeTicketGroups = ticketSections?.active ?? [];
   const doneTicketGroups = ticketSections?.done ?? [];
   const showArchivedTickets = workspace.id === navigation.selectedWorkspaceId;
@@ -1235,10 +1206,8 @@ function WorkbenchSidebarWorkspaceRow({
           <WorkbenchSidebarWorkspaceContents
             activeTicketGroups={activeTicketGroups}
             archivedTickets={visibleArchivedTickets}
-            contextThreadId={contextThreadId}
             doneTicketGroups={doneTicketGroups}
             expansion={expansion}
-            onOpenThread={onOpenThread}
             onSelectTicket={onSelectTicket}
             onToggle={onToggle}
             selectedEpicId={selectedEpicId}
@@ -1349,12 +1318,7 @@ function WorkbenchSidebarWorkspacePanel({
 
 type WorkbenchSidebarWorkspaceContentsProps = Pick<
   WorkbenchSidebarNavigationFields,
-  | "contextThreadId"
-  | "onOpenThread"
-  | "onSelectTicket"
-  | "selectedEpicId"
-  | "selectedTicketId"
-  | "ticketDetailsById"
+  "onSelectTicket" | "selectedEpicId" | "selectedTicketId" | "ticketDetailsById"
 > & {
   readonly activeTicketGroups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
@@ -1367,10 +1331,8 @@ type WorkbenchSidebarWorkspaceContentsProps = Pick<
 function WorkbenchSidebarWorkspaceContents({
   activeTicketGroups,
   archivedTickets,
-  contextThreadId,
   doneTicketGroups,
   expansion,
-  onOpenThread,
   onSelectTicket,
   onToggle,
   selectedEpicId,
@@ -1378,24 +1340,15 @@ function WorkbenchSidebarWorkspaceContents({
   ticketDetailsById,
   workspaceId,
 }: WorkbenchSidebarWorkspaceContentsProps) {
-  const onToggleTicket = (ticketId: WorkbenchTicketId, done: boolean) =>
-    onToggle({ type: "toggleTicket", ticketId, workspaceId, done });
-
   return (
     <>
       {activeTicketGroups.length > 0 ? (
         <WorkbenchSidebarTicketGroups
           ticketDetailsById={ticketDetailsById}
           groups={activeTicketGroups}
-          isDone={false}
-          onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
-          onToggleTicket={onToggleTicket}
           selectedEpicId={selectedEpicId}
           selectedTicketId={selectedTicketId}
-          contextThreadId={contextThreadId}
-          expansion={expansion}
-          workspaceId={workspaceId}
         />
       ) : null}
       {doneTicketGroups.length > 0 ? (
@@ -1403,15 +1356,10 @@ function WorkbenchSidebarWorkspaceContents({
           ticketDetailsById={ticketDetailsById}
           groups={doneTicketGroups}
           expanded={expansion.done}
-          onOpenThread={onOpenThread}
           onSelectTicket={onSelectTicket}
           onToggle={() => onToggle({ type: "toggleDone", workspaceId })}
-          onToggleTicket={onToggleTicket}
           selectedEpicId={selectedEpicId}
           selectedTicketId={selectedTicketId}
-          contextThreadId={contextThreadId}
-          expansion={expansion}
-          workspaceId={workspaceId}
           panelId={`workbench-sidebar-done-${workspaceId}`}
         />
       ) : null}
@@ -1425,185 +1373,74 @@ function WorkbenchSidebarWorkspaceContents({
           selectedEpicId={selectedEpicId}
           selectedTicketId={selectedTicketId}
           panelId={`workbench-sidebar-archived-${workspaceId}`}
-          contextThreadId={contextThreadId}
         />
       ) : null}
     </>
   );
 }
 
-type WorkbenchSidebarTicketGroupsProps = {
-  readonly contextThreadId: ThreadId | undefined;
-  readonly expansion: WorkbenchSidebarExpansion;
-  readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
+type WorkbenchSidebarTicketRowProps = {
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
-  readonly isDone: boolean;
-  readonly onOpenThread: (thread: {
-    readonly environmentId: EnvironmentId;
-    readonly id: ThreadId;
-  }) => void;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
-  readonly onToggleTicket: (ticketId: WorkbenchTicketId, isDone: boolean) => void;
   readonly selectedEpicId: WorkbenchEpicId | undefined;
   readonly selectedTicketId: WorkbenchTicketId | undefined;
-  readonly workspaceId: WorkbenchProjectId;
 };
 
-function WorkbenchSidebarTicketGroups({
+type WorkbenchSidebarTicketGroupsProps = WorkbenchSidebarTicketRowProps & {
+  readonly groups: ReadonlyArray<WorkbenchSidebarTicketGroup>;
+};
+
+function WorkbenchSidebarTicketRow({
+  ticket,
   ticketDetailsById,
-  contextThreadId,
-  expansion,
-  groups,
-  isDone,
-  onOpenThread,
   onSelectTicket,
-  onToggleTicket,
   selectedEpicId,
   selectedTicketId,
-  workspaceId,
-}: WorkbenchSidebarTicketGroupsProps) {
+}: WorkbenchSidebarTicketRowProps & { readonly ticket: WorkbenchSidebarTicket }) {
+  const isActive = isWorkbenchSidebarTicketDestination({
+    ticketId: ticket.id,
+    selectedTicketId,
+    selectedEpicId,
+  });
+  return (
+    <SidebarMenuItem>
+      {/* The empty disclosure column keeps Tickets aligned under their Workspace. */}
+      <div
+        data-workbench-sidebar-disclosure-row=""
+        data-workbench-sidebar-surface=""
+        data-workbench-sidebar-ticket-row-id={ticket.id}
+        data-active={isActive || undefined}
+        className="relative flex min-w-0 items-start rounded-md"
+      >
+        <span aria-hidden data-workbench-sidebar-disclosure="ticket" />
+        <WorkbenchSidebarTicketButton
+          ticket={ticket}
+          details={ticketDetailsById.get(ticket.id)}
+          isActive={isActive}
+          onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
+        />
+      </div>
+    </SidebarMenuItem>
+  );
+}
+
+function WorkbenchSidebarTicketGroups({ groups, ...rowProps }: WorkbenchSidebarTicketGroupsProps) {
   return (
     <SidebarMenu>
-      {groups.map((group) => (
-        <WorkbenchSidebarTicketGroupRow
-          ticketDetailsById={ticketDetailsById}
-          contextThreadId={contextThreadId}
-          expansion={expansion}
-          group={group}
-          isDone={isDone || (group.ticket.status === "done" && group.ticket.archivedAt == null)}
-          key={`${group.ticket.id}:${group.threads.some((thread) => thread.id === contextThreadId) ? contextThreadId : "none"}`}
-          onOpenThread={onOpenThread}
-          onSelectTicket={onSelectTicket}
-          onToggleTicket={onToggleTicket}
-          selectedEpicId={selectedEpicId}
-          selectedTicketId={selectedTicketId}
-          workspaceId={workspaceId}
-        />
+      {groups.map(({ ticket }) => (
+        <WorkbenchSidebarTicketRow key={ticket.id} ticket={ticket} {...rowProps} />
       ))}
     </SidebarMenu>
   );
 }
 
-function useWorkbenchSidebarTicketThreadDisclosure({
-  threads,
-  contextThreadId,
-}: Pick<WorkbenchSidebarTicketGroup, "threads"> &
-  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId">) {
-  const selectedThreadIsSettled = threads.some(
-    (thread) => thread.id === contextThreadId && thread.settledOverride === "settled",
-  );
-  const selectedSettledThreadId = selectedThreadIsSettled ? contextThreadId : undefined;
-  const [disclosure, setDisclosure] = useState({
-    selectedSettledThreadId,
-    expanded: selectedThreadIsSettled,
-  });
-  if (disclosure.selectedSettledThreadId !== selectedSettledThreadId) {
-    setDisclosure({
-      selectedSettledThreadId,
-      expanded: selectedThreadIsSettled || disclosure.expanded,
-    });
-  }
-  return {
-    settledExpanded: disclosure.expanded,
-    resetSettled: () =>
-      setDisclosure((previous) => ({ ...previous, expanded: selectedThreadIsSettled })),
-    toggleSettled: () =>
-      setDisclosure((previous) => ({ ...previous, expanded: !previous.expanded })),
-  };
-}
-
-function WorkbenchSidebarTicketGroupRow({
-  ticketDetailsById,
-  contextThreadId,
-  expansion,
-  group,
-  isDone,
-  onOpenThread,
-  onSelectTicket,
-  onToggleTicket,
-  selectedEpicId,
-  selectedTicketId,
-  workspaceId,
-}: Omit<WorkbenchSidebarTicketGroupsProps, "groups"> & {
-  readonly group: WorkbenchSidebarTicketGroup;
-}) {
-  const { ticket, threads } = group;
-  const ticketExpanded = expansion.ticketId === ticket.id && expansion.done === isDone;
-  const { settledExpanded, resetSettled, toggleSettled } =
-    useWorkbenchSidebarTicketThreadDisclosure({
-      threads,
-      contextThreadId,
-    });
-  const ticketToggleLabel = `${ticketExpanded ? "Collapse" : "Expand"} ${ticket.title}`;
-  const ticketPanelId = `workbench-sidebar-ticket-${ticket.id}-${isDone ? "done" : "active"}`;
-  const ticketIsDestination = isWorkbenchSidebarTicketDestination({
-    ticketId: ticket.id,
-    selectedTicketId,
-    contextThreadId,
-    selectedEpicId,
-  });
-  const toggleTicket = () => {
-    resetSettled();
-    onToggleTicket(ticket.id, isDone);
-  };
-  const selectTicket = () => {
-    if (threads.length > 0 && (ticketIsDestination || !ticketExpanded)) toggleTicket();
-    onSelectTicket(workspaceId, ticket.id);
-  };
-
-  return (
-    <SidebarMenuItem>
-      <div
-        data-workbench-sidebar-disclosure-row=""
-        data-workbench-sidebar-surface=""
-        data-workbench-sidebar-ticket-row-id={ticket.id}
-        data-active={ticketIsDestination || undefined}
-        className="relative flex min-w-0 items-start rounded-md"
-      >
-        <WorkbenchSidebarDisclosure
-          available={threads.length > 0}
-          controls={ticketPanelId}
-          expanded={ticketExpanded}
-          label={ticketToggleLabel}
-          onToggle={toggleTicket}
-          detail
-        />
-        <WorkbenchSidebarTicketButton
-          ticket={ticket}
-          details={ticketDetailsById.get(ticket.id)}
-          isActive={ticketIsDestination}
-          onSelect={selectTicket}
-        />
-      </div>
-      <WorkbenchSidebarTicketThreadPanel
-        threads={threads}
-        ticket={ticket}
-        ticketExpanded={ticketExpanded}
-        ticketPanelId={ticketPanelId}
-        contextThreadId={contextThreadId}
-        onOpenThread={onOpenThread}
-        settledExpanded={settledExpanded}
-        onToggleSettled={toggleSettled}
-      />
-    </SidebarMenuItem>
-  );
-}
-
 function WorkbenchSidebarDoneTickets({
-  ticketDetailsById,
-  contextThreadId,
-  expansion,
   expanded,
   groups,
-  onOpenThread,
-  onSelectTicket,
   onToggle,
-  onToggleTicket,
   panelId,
-  selectedEpicId,
-  selectedTicketId,
-  workspaceId,
-}: Omit<WorkbenchSidebarTicketGroupsProps, "isDone"> & {
+  ...rowProps
+}: WorkbenchSidebarTicketGroupsProps & {
   readonly expanded: boolean;
   readonly onToggle: () => void;
   readonly panelId: string;
@@ -1625,76 +1462,9 @@ function WorkbenchSidebarDoneTickets({
         <span className="tabular-nums">{groups.length}</span>
       </button>
       <div aria-label="Done Ticket list" hidden={!expanded} id={panelId}>
-        {expanded ? (
-          <WorkbenchSidebarTicketGroups
-            ticketDetailsById={ticketDetailsById}
-            contextThreadId={contextThreadId}
-            expansion={expansion}
-            groups={groups}
-            isDone
-            onOpenThread={onOpenThread}
-            onSelectTicket={onSelectTicket}
-            onToggleTicket={onToggleTicket}
-            selectedEpicId={selectedEpicId}
-            selectedTicketId={selectedTicketId}
-            workspaceId={workspaceId}
-          />
-        ) : null}
+        {expanded ? <WorkbenchSidebarTicketGroups groups={groups} {...rowProps} /> : null}
       </div>
     </section>
-  );
-}
-
-function WorkbenchSidebarTicketThreads({
-  threads,
-  contextThreadId,
-  onOpenThread,
-  ticket,
-  settledExpanded,
-  onToggleSettled,
-}: Pick<WorkbenchSidebarTicketGroup, "threads" | "ticket"> &
-  Pick<WorkbenchSidebarTicketGroupsProps, "contextThreadId" | "onOpenThread"> & {
-    readonly settledExpanded: boolean;
-    readonly onToggleSettled: () => void;
-  }) {
-  const activeThreads = threads.filter((thread) => thread.settledOverride !== "settled");
-  const settledThreads = threads.filter((thread) => thread.settledOverride === "settled");
-  const panelId = `workbench-sidebar-ticket-settled-${ticket.id}`;
-  const renderThread = (thread: WorkbenchSidebarTicketGroup["threads"][number]) => (
-    <WorkbenchSidebarThreadRow
-      key={thread.id}
-      thread={thread}
-      ticketId={ticket.id}
-      isActive={thread.id === contextThreadId}
-      onOpenThread={onOpenThread}
-    />
-  );
-  return (
-    <div data-workbench-sidebar-thread-list="">
-      <SidebarMenu>{activeThreads.map(renderThread)}</SidebarMenu>
-      {settledThreads.length > 0 ? (
-        <section aria-label={`Settled Threads in ${ticket.title}`} className="mt-1">
-          <button
-            aria-label={`${settledExpanded ? "Collapse" : "Expand"} Settled Threads in ${ticket.title}`}
-            aria-controls={panelId}
-            aria-expanded={settledExpanded}
-            data-workbench-sidebar-group-toggle=""
-            onClick={onToggleSettled}
-            type="button"
-          >
-            <ChevronRightIcon
-              aria-hidden
-              className={`size-3 ${settledExpanded ? "rotate-90" : ""}`}
-            />
-            <span>Settled</span>
-            <span className="tabular-nums">{settledThreads.length}</span>
-          </button>
-          <div hidden={!settledExpanded} id={panelId}>
-            {settledExpanded ? <SidebarMenu>{settledThreads.map(renderThread)}</SidebarMenu> : null}
-          </div>
-        </section>
-      ) : null}
-    </div>
   );
 }
 
@@ -1702,25 +1472,22 @@ function WorkbenchSidebarDisclosure({
   controls,
   expanded,
   label,
-  detail = false,
-  available = true,
+  available,
   onToggle,
 }: {
   readonly controls: string;
   readonly expanded: boolean;
   readonly label: string;
-  readonly detail?: boolean;
-  readonly available?: boolean;
+  readonly available: boolean;
   readonly onToggle: () => void;
 }) {
-  const kind = detail ? "ticket" : "workspace";
-  if (!available) return <span aria-hidden data-workbench-sidebar-disclosure={kind} />;
+  if (!available) return <span aria-hidden data-workbench-sidebar-disclosure="workspace" />;
   return (
     <button
       aria-controls={controls}
       aria-expanded={expanded}
       aria-label={label}
-      data-workbench-sidebar-disclosure={kind}
+      data-workbench-sidebar-disclosure="workspace"
       onClick={onToggle}
       type="button"
     >
@@ -1735,7 +1502,6 @@ function WorkbenchSidebarDisclosure({
 function WorkbenchSidebarArchivedTickets({
   ticketDetailsById,
   archivedTickets,
-  contextThreadId,
   expanded,
   onSelectTicket,
   onToggle,
@@ -1745,7 +1511,6 @@ function WorkbenchSidebarArchivedTickets({
 }: {
   readonly archivedTickets: ReadonlyArray<WorkbenchSidebarTicket>;
   readonly ticketDetailsById: ReadonlyMap<WorkbenchTicketId, WorkbenchSidebarTicketDetails>;
-  readonly contextThreadId: ThreadId | undefined;
   readonly expanded: boolean;
   readonly onSelectTicket: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
   readonly onToggle: () => void;
@@ -1772,75 +1537,20 @@ function WorkbenchSidebarArchivedTickets({
       <div aria-label="Archived Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? (
           <SidebarMenu>
-            {archivedTickets.map((ticket) => {
-              const isActive = isWorkbenchSidebarTicketDestination({
-                ticketId: ticket.id,
-                selectedTicketId,
-                contextThreadId,
-                selectedEpicId,
-              });
-              return (
-                <SidebarMenuItem key={ticket.id}>
-                  {/* Archived Tickets have no Thread list; the empty column keeps them aligned. */}
-                  <div
-                    data-workbench-sidebar-disclosure-row=""
-                    data-workbench-sidebar-surface=""
-                    data-active={isActive || undefined}
-                    className="relative flex min-w-0 items-start rounded-md"
-                  >
-                    <span aria-hidden data-workbench-sidebar-disclosure="ticket" />
-                    <WorkbenchSidebarTicketButton
-                      ticket={ticket}
-                      details={ticketDetailsById.get(ticket.id)}
-                      isActive={isActive}
-                      onSelect={() => onSelectTicket(ticket.projectId, ticket.id)}
-                    />
-                  </div>
-                </SidebarMenuItem>
-              );
-            })}
+            {archivedTickets.map((ticket) => (
+              <WorkbenchSidebarTicketRow
+                key={ticket.id}
+                ticket={ticket}
+                ticketDetailsById={ticketDetailsById}
+                onSelectTicket={onSelectTicket}
+                selectedEpicId={selectedEpicId}
+                selectedTicketId={selectedTicketId}
+              />
+            ))}
           </SidebarMenu>
         ) : null}
       </div>
     </section>
-  );
-}
-
-function WorkbenchSidebarTicketThreadPanel({
-  threads,
-  ticket,
-  ticketExpanded,
-  ticketPanelId,
-  contextThreadId,
-  onOpenThread,
-  settledExpanded,
-  onToggleSettled,
-}: Pick<
-  Parameters<typeof WorkbenchSidebarTicketThreads>[0],
-  "threads" | "ticket" | "contextThreadId" | "onOpenThread" | "settledExpanded" | "onToggleSettled"
-> & { ticketExpanded: boolean; ticketPanelId: string }) {
-  return (
-    <>
-      {threads.length > 0 ? (
-        <div
-          aria-label={`${ticket.title} Threads`}
-          className="group-data-[collapsible=icon]:hidden"
-          hidden={!ticketExpanded}
-          id={ticketPanelId}
-        >
-          {ticketExpanded ? (
-            <WorkbenchSidebarTicketThreads
-              threads={threads}
-              contextThreadId={contextThreadId}
-              onOpenThread={onOpenThread}
-              ticket={ticket}
-              settledExpanded={settledExpanded}
-              onToggleSettled={onToggleSettled}
-            />
-          ) : null}
-        </div>
-      ) : null}
-    </>
   );
 }
 
@@ -2048,20 +1758,17 @@ function useWorkbenchSidebarData({
   };
 }
 
+/** A Thread page marks its Ticket, since the sidebar lists only Tickets. */
 function isWorkbenchSidebarTicketDestination({
   ticketId,
   selectedTicketId,
-  contextThreadId,
   selectedEpicId,
 }: {
   ticketId: WorkbenchTicketId;
   selectedTicketId: WorkbenchTicketId | undefined;
-  contextThreadId: ThreadId | undefined;
   selectedEpicId: WorkbenchEpicId | undefined;
 }) {
-  return (
-    ticketId === selectedTicketId && contextThreadId === undefined && selectedEpicId === undefined
-  );
+  return ticketId === selectedTicketId && selectedEpicId === undefined;
 }
 
 function useWorkbenchSidebarCurrentThread({

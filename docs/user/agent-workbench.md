@@ -140,7 +140,8 @@ or Ticket links to return to the work, or choose **Back to Threads** to restore 
 regular T3 sidebar. The command palette also offers **Open Workbench**, **New
 Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
 
-Workbench sidebar Thread rows offer the same pin and snooze actions as native Threads.
+The Workbench sidebar lists Tickets. Reach a Ticket's Threads from its page or its
+chat, which list Threads that need attention first.
 
 ## Chat with Threads
 
@@ -186,10 +187,15 @@ collapsed to one row.
   <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft, offering Discard and Create ticket.">
 </picture>
 
-The chat leaves out the Thread's side panels: opening a file or diff from it, or
-choosing **Open full Thread**, opens the Thread itself. The chat is not available on
-narrow screens, and a Ticket that is still being planned shows its conversation in
-the page instead.
+Files, diffs, side chats, and pull requests you open from the chat open in the
+Thread's side panel beside it, and you stay on the page. While the chat shows a
+Thread, pull requests you open on the page open there too. Maximize the panel to
+fill the page; the chat stays over it. In a smaller window the panel opens as a
+sheet and the chat minimizes until you close it. The details button in the chat
+header shows the Thread's details, as on a Thread page. Terminal commands and
+**Open full Thread** open the Thread itself. The chat is not available on narrow
+screens, and a Ticket that is still being planned shows its conversation in the
+page instead.
 
 ## Follow progress and review results
 
