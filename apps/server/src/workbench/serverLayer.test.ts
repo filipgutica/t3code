@@ -1,5 +1,6 @@
 import { ClaudeQueryOptionsDecorator } from "../orchestration-v2/Adapters/ClaudeAdapterV2.ts";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as NetService from "@t3tools/shared/Net";
 import { assert, it } from "@effect/vitest";
 import {
   ProjectId,
@@ -212,7 +213,7 @@ it.effect("runServer installs Workbench host policies", () =>
       Deferred.succeed(cleanupContext, context).pipe(Effect.asVoid),
     );
     probes.serve.mockImplementation((app) => Deferred.succeed(served, app).pipe(Effect.asVoid));
-    const server = yield* runServer.pipe(Effect.forkScoped);
+    const server = yield* runServer.pipe(Effect.provide(NetService.layer), Effect.forkScoped);
     yield* Effect.gen(function* () {
       const handler = yield* Deferred.await(served);
       const nativeResponse = yield* handler.pipe(
