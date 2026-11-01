@@ -43,6 +43,20 @@ const handlers = {
       return {};
     }),
   ),
+  workbench_thread_create: McpToolAccess.startsThreads(
+    () => ({}),
+    (input, { runtimeMode, interactionMode }) =>
+      Effect.gen(function* () {
+        const service = yield* WorkbenchAgentService;
+        return yield* service.startThread({
+          ...input,
+          threadId: yield* callerThreadId,
+          runtimeMode,
+          interactionMode,
+        });
+      }),
+    { refused: "Start Ticket Threads from a Thread in this environment." },
+  ),
 } satisfies McpToolAccess.Handlers<typeof WorkbenchToolkit.tools>;
 
 export const layer = McpToolAccess.toLayer(WorkbenchToolkit, handlers);

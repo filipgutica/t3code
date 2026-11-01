@@ -8,6 +8,7 @@ import {
 } from "@t3tools/contracts";
 import {
   AgentReferenceResult,
+  AgentThreadResult,
   WorkbenchAgentService,
   WorkstreamChangedError,
   WorkstreamNotOwnedError,
@@ -133,10 +134,28 @@ const RemoveReferenceTool = Tool.make("workbench_reference_remove", {
   .annotate(Tool.Idempotent, true)
   .annotate(Tool.OpenWorld, false);
 
+const CreateThreadTool = Tool.make("workbench_thread_create", {
+  description:
+    "Start another Thread on your Ticket, in its worktree with your model, and send it `message` as its first prompt. It gets the Ticket context.",
+  parameters: Schema.Struct({
+    message: TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)),
+    title: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(240))),
+  }),
+  success: AgentThreadResult,
+  failure: WorkbenchToolError,
+  dependencies,
+})
+  .annotate(Tool.Title, "Create Ticket Thread")
+  .annotate(Tool.Readonly, false)
+  .annotate(Tool.Destructive, false)
+  .annotate(Tool.Idempotent, false)
+  .annotate(Tool.OpenWorld, false);
+
 export const WorkbenchToolkit = Toolkit.make(
   ReadWorkstreamTool,
   UpdateWorkstreamTool,
   AddReferenceTool,
   UpdateReferenceTool,
   RemoveReferenceTool,
+  CreateThreadTool,
 );

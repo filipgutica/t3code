@@ -3,16 +3,20 @@ import {
   NonNegativeInt,
   ProjectId,
   ThreadId,
+  WorkbenchAssignmentId,
   WorkbenchOperationError,
   WorkbenchReferenceKind,
   WorkbenchTicketDraftPhase,
   WorkbenchTicketId,
   WorkbenchTicketStatus,
   parseWorkbenchReferenceUrl,
+  type ProviderInteractionMode,
+  type RuntimeMode,
   type WorkbenchReference,
   type WorkbenchTicket,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
+import * as Crypto from "effect/Crypto";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -112,6 +116,17 @@ export interface WorkstreamUpdateInput {
   readonly repositoryProjectIds?: ReadonlyArray<ProjectId> | undefined;
 }
 
+export const AgentThreadResult = Schema.Struct({ threadId: ThreadId, title: Schema.String });
+export type AgentThreadResult = typeof AgentThreadResult.Type;
+
+export interface AgentThreadStartInput {
+  readonly threadId: ThreadId;
+  readonly title?: string | undefined;
+  readonly message: string;
+  readonly runtimeMode: RuntimeMode;
+  readonly interactionMode: ProviderInteractionMode;
+}
+
 export const AgentReferenceResult = AgentReference;
 export type AgentReferenceResult = typeof AgentReference.Type;
 
@@ -139,6 +154,10 @@ export class WorkbenchAgentService extends Context.Service<
       readonly threadId: ThreadId;
       readonly url: string;
     }) => Effect.Effect<void, AgentServiceError>;
+    /** Starts another Thread on the caller's Ticket, as Create Thread does, then sends it `message`. */
+    readonly startThread: (
+      input: AgentThreadStartInput,
+    ) => Effect.Effect<AgentThreadResult, AgentServiceError>;
   }
 >()("@t3tools/workbench/WorkbenchAgentService") {}
 
@@ -156,6 +175,7 @@ const make = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
   const host = yield* WorkbenchAgentHost;
   const workspaces = yield* TicketWorkspaceService;
+  const crypto = yield* Crypto.Crypto;
   const currentAt = DateTime.now.pipe(
     Effect.map((now) => IsoDateTime.make(DateTime.formatIso(now))),
   );
@@ -526,12 +546,63 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const startThread = Effect.fn("WorkbenchAgentService.startThread")(function* (
+    input: AgentThreadStartInput,
+  ) {
+    const owner = yield* requireOwner(input.threadId);
+    if (owner.kind !== "ticket") {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_draft_invalid",
+        message: "A draft has no Threads. Start one after the Ticket is created.",
+      });
+    }
+    const ticket = yield* requireTicket(owner.ticketId);
+    const workspace = yield* workspaces.prepare({
+      ticketId: ticket.id,
+      requestedAt: yield* currentAt,
+    });
+    const primary = workspace.repositories.find(
+      (repository) =>
+        repository.isPrimary &&
+        repository.status === "ready" &&
+        repository.projectId === ticket.primaryT3ProjectId,
+    );
+    if (primary === undefined) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_workspace_repository_not_found",
+        message: "The Ticket's primary repository has no ready worktree.",
+      });
+    }
+    const title = input.title ?? ticket.title;
+    const threadId = yield* host.createThread({
+      callerThreadId: input.threadId,
+      projectId: primary.projectId,
+      title,
+      branch: primary.branchName,
+      worktreePath: primary.worktreePath,
+      runtimeMode: input.runtimeMode,
+      interactionMode: input.interactionMode,
+    });
+    // Linked before its first turn, so that turn carries the Ticket context.
+    yield* store
+      .createAssignment({
+        id: WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+        ticketId: ticket.id,
+        threadId,
+        createdAt: yield* currentAt,
+      })
+      .pipe(Effect.tapError(() => host.deleteThread(threadId).pipe(Effect.ignore)));
+    yield* host.sendMessage({ threadId, senderThreadId: input.threadId, text: input.message });
+    return { threadId, title };
+  });
+
   return WorkbenchAgentService.of({
     read,
     update,
     addReference,
     updateReference,
     removeReference,
+    startThread,
   });
 });
 

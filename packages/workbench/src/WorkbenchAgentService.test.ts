@@ -7,6 +7,8 @@ import {
   WorkbenchAssignmentId,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  WorkbenchTicketWorkspaceAttemptId,
+  type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
@@ -14,6 +16,7 @@ import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 
 import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
 import { WorkbenchAgentHost } from "./WorkbenchAgentHost.ts";
@@ -26,52 +29,69 @@ const second = ProjectId.make("agent-second");
 const workspaceId = WorkbenchProjectId.make("agent-workspace");
 const planner = ThreadId.make("agent-planner");
 const worker = ThreadId.make("agent-worker");
+const spawned = ThreadId.make("agent-spawned");
 const createdAt = "2026-10-20T10:00:00.000Z";
 
-const testLayer = layer.pipe(
-  Layer.provideMerge(
-    Layer.succeed(
-      WorkbenchAgentHost,
-      WorkbenchAgentHost.of({
-        ensureArtifactsDir: (ownerId) =>
-          Effect.succeed(`/t3/userdata/workbench-artifacts/${ownerId}`),
-        describeProjects: (ids) => Effect.succeed(ids.map((id) => ({ id, title: `${id} repo` }))),
-        describeThreads: (ids) =>
-          Effect.succeed(ids.map((id) => ({ id, title: `${id} title`, pullRequests: [] }))),
-      }),
+const makeTestLayer = ({
+  host = () => ({}),
+  prepare = () => Effect.die("unused"),
+}: {
+  readonly host?: (store: WorkbenchStore["Service"]) => Partial<WorkbenchAgentHost["Service"]>;
+  readonly prepare?: TicketWorkspaceService["Service"]["prepare"];
+} = {}) =>
+  layer.pipe(
+    Layer.provideMerge(
+      Layer.effect(
+        WorkbenchAgentHost,
+        Effect.map(WorkbenchStore, (store) =>
+          WorkbenchAgentHost.of({
+            ensureArtifactsDir: (ownerId) =>
+              Effect.succeed(`/t3/userdata/workbench-artifacts/${ownerId}`),
+            describeProjects: (ids) =>
+              Effect.succeed(ids.map((id) => ({ id, title: `${id} repo` }))),
+            describeThreads: (ids) =>
+              Effect.succeed(ids.map((id) => ({ id, title: `${id} title`, pullRequests: [] }))),
+            createThread: () => Effect.die("unused"),
+            deleteThread: () => Effect.die("unused"),
+            sendMessage: () => Effect.die("unused"),
+            ...host(store),
+          }),
+        ),
+      ),
     ),
-  ),
-  Layer.provideMerge(
-    Layer.succeed(
-      TicketWorkspaceService,
-      TicketWorkspaceService.of({
-        prepare: () => Effect.die("unused"),
-        release: () => Effect.die("unused"),
-      }),
+    Layer.provideMerge(
+      Layer.succeed(
+        TicketWorkspaceService,
+        TicketWorkspaceService.of({ prepare, release: () => Effect.die("unused") }),
+      ),
     ),
-  ),
-  Layer.provideMerge(WorkbenchStoreLive),
-  Layer.provideMerge(
-    Layer.succeed(
-      WorkbenchNativeAccess,
-      WorkbenchNativeAccess.of({
-        executionSequence: Effect.succeed(0),
-        startedExecutionRunIds: Effect.succeed([]),
-        hasPendingThreadWork: () => Effect.succeed(false),
-        findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
-        isRepository: () => Effect.succeed(true),
-        findThread: (id) =>
-          Effect.succeed(id === worker ? Option.some({ id, projectId: first }) : Option.none()),
-        hasThreadAtWorktreePath: () => Effect.succeed(false),
-        findStartingRun: () => Effect.succeedNone,
-        contextMarker: () => Effect.succeed(0),
-        findRun: () => Effect.succeedNone,
-      }),
+    Layer.provideMerge(WorkbenchStoreLive),
+    Layer.provideMerge(
+      Layer.succeed(
+        WorkbenchNativeAccess,
+        WorkbenchNativeAccess.of({
+          executionSequence: Effect.succeed(0),
+          startedExecutionRunIds: Effect.succeed([]),
+          hasPendingThreadWork: () => Effect.succeed(false),
+          findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
+          isRepository: () => Effect.succeed(true),
+          findThread: (id) =>
+            Effect.succeed(
+              id === worker || id === spawned
+                ? Option.some({ id, projectId: first })
+                : Option.none(),
+            ),
+          hasThreadAtWorktreePath: () => Effect.succeed(false),
+          findStartingRun: () => Effect.succeedNone,
+          contextMarker: () => Effect.succeed(0),
+          findRun: () => Effect.succeedNone,
+        }),
+      ),
     ),
-  ),
-  Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
-  Layer.provideMerge(NodeCrypto.layer),
-);
+    Layer.provideMerge(NodeSqliteClient.layer({ filename: ":memory:" })),
+    Layer.provideMerge(NodeCrypto.layer),
+  );
+const testLayer = makeTestLayer();
 
 const seedWorkspace = Effect.flatMap(WorkbenchStore, (store) =>
   store.createProject({
@@ -392,5 +412,111 @@ describe("WorkbenchAgentService", () => {
           references: [{ url, title: "Mockup v1 (approved)" }],
         });
       }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect(
+    "starts another Thread on the caller's Ticket and links it before its first message",
+    () =>
+      Effect.gen(function* () {
+        const events = yield* Ref.make<ReadonlyArray<string>>([]);
+        const note = (event: string) => Ref.update(events, (all) => [...all, event]);
+        const workspace = (ticketId: WorkbenchTicketId): WorkbenchTicketWorkspace => ({
+          ticketId,
+          attemptId: WorkbenchTicketWorkspaceAttemptId.make("agent-attempt"),
+          status: "ready",
+          branchName: "t3/expire-invitations",
+          errorMessage: null,
+          repositories: [
+            {
+              projectId: first,
+              isPrimary: true,
+              sourcePath: "/repos/agent-first",
+              worktreePath: "/worktrees/agent-first",
+              branchName: "t3/expire-invitations",
+              status: "ready",
+              errorMessage: null,
+              createdAt,
+              updatedAt: createdAt,
+            },
+          ],
+          createdAt,
+          updatedAt: createdAt,
+        });
+        const host = (store: WorkbenchStore["Service"]) => ({
+          createThread: (input: Parameters<WorkbenchAgentHost["Service"]["createThread"]>[0]) =>
+            note(`create ${input.worktreePath} ${input.title}`).pipe(
+              Effect.as(input.title === "Unlinkable" ? ThreadId.make("agent-missing") : spawned),
+            ),
+          deleteThread: (threadId: ThreadId) => note(`delete ${threadId}`),
+          sendMessage: (input: Parameters<WorkbenchAgentHost["Service"]["sendMessage"]>[0]) =>
+            store.resolveThreadOwner(input.threadId).pipe(
+              Effect.flatMap((owner) =>
+                note(
+                  `send ${input.text} linked=${Option.isSome(owner)} from=${input.senderThreadId}`,
+                ),
+              ),
+              Effect.orDie,
+            ),
+        });
+        yield* Effect.gen(function* () {
+          const store = yield* WorkbenchStore;
+          const agent = yield* WorkbenchAgentService;
+          yield* seedWorkspace;
+          const ticket = yield* store.createTicket({
+            id: WorkbenchTicketId.make("agent-start-ticket"),
+            projectId: workspaceId,
+            title: "Expire invitations",
+            kind: "story",
+            markdown: "",
+            primaryT3ProjectId: first,
+            createdAt,
+          });
+          yield* store.createAssignment({
+            id: WorkbenchAssignmentId.make("agent-start-assignment"),
+            ticketId: ticket.id,
+            threadId: worker,
+            createdAt,
+          });
+          const modes = { runtimeMode: "full-access", interactionMode: "default" } as const;
+
+          expect(
+            yield* agent.startThread({ threadId: worker, message: "Implement PR 3", ...modes }),
+          ).toEqual({ threadId: spawned, title: "Expire invitations" });
+          for (const threadId of [worker, spawned]) {
+            expect(yield* store.resolveThreadOwner(threadId)).toEqual(
+              Option.some({ kind: "ticket", ticketId: ticket.id }),
+            );
+          }
+
+          const unlinkable = yield* Effect.flip(
+            agent.startThread({ threadId: worker, title: "Unlinkable", message: "Hi", ...modes }),
+          );
+          expect(unlinkable).toMatchObject({ code: "thread_not_found" });
+          expect(yield* Ref.get(events)).toEqual([
+            "create /worktrees/agent-first Expire invitations",
+            `send Implement PR 3 linked=true from=${worker}`,
+            "create /worktrees/agent-first Unlinkable",
+            "delete agent-missing",
+          ]);
+
+          yield* store.beginTicketDraft({
+            id: WorkbenchTicketId.make("agent-start-draft"),
+            projectId: workspaceId,
+            threadId: planner,
+            modelSelection: ModelSelection.make({
+              instanceId: ProviderInstanceId.make("codex"),
+              model: "gpt-6.1-sol",
+            }),
+          });
+          const draft = yield* Effect.flip(
+            agent.startThread({ threadId: planner, message: "Hi", ...modes }),
+          );
+          expect(draft).toMatchObject({ code: "ticket_draft_invalid" });
+        }).pipe(
+          Effect.provide(
+            makeTestLayer({ host, prepare: (input) => Effect.succeed(workspace(input.ticketId)) }),
+          ),
+        );
+      }),
   );
 });
