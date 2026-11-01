@@ -121,6 +121,7 @@ const thread = (
         },
   ticket: null,
   recap,
+  settledAt: null,
 });
 
 function Harness(props: {
@@ -143,7 +144,15 @@ function Harness(props: {
         archived: props.archived ?? [],
         settled: props.settled ?? [],
         primaryThreadId: props.primaryThreadId ?? null,
-        explicitThreadId,
+        pick:
+          explicitThreadId === null
+            ? null
+            : {
+                threadId: explicitThreadId,
+                settledAt:
+                  (props.settled ?? []).find((thread) => thread.threadId === explicitThreadId)
+                    ?.settledAt ?? null,
+              },
       })}
       onSelectThread={setExplicitThreadId}
       onOpenThread={props.onOpenThread ?? (() => {})}
@@ -356,6 +365,29 @@ it("restores an expanded panel from the launcher without moving focus into the c
 
   await expect.element(screen.getByLabelText("Composer for a")).toBeInTheDocument();
   await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toHaveFocus();
+});
+
+it("minimizes on a page click, but not for clicks in the chat or its menus", async () => {
+  setup();
+  await using screen = await render(
+    <div data-workbench-page-column="">
+      <button type="button">Page action</button>
+      <Harness threads={[thread("a"), thread("b")]} />
+    </div>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+  await userEvent.click(screen.getByRole("button", { name: "Ticket Threads: Thread a" }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /Thread b/ }));
+  await expect.element(screen.getByLabelText("Composer for b")).toBeInTheDocument();
+
+  await userEvent.click(screen.getByRole("button", { name: "Page action" }));
+  const launcher = screen.getByRole("button", { name: "Show PAY-1 chat" });
+  await expect.element(launcher).toBeVisible();
+  // Minimizing on a page click leaves focus where the user clicked.
+  await expect.element(screen.getByRole("button", { name: "Page action" })).toHaveFocus();
+
+  await userEvent.click(launcher);
+  await expect.element(screen.getByLabelText("Composer for b")).toBeInTheDocument();
 });
 
 it("keeps the page's composer handle for native chats", async () => {

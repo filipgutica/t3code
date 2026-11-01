@@ -36,6 +36,7 @@ const thread = (
   unread: false,
   ticket: null,
   recap: null,
+  settledAt: null,
   ...extra,
   status:
     kind === null
@@ -47,6 +48,11 @@ const thread = (
         },
 });
 
+const settledAt = "2026-10-30T00:00:00.000Z";
+const pick = (id: string, settledAt: string | null = null) => ({
+  threadId: ThreadId.make(id),
+  settledAt,
+});
 const projectId = WorkbenchProjectId.make("workspace");
 const repositoryId = ProjectId.make("repository");
 const createdAt = "2026-10-25T00:00:00.000Z";
@@ -264,19 +270,13 @@ describe("resolveWorkbenchFloatingChat", () => {
     const active = [thread("a"), thread("b", "working")];
     const base = { active, archived: [], settled: [], primaryThreadId: ThreadId.make("b") };
 
-    expect(
-      resolveWorkbenchFloatingChat({ ...base, explicitThreadId: null }).selected?.threadId,
-    ).toBe("b");
+    expect(resolveWorkbenchFloatingChat({ ...base, pick: null }).selected?.threadId).toBe("b");
     // Another Thread becoming primary must not pull the user off the tab they chose.
-    expect(
-      resolveWorkbenchFloatingChat({ ...base, explicitThreadId: ThreadId.make("a") }).selected
-        ?.threadId,
-    ).toBe("a");
+    expect(resolveWorkbenchFloatingChat({ ...base, pick: pick("a") }).selected?.threadId).toBe("a");
   });
 
   it("falls back to the primary, then the first Thread, when the picked Thread disappears", () => {
     const active = [thread("a"), thread("b")];
-    const gone = ThreadId.make("removed");
 
     expect(
       resolveWorkbenchFloatingChat({
@@ -284,7 +284,7 @@ describe("resolveWorkbenchFloatingChat", () => {
         archived: [],
         settled: [],
         primaryThreadId: ThreadId.make("b"),
-        explicitThreadId: gone,
+        pick: pick("removed"),
       }).selected?.threadId,
     ).toBe("b");
     expect(
@@ -293,7 +293,7 @@ describe("resolveWorkbenchFloatingChat", () => {
         archived: [],
         settled: [],
         primaryThreadId: null,
-        explicitThreadId: gone,
+        pick: pick("removed"),
       }).selected?.threadId,
     ).toBe("a");
     expect(
@@ -302,7 +302,7 @@ describe("resolveWorkbenchFloatingChat", () => {
         archived: [],
         settled: [],
         primaryThreadId: null,
-        explicitThreadId: gone,
+        pick: pick("removed"),
       }).selected,
     ).toBeNull();
   });
@@ -311,14 +311,37 @@ describe("resolveWorkbenchFloatingChat", () => {
     const result = resolveWorkbenchFloatingChat({
       active: [thread("a")],
       archived: [],
-      settled: [thread("s1"), thread("s2")],
+      settled: [thread("s1"), thread("s2", null, { settledAt: settledAt })],
       primaryThreadId: null,
-      explicitThreadId: ThreadId.make("s2"),
+      pick: pick("s2", settledAt),
     });
 
     expect(result.selected?.threadId).toBe("s2");
     expect(ids(result.active)).toEqual(["a"]);
     expect(ids(result.settled)).toEqual(["s1", "s2"]);
+  });
+
+  it("moves to the ticket's next Thread each time the picked one is settled, and back when unsettled", () => {
+    const onTicket = (id: string, ticketId: string, settledAtTime: string | null = null) =>
+      thread(id, null, {
+        ticket: { id: WorkbenchTicketId.make(ticketId), key: null, title: ticketId, kind: "story" },
+        settledAt: settledAtTime,
+      });
+    const settledAgain = "2026-10-31T00:00:00.000Z";
+    const resolve = (pickedAt: string | null, active: string[], settled: string | null) =>
+      resolveWorkbenchFloatingChat({
+        archived: [],
+        primaryThreadId: null,
+        pick: pick("a", pickedAt),
+        active: [onTicket("other", "t2"), ...active.map((id) => onTicket(id, "t1"))],
+        settled: settled === null ? [] : [onTicket("a", "t1", settled)],
+      }).selected?.threadId;
+
+    expect(resolve(null, ["b"], settledAt)).toBe("b");
+    expect(resolve(null, ["a", "b"], null)).toBe("a");
+    // Picked while settled, it stays; settled again after an unsettle, the chat moves on.
+    expect(resolve(settledAt, ["b"], settledAt)).toBe("a");
+    expect(resolve(settledAt, ["b"], settledAgain)).toBe("b");
   });
 
   it("never selects an archived Thread and counts only Threads waiting on the user", () => {
@@ -332,7 +355,7 @@ describe("resolveWorkbenchFloatingChat", () => {
       archived: [thread("old")],
       settled: [],
       primaryThreadId: null,
-      explicitThreadId: ThreadId.make("old"),
+      pick: pick("old"),
     });
 
     expect(result.selected?.threadId).toBe("working");
@@ -350,7 +373,7 @@ describe("resolveWorkbenchFloatingChat", () => {
       archived: [],
       settled: [],
       primaryThreadId: null,
-      explicitThreadId: ThreadId.make("approval"),
+      pick: pick("approval"),
     });
 
     expect(ids(result.waiting)).toEqual(["input"]);

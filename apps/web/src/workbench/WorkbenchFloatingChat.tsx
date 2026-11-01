@@ -1,13 +1,19 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  type EnvironmentId,
+  type ThreadId,
+} from "@t3tools/contracts";
 import {
   ArrowUpIcon,
+  CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
   FilePenLineIcon,
   MessageCircleIcon,
   MinusIcon,
   PlusIcon,
+  RotateCcwIcon,
   SquareArrowOutUpRightIcon,
   SquareMenuIcon,
 } from "lucide-react";
@@ -27,10 +33,13 @@ import { MenuItem, MenuItemLabel } from "../components/ui/menu";
 import { PopoverCreateHandle, PopoverTrigger } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useStableCallback } from "../hooks/useStableCallback";
 import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { cn } from "../lib/utils";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
+import { useThreadShell } from "../state/entities";
+import { useEnvironmentScope } from "../state/session";
 import { ComposerHandleContext } from "../composerHandleContext";
 import type { ChatComposerHandle } from "../components/chat/ChatComposer";
 import "./WorkbenchFloatingChat.css";
@@ -52,6 +61,7 @@ import {
 } from "./WorkbenchPagePanel";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
+import { useWorkbenchThreadSettlement } from "./useWorkbenchThreadSettlement";
 import {
   useWorkbenchFloatingChatSize,
   type WorkbenchFloatingChatResizeEdge,
@@ -511,7 +521,41 @@ function NewThreadItems({
   );
 }
 
+/** Settling moves the chat to the ticket's next Thread; a settled Thread offers Un-settle. */
+function FloatingChatSettleAction({
+  environmentId,
+  threadId,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
+}) {
+  const shell = useThreadShell(scopeThreadRef(environmentId, threadId));
+  const canOperate = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
+  const { supportsSettlement, settlementPendingThreadId, toggleThreadSettlement } =
+    useWorkbenchThreadSettlement(environmentId);
+  if (!shell || !supportsSettlement) return null;
+  const label = shell.settledOverride === "settled" ? "Un-settle Thread" : "Settle Thread";
+  return (
+    <FloatingChatAction
+      label={label}
+      render={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          aria-label={label}
+          disabled={!canOperate || settlementPendingThreadId !== null}
+          onClick={() => void toggleThreadSettlement(shell)}
+        />
+      }
+    >
+      {shell.settledOverride === "settled" ? <RotateCcwIcon /> : <CheckIcon />}
+    </FloatingChatAction>
+  );
+}
+
 function FloatingChatThreadActions({
+  environmentId,
+  threadId,
   copy,
   expanded,
   detailsHandle,
@@ -519,6 +563,8 @@ function FloatingChatThreadActions({
   onOpenThread,
   onToggle,
 }: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId;
   readonly copy: ChatCopy;
   readonly expanded: boolean;
   /** Null while the conversation, which renders the details, is collapsed. */
@@ -539,6 +585,7 @@ function FloatingChatThreadActions({
           </PopoverTrigger>
         </FloatingChatAction>
       ) : null}
+      <FloatingChatSettleAction environmentId={environmentId} threadId={threadId} />
       <FloatingChatAction
         label="Open full Thread"
         render={
@@ -600,6 +647,44 @@ function useFloatingChatLayout(
   };
 }
 
+// What the chat opened on the page: its conversation, its Thread's terminal, and the header toggles.
+const CHAT_OWNED_SELECTOR =
+  "[data-workbench-floating-chat],[data-workbench-terminal-host],[data-workbench-chat-controls]";
+
+const isPageClickOutsideChat = (target: EventTarget | null) =>
+  target instanceof Element &&
+  target.closest("[data-workbench-page-column]") !== null &&
+  target.closest(CHAT_OWNED_SELECTOR) === null;
+
+/**
+ * A click on the page minimizes the chat. Portaled popovers, menus, dialogs, and the side panel
+ * sit outside the page column. A press that starts in the chat, such as a resize, never counts.
+ */
+function useMinimizeOnPageClick(minimized: boolean, releaseComposerFocus: () => void) {
+  const minimizeStable = useStableCallback(() => {
+    releaseComposerFocus();
+    useWorkbenchFloatingChatStore.getState().minimize();
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a document listener for page clicks outside the chat, held while the chat shows
+  useEffect(() => {
+    if (minimized) return;
+    let pressedOutside = false;
+    const onPointerDown = (event: PointerEvent) => {
+      pressedOutside = isPageClickOutsideChat(event.target);
+    };
+    const onClick = (event: MouseEvent) => {
+      if (pressedOutside && isPageClickOutsideChat(event.target)) minimizeStable();
+      pressedOutside = false;
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("click", onClick, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("click", onClick, true);
+    };
+  }, [minimized, minimizeStable]);
+}
+
 /** The Thread menu and the chat's actions. */
 function FloatingChatHeader({
   chatProps,
@@ -655,6 +740,8 @@ function FloatingChatHeader({
       )}
       {selected === null ? null : (
         <FloatingChatThreadActions
+          environmentId={chatProps.environmentId}
+          threadId={selected.threadId}
           copy={copy}
           expanded={expanded}
           // The hidden conversation measures 0px, which would strip the details card.
@@ -681,11 +768,8 @@ function FloatingChatHeader({
   );
 }
 
-export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
-  const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
-  const copy = CHAT_COPY[props.kind];
-  const { mode, focusRequest, expand, collapse, minimize, restore } =
-    useWorkbenchFloatingChatStore();
+/** Moves focus to the control a mode change mounts, only after a user action asked for it. */
+function useModeChangeFocus(mode: WorkbenchFloatingChatMode) {
   const expandButtonRef = useRef<HTMLButtonElement>(null);
   const launcherRef = useRef<HTMLButtonElement>(null);
   // Set by the control that changes the mode, so focus moves only after a user action.
@@ -696,6 +780,15 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     pendingFocusRef.current = false;
     (mode === "launcher" ? launcherRef : expandButtonRef).current?.focus();
   }, [mode]);
+  return { expandButtonRef, launcherRef, pendingFocusRef };
+}
+
+export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
+  const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
+  const copy = CHAT_COPY[props.kind];
+  const { mode, focusRequest, expand, collapse, minimize, restore } =
+    useWorkbenchFloatingChatStore();
+  const { expandButtonRef, launcherRef, pendingFocusRef } = useModeChangeFocus(mode);
 
   const { selected } = chat;
   const selectedThreadId = selected?.threadId ?? null;
@@ -716,6 +809,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     mode,
     hosts.controlsHost !== null,
   );
+  useMinimizeOnPageClick(launcher, composerFocus.release);
   const [detailsHandle] = useState(PopoverCreateHandle);
   const detailsAnchorRef = useRef<HTMLDivElement>(null);
   const threadDetails = { anchor: detailsAnchorRef, handle: detailsHandle };

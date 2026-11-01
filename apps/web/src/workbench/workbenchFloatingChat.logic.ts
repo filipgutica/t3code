@@ -40,6 +40,8 @@ export interface WorkbenchFloatingChatThread {
   readonly ticket: WorkbenchFloatingChatTicket | null;
   /** A generated summary of the Thread's latest finished run. */
   readonly recap: string | null;
+  /** When the Thread was last settled; null while it never was. */
+  readonly settledAt: string | null;
 }
 
 const getWorkbenchFloatingChatTicketLabel = (ticket: WorkbenchFloatingChatTicket) =>
@@ -101,6 +103,7 @@ export const getWorkbenchBoardChatThreads = ({
           }
         : null,
       recap: recaps.get(threadId) ?? null,
+      settledAt: thread.settledAt ?? null,
     };
     if (!live) archived.push(entry);
     else if (thread.settledOverride === "settled") settled.push(entry);
@@ -130,12 +133,18 @@ export const getWorkbenchBoardChatThreads = ({
 export const WORKBENCH_ATTENTION_KINDS: ReadonlySet<WorkbenchThreadExecutionStatus["kind"]> =
   new Set(["approval", "input", "failed"]);
 
+/** The Thread the user picked in a page chat, and when it was settled as of the pick. */
+export interface WorkbenchFloatingChatPick {
+  readonly threadId: ThreadId;
+  readonly settledAt: string | null;
+}
+
 export function resolveWorkbenchFloatingChat({
   active,
   archived,
   settled,
   primaryThreadId,
-  explicitThreadId,
+  pick,
 }: {
   /** Live Threads of the ticket's active Assignments, in ticket order. */
   readonly active: ReadonlyArray<WorkbenchFloatingChatThread>;
@@ -144,14 +153,21 @@ export function resolveWorkbenchFloatingChat({
   /** Live settled Threads. */
   readonly settled: ReadonlyArray<WorkbenchFloatingChatThread>;
   readonly primaryThreadId: ThreadId | null;
-  readonly explicitThreadId: ThreadId | null;
+  readonly pick: WorkbenchFloatingChatPick | null;
 }) {
   const findIn = (threads: ReadonlyArray<WorkbenchFloatingChatThread>, threadId: ThreadId | null) =>
     threads.find((thread) => thread.threadId === threadId);
+  const pickedThreadId = pick?.threadId ?? null;
+  const pickedSettled = findIn(settled, pickedThreadId);
+  // Settling the showing Thread moves on to the next one of its ticket; unsettling brings it back.
+  const settledSincePick =
+    pickedSettled !== undefined && pickedSettled.settledAt !== (pick?.settledAt ?? null);
   // A Thread the user picked stays selected even when another Thread becomes the primary one.
   const selected =
-    findIn(active, explicitThreadId) ??
-    findIn(settled, explicitThreadId) ??
+    findIn(active, pickedThreadId) ??
+    (settledSincePick
+      ? active.find((thread) => thread.ticket?.id === pickedSettled.ticket?.id)
+      : pickedSettled) ??
     findIn(active, primaryThreadId) ??
     active[0] ??
     null;

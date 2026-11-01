@@ -155,11 +155,11 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const { environmentId, workspace } = props;
   const projectId = workspace.id;
   const pageChatKey = `${environmentId}:board:${projectId}`;
-  const explicitThreadId = useWorkbenchFloatingChatStore(
-    (state) => state.pickedThreads[pageChatKey] ?? null,
-  );
+  const pick = useWorkbenchFloatingChatStore((state) => state.pickedThreads[pageChatKey] ?? null);
   const setExplicitThreadId = (threadId: ThreadId | null) =>
-    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
+    useWorkbenchFloatingChatStore
+      .getState()
+      .pickThread(pageChatKey, threadId === null ? null : scopeThreadRef(environmentId, threadId));
   const showThread = (threadId: ThreadId) => {
     setExplicitThreadId(threadId);
     useWorkbenchFloatingChatStore.getState().expand(threadId);
@@ -172,7 +172,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       kind: "board",
       projectId,
       showThread: (threadId) => {
-        pickThread(pageChatKey, threadId);
+        pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
         expand(threadId);
       },
     });
@@ -212,7 +212,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
     primaryThreadId: null,
-    explicitThreadId,
+    pick,
   });
   useRefreshOnThreadActivity(
     chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,

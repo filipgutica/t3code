@@ -17,12 +17,6 @@ import {
 } from "./WorkbenchTicketAttention";
 import { Select as SelectPrimitive } from "@base-ui/react/select";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import {
-  isAtomCommandInterrupted,
-  squashAtomCommandFailure,
-} from "@t3tools/client-runtime/state/runtime";
-import { useAtomValue } from "@effect/atom-react";
 import {
   EnvironmentId,
   type EditorId,
@@ -92,7 +86,6 @@ import {
   type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
 import { getWorkbenchThreadStatusSections, titleUnderHeading } from "./workbenchFloatingChat.logic";
-import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { cn } from "../lib/utils";
 import type { WorkbenchFloatingChatPlanning } from "./WorkbenchFloatingChat";
@@ -145,8 +138,8 @@ import {
 import { Textarea } from "../components/ui/textarea";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { stackedThreadToast, toastManager } from "../components/ui/toast";
-import { useThreadActions } from "../hooks/useThreadActions";
+import { toastManager } from "../components/ui/toast";
+import { useWorkbenchThreadSettlement } from "./useWorkbenchThreadSettlement";
 import { useUiStateStore } from "../uiStateStore";
 import { randomUUID } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -972,7 +965,7 @@ function WorkbenchTicketDetailController({
   } = actions;
   const { assignments, threadActionPending, threadActionLabel } = threads;
   const { supportsSettlement, settlementPendingThreadId, toggleThreadSettlement } =
-    useWorkbenchTicketSettlement(environmentId);
+    useWorkbenchThreadSettlement(environmentId);
   const {
     deleteConfirmationOpen,
     setDeleteConfirmationOpen,
@@ -2075,7 +2068,11 @@ function WorkbenchTicketHeader({
           />
         </div>
       </div>
-      <div ref={controlsHostRef} className="flex shrink-0 self-start" />
+      <div
+        ref={controlsHostRef}
+        data-workbench-chat-controls=""
+        className="flex shrink-0 self-start"
+      />
     </WorkspacePageHeader>
   );
 }
@@ -4801,36 +4798,6 @@ function getWorkbenchDetailWorkspace({
     repositories,
     retainedRepositories,
   };
-}
-
-function useWorkbenchTicketSettlement(environmentId: EnvironmentId) {
-  const { settleThread, unsettleThread } = useThreadActions();
-  const [settlementPendingThreadId, setSettlementPendingThreadId] = useState<ThreadId | null>(null);
-  const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
-  const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
-  const toggleThreadSettlement = async (thread: EnvironmentThreadShell) => {
-    if (!supportsSettlement || settlementPendingThreadId !== null) return;
-    const wasSettled = thread.settledOverride === "settled";
-    setSettlementPendingThreadId(thread.id);
-    return (async () => {
-      const result = wasSettled
-        ? await unsettleThread(scopeThreadRef(environmentId, thread.id))
-        : await settleThread(scopeThreadRef(environmentId, thread.id));
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        const error = squashAtomCommandFailure(result);
-        toastManager.add(
-          stackedThreadToast({
-            type: "error",
-            title: wasSettled ? "Failed to un-settle thread" : "Failed to settle thread",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-      }
-    })().finally(() => {
-      setSettlementPendingThreadId((current) => (current === thread.id ? null : current));
-    });
-  };
-  return { supportsSettlement, settlementPendingThreadId, toggleThreadSettlement };
 }
 
 function useWorkbenchTicketDetailPanels() {

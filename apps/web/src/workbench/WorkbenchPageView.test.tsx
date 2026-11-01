@@ -536,7 +536,7 @@ it("closes an already open create dialog when its Workspace is archived", async 
 const expectThreadShownInChat = () => {
   expect(requestTicketThread).not.toHaveBeenCalled();
   const chat = useWorkbenchFloatingChatStore.getState();
-  expect(Object.values(chat.pickedThreads)).toContain(thread.id);
+  expect(Object.values(chat.pickedThreads).map((pick) => pick?.threadId)).toContain(thread.id);
   expect(chat.mode).toBe("expanded");
 };
 

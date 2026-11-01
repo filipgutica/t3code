@@ -62,6 +62,7 @@ const chatThreads = (
             unread: hasWorkbenchUnreadReply(thread, localVisits),
             ticket,
             recap: recaps.get(threadId) ?? null,
+            settledAt: thread.settledAt ?? null,
           },
         ]
       : [];
@@ -99,11 +100,11 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   const { ticket, onNewThread, environmentId } = props;
   const ticketId = ticket.id;
   const pageChatKey = `${environmentId}:ticket:${ticketId}`;
-  const explicitThreadId = useWorkbenchFloatingChatStore(
-    (state) => state.pickedThreads[pageChatKey] ?? null,
-  );
+  const pick = useWorkbenchFloatingChatStore((state) => state.pickedThreads[pageChatKey] ?? null);
   const setExplicitThreadId = (threadId: ThreadId) =>
-    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
+    useWorkbenchFloatingChatStore
+      .getState()
+      .pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted Ticket chat as the target for imperative show-Thread actions and removes the registration on unmount
   useEffect(() => {
     const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
@@ -112,7 +113,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
       kind: "ticket",
       ticketId,
       showThread: (threadId) => {
-        pickThread(pageChatKey, threadId);
+        pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
         expand(threadId);
       },
     });
@@ -130,7 +131,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     archived: chatThreads(props.activeAssignments, props.archivedThreadsById, threadContext),
     settled: chatThreads(props.settledAssignments, props.threadsById, threadContext),
     primaryThreadId: props.primaryAssignment?.threadId ?? null,
-    explicitThreadId,
+    pick,
   });
   const snapshot = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
   useRefreshOnThreadActivity(

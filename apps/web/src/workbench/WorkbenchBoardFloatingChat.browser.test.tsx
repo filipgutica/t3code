@@ -58,6 +58,14 @@ vi.mock("./WorkbenchSidebarThreadRow.logic", () => ({
 }));
 // The provider icon reads real atoms, which this file stubs to `true`.
 vi.mock("./WorkbenchThreadProviderIcon", () => ({ WorkbenchThreadProviderIcon: () => null }));
+// The stubbed useAtomValue cannot feed the server's settle capability.
+vi.mock("./useWorkbenchThreadSettlement", () => ({
+  useWorkbenchThreadSettlement: () => ({
+    supportsSettlement: false,
+    settlementPendingThreadId: null,
+    toggleThreadSettlement: async () => {},
+  }),
+}));
 vi.mock("./useWorkbenchThreadRecaps", () => ({
   useWorkbenchThreadRecaps: () => new Map([["first", "Refunded the duplicate charge."]]),
 }));

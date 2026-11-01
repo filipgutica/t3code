@@ -7,6 +7,9 @@ import type {
 } from "@t3tools/contracts";
 import { create } from "zustand";
 
+import { readThreadShell } from "../state/entities";
+import type { WorkbenchFloatingChatPick } from "./workbenchFloatingChat.logic";
+
 type WorkbenchFloatingChatPanel = "collapsed" | "expanded";
 export type WorkbenchFloatingChatMode = WorkbenchFloatingChatPanel | "launcher";
 
@@ -35,10 +38,10 @@ export const useWorkbenchFloatingChatStore = create<{
   /** The Thread the page chat shows, whose right panel the page hosts. */
   readonly shownThread: ScopedThreadRef | null;
   /** The Thread the user picked in each page chat, so returning to the page shows it again. */
-  readonly pickedThreads: Readonly<Record<string, ThreadId | null>>;
+  readonly pickedThreads: Readonly<Record<string, WorkbenchFloatingChatPick | null>>;
   readonly setPageChat: (pageChat: WorkbenchPageChat | null) => void;
   readonly setShownThread: (shownThread: ScopedThreadRef | null) => void;
-  readonly pickThread: (pageChatKey: string, threadId: ThreadId | null) => void;
+  readonly pickThread: (pageChatKey: string, thread: ScopedThreadRef | null) => void;
   readonly expand: (threadId?: ThreadId) => void;
   readonly collapse: () => void;
   readonly minimize: () => void;
@@ -52,8 +55,17 @@ export const useWorkbenchFloatingChatStore = create<{
   pickedThreads: {},
   setPageChat: (pageChat) => set({ pageChat }),
   setShownThread: (shownThread) => set({ shownThread }),
-  pickThread: (pageChatKey, threadId) =>
-    set((state) => ({ pickedThreads: { ...state.pickedThreads, [pageChatKey]: threadId } })),
+  pickThread: (pageChatKey, thread) => {
+    const shell = thread === null ? null : readThreadShell(thread);
+    const pick =
+      thread === null
+        ? null
+        : {
+            threadId: thread.threadId,
+            settledAt: shell?.settledOverride === "settled" ? (shell.settledAt ?? null) : null,
+          };
+    set((state) => ({ pickedThreads: { ...state.pickedThreads, [pageChatKey]: pick } }));
+  },
   expand: (threadId) =>
     set((state) => ({
       mode: "expanded",

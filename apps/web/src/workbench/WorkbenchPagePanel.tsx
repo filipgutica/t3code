@@ -48,6 +48,7 @@ export function WorkbenchPageRow({ children }: { readonly children: ReactNode })
   return (
     <div className="relative flex min-h-0 flex-1" data-workbench-page="">
       <div
+        data-workbench-page-column=""
         className={cn(
           "flex min-h-0 min-w-0 flex-1 flex-col",
           maximized && "pointer-events-none invisible relative z-10",
