@@ -357,6 +357,31 @@ it.effect("leaves ordinary native Threads unchanged", () =>
     Effect.provide(policyLayer(null)),
   ),
 );
+it.effect("keeps the native ceiling refusal for a native Thread", () =>
+  Effect.flatMap(RuntimePolicy.RuntimePolicyDecorator, (decorator) =>
+    decorator
+      .decorate({
+        resolve: () =>
+          Effect.fail(
+            new RuntimePolicy.RuntimePolicyAboveCeilingError({
+              threadId: thread.id,
+              runtimeMode: "full-access",
+              maxRuntimeMode: "auto",
+              organization: "Acme",
+            }),
+          ),
+      })
+      .resolve({ thread, modelSelection }),
+  ).pipe(
+    Effect.result,
+    Effect.map((result) => {
+      assert.isTrue(Result.isFailure(result));
+      if (Result.isFailure(result))
+        assert.equal(result.failure._tag, "RuntimePolicyAboveCeilingError");
+    }),
+    Effect.provide(policyLayer(null)),
+  ),
+);
 it.effect("lists sibling Threads with status, provider, recap, and coordination rules", () =>
   resolve.pipe(
     Effect.map((policy) => {

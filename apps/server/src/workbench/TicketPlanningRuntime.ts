@@ -110,7 +110,8 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
         (effect, input) =>
           effect.pipe(
             Effect.mapError((cause) =>
-              isRuntimePolicyResolveError(cause)
+              isRuntimePolicyResolveError(cause) ||
+              RuntimePolicy.isRuntimePolicyAboveCeilingError(cause)
                 ? cause
                 : new RuntimePolicy.RuntimePolicyResolveError({
                     projectId: input.thread.projectId,
