@@ -2807,6 +2807,7 @@ export const createBuildConfig = Effect.fn("createBuildConfig")(function* (
       (yield* Config.String("T3CODE_WORKBENCH_BUILD").pipe(Config.withDefault(""))) === "1",
   });
   const buildConfig: Record<string, unknown> = {
+    afterPack: (yield* Path.Path).join(yield* RepoRoot, "scripts/prepare-server-compile-cache.cjs"),
     appId: product.appId,
     ...(product.mac.forceCodeSigning ? { forceCodeSigning: true } : {}),
     productName: product.productName,

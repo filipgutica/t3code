@@ -15,7 +15,6 @@ const makeProduct = (signed: boolean): DesktopProduct | null => {
     Object.freeze({
       appUserModelId: distribution.appId,
       linuxDesktopEntryName: distribution.desktopEntryName,
-      linuxWmClass: distribution.executableName,
       scheme: `${distribution.scheme}${isDevelopment ? "-dev" : ""}`,
       profileNames: Object.freeze({
         current: isDevelopment ? distribution.executableName : `${distribution.executableName}-v2`,

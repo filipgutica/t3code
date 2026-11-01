@@ -47,7 +47,6 @@ it.effect("isolates packaged Workbench identity and saved data from official T3 
     assert.equal(environment.baseDir, "/Users/alice/.t3-workbench");
     assert.equal(environment.stateDir, "/Users/alice/.t3-workbench/userdata");
     assert.equal(environment.appUserModelId, "com.filipgutica.t3code.workbench");
-    assert.equal(environment.linuxWmClass, "t3code-workbench");
     assert.equal(environment.linuxDesktopEntryName, "com.filipgutica.t3code.workbench.desktop");
   }),
 );

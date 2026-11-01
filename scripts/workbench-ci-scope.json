@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "15fe2832727893cbdd2214383f9f971474849695",
+  "upstreamBase": "80120b1aa34a3125c05da393c8616c2076f5888d",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",

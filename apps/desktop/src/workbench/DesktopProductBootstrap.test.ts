@@ -13,7 +13,6 @@ const cases = [
     development: false,
     home: ".t3/userdata",
     scheme: "t3code",
-    wmClass: "t3code",
     desktopEntry: "com.t3tools.T3Code.desktop",
   },
   {
@@ -21,7 +20,6 @@ const cases = [
     development: true,
     home: ".t3/dev",
     scheme: "t3code-dev",
-    wmClass: "t3code-dev",
     desktopEntry: "com.t3tools.T3Code.Development.desktop",
   },
   {
@@ -29,7 +27,6 @@ const cases = [
     development: false,
     home: ".t3-workbench/userdata",
     scheme: "t3code-workbench",
-    wmClass: "t3code-workbench",
     desktopEntry: "com.filipgutica.t3code.workbench.desktop",
   },
   {
@@ -37,7 +34,6 @@ const cases = [
     development: true,
     home: ".t3-workbench/dev",
     scheme: "t3code-workbench-dev",
-    wmClass: "t3code-workbench",
     desktopEntry: "com.filipgutica.t3code.workbench.desktop",
   },
 ] as const;
@@ -45,7 +41,7 @@ const cases = [
 describe("desktop product bootstrap", () => {
   it.each(cases)(
     "selects $scheme protocol, settings and Linux identity before Electron starts",
-    async ({ workbench, development, home, scheme, wmClass, desktopEntry }) => {
+    async ({ workbench, development, home, scheme, desktopEntry }) => {
       vi.resetModules();
       vi.stubGlobal("__T3CODE_WORKBENCH_BUILD__", workbench);
       const protocol = await import("../electron/ElectronProtocol.ts");
@@ -64,7 +60,6 @@ describe("desktop product bootstrap", () => {
       });
       assert.deepEqual(options, {
         isDevelopment: development,
-        linuxWmClass: wmClass,
         linuxDesktopEntryName: desktopEntry,
         passwordStore: "kwallet6",
       });
