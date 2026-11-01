@@ -4,7 +4,6 @@ import { describe, expect, it } from "vite-plus/test";
 import type { WorkbenchAttentionSignal } from "./workbenchAttention.logic";
 import {
   getWorkbenchAttentionBadgePresentation,
-  getWorkbenchPullRequestOwnerToShow,
   getWorkbenchThreadAttention,
 } from "./workbenchAttentionPresentation.logic";
 
@@ -34,36 +33,6 @@ const notifications: ReadonlyArray<WorkbenchAttentionSignal> = [
 const question = { kind: "question", source: threadSource } as const;
 const approval = { kind: "waiting", cause: "approval", source: threadSource } as const;
 const failed = { kind: "waiting", cause: "failed", source: threadSource } as const;
-
-describe("getWorkbenchPullRequestOwnerToShow", () => {
-  const sharedRow = { ...row, threadId: otherThreadId, threadTitle: "Other" };
-  const shared: ReadonlyArray<WorkbenchAttentionSignal> = [
-    ...prSignals,
-    {
-      kind: "failed-checks",
-      source: { type: "pull-request", row: sharedRow },
-      unresolvedReviewThreads: [],
-    },
-  ];
-
-  it("shows the PR's own Thread when the chat shows another Thread", () => {
-    expect(
-      getWorkbenchPullRequestOwnerToShow({ row, signals: prSignals, shownThreadId: otherThreadId }),
-    ).toBe(threadId);
-  });
-
-  it("keeps the shown Thread when it links the PR or no Thread shows", () => {
-    expect(
-      getWorkbenchPullRequestOwnerToShow({ row, signals: prSignals, shownThreadId: threadId }),
-    ).toBeNull();
-    expect(
-      getWorkbenchPullRequestOwnerToShow({ row, signals: shared, shownThreadId: otherThreadId }),
-    ).toBeNull();
-    expect(
-      getWorkbenchPullRequestOwnerToShow({ row, signals: prSignals, shownThreadId: null }),
-    ).toBeNull();
-  });
-});
 
 describe("Workbench attention badge presentation", () => {
   it("orders distinct reason kinds and merges requested changes with unresolved feedback", () => {

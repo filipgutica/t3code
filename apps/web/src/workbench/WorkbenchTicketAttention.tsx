@@ -2,7 +2,6 @@ import { useNavigate } from "@tanstack/react-router";
 import type {
   EnvironmentId,
   PullRequestReviewThread,
-  ScopedThreadRef,
   ThreadId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -26,10 +25,7 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../componen
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import type { WorkbenchTicketPullRequest } from "./workbenchPullRequests.logic";
-import {
-  useWorkbenchFloatingChatStore,
-  useWorkbenchThreadOpenLabel,
-} from "./workbenchFloatingChatState";
+import { useWorkbenchThreadOpenLabel } from "./workbenchFloatingChatState";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
@@ -47,7 +43,6 @@ import {
   getWorkbenchAttentionBadgePresentation,
   getWorkbenchAttentionReasonPresentation,
   getWorkbenchAttentionSignalPresentation,
-  getWorkbenchPullRequestOwnerToShow,
   getWorkbenchThreadAttention,
 } from "./workbenchAttentionPresentation.logic";
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
@@ -57,8 +52,8 @@ type TicketAttentionProps = {
   ticketId: WorkbenchTicketId;
   ticketTitle: string;
   onOpenThread?: (threadId: ThreadId) => void;
-  /** Shows a Ticket Thread in the page's chat; false when the chat cannot show it. */
-  onShowThread?: (threadId: ThreadId) => boolean;
+  /** Shows the PR's own Thread in the page's chat, so the PR opens in its panel; else false. */
+  onShowPullRequestOwner?: (row: WorkbenchTicketPullRequest) => boolean;
 };
 const reasonIcons = {
   approval: ShieldQuestionIcon,
@@ -137,45 +132,20 @@ function ReviewThreadPreviews({ threads }: { threads: readonly PullRequestReview
   );
 }
 
-/** Shows the Thread that owns an attention PR, so the PR opens in that Thread's panel. */
-function showPullRequestOwner({
-  environmentId,
-  row,
-  signals,
-  shownThread,
-  onShowThread,
-}: {
-  environmentId: EnvironmentId;
-  row: WorkbenchTicketPullRequest;
-  signals: readonly WorkbenchAttentionSignal[];
-  shownThread: ScopedThreadRef | null;
-  onShowThread: ((threadId: ThreadId) => boolean) | undefined;
-}) {
-  const ownerId = getWorkbenchPullRequestOwnerToShow({
-    row,
-    signals,
-    shownThreadId: shownThread?.environmentId === environmentId ? shownThread.threadId : null,
-  });
-  return ownerId !== null && onShowThread?.(ownerId)
-    ? scopeThreadRef(environmentId, ownerId)
-    : undefined;
-}
-
 function AttentionItems({
   environmentId,
   cardTitle,
   signals,
   onOpenThread,
-  onShowThread,
+  onShowPullRequestOwner,
   onNavigate,
-}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread" | "onShowThread"> & {
+}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread" | "onShowPullRequestOwner"> & {
   cardTitle: string;
   signals: readonly WorkbenchAttentionSignal[];
   onNavigate?: () => void;
 }) {
   const navigate = useNavigate();
   const openPullRequest = useOpenWorkbenchPullRequest();
-  const shownThread = useWorkbenchFloatingChatStore((state) => state.shownThread);
   const openThread = (threadId: ThreadId) => {
     onNavigate?.();
     if (onOpenThread) onOpenThread(threadId);
@@ -193,13 +163,9 @@ function AttentionItems({
     const { row } = signal.source;
     const host = sourceControlClients.parseChangeRequestUrl(row.pullRequest.url)?.link.host;
     onNavigate?.();
-    const panelThread = showPullRequestOwner({
-      environmentId,
-      row,
-      signals,
-      shownThread,
-      onShowThread,
-    });
+    const panelThread = onShowPullRequestOwner?.(row)
+      ? scopeThreadRef(environmentId, row.threadId)
+      : undefined;
     openPullRequest?.({
       environmentId,
       reference: {

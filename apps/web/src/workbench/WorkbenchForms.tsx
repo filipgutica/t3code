@@ -203,8 +203,10 @@ import {
   useWorkbenchTicketPanelCollapsed,
 } from "./WorkbenchTicketPanelHeader";
 import {
+  getWorkbenchPullRequestOwnerToShow,
   getWorkbenchTicketPullRequests,
   getWorkbenchTicketPullRequestCheckouts,
+  type WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
@@ -1078,6 +1080,18 @@ function WorkbenchTicketDetailController({
   const openAssignedThread = (threadId: ThreadId) => {
     if (!showThreadInChat(threadId)) onOpenAssignedThread(threadId);
   };
+  // A PR opens in the shown Thread's panel, so another Thread's PR shows that Thread first.
+  const showPullRequestOwner = (row: WorkbenchTicketPullRequest) => {
+    const { shownThread } = useWorkbenchFloatingChatStore.getState();
+    const ownerId = getWorkbenchPullRequestOwnerToShow({
+      row,
+      shownThread:
+        shownThread?.environmentId === environmentId
+          ? (threadsById.get(shownThread.threadId) ?? null)
+          : null,
+    });
+    return ownerId !== null && showThreadInChat(ownerId);
+  };
   const openThread = (target: WorkbenchTicket, threadId?: ThreadId) => {
     if (threadId === undefined || !showThreadInChat(threadId)) onOpenThread(target, threadId);
   };
@@ -1279,7 +1293,7 @@ function WorkbenchTicketDetailController({
                 ticketId={ticket.id}
                 ticketTitle={ticket.title}
                 onOpenThread={openAssignedThread}
-                onShowThread={showThreadInChat}
+                onShowPullRequestOwner={showPullRequestOwner}
               />
               <WorkbenchTicketThreadsPanel
                 expansion={{ threadPanelCollapsed: threadPanelCollapsed }}

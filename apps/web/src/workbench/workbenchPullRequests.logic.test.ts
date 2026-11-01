@@ -11,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 
 import {
+  getWorkbenchPullRequestOwnerToShow,
   getWorkbenchTicketPullRequests,
   getWorkbenchTicketPullRequestCheckouts,
   mergeWorkbenchTicketPullRequests,
@@ -135,6 +136,24 @@ const thread = ({
   linkedPullRequest: linkedPullRequest ?? null,
   pullRequests: pullRequests ?? [],
   branchPullRequest: branchPullRequest ?? null,
+});
+
+describe("getWorkbenchPullRequestOwnerToShow", () => {
+  const shared = pullRequest(902);
+  const owner = thread({ id: "owner", linkedPullRequest: shared });
+  const row = { threadId: owner.id, threadTitle: "owner", pullRequest: shared };
+
+  it("shows the PR's own Thread when the shown Thread does not link the PR", () => {
+    const other = thread({ id: "other", linkedPullRequest: pullRequest(906) });
+    expect(getWorkbenchPullRequestOwnerToShow({ row, shownThread: other })).toBe(owner.id);
+  });
+
+  it("keeps a shown Thread that also links the PR, and does nothing with no Thread shown", () => {
+    const sharing = thread({ id: "sharing", branchPullRequest: shared });
+    expect(getWorkbenchPullRequestOwnerToShow({ row, shownThread: sharing })).toBeNull();
+    expect(getWorkbenchPullRequestOwnerToShow({ row, shownThread: owner })).toBeNull();
+    expect(getWorkbenchPullRequestOwnerToShow({ row, shownThread: null })).toBeNull();
+  });
 });
 
 describe("Workbench Ticket pull request references", () => {

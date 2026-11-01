@@ -133,6 +133,25 @@ const getThreadPullRequestReferences = (
     : [thread.linkedPullRequest, ...(includeBranchPullRequest ? [thread.branchPullRequest] : [])];
 };
 
+/**
+ * The Thread to show before opening a Ticket PR in the shown Thread's panel: none while the shown
+ * Thread links the PR or no Thread shows, else the PR's own Thread.
+ */
+export function getWorkbenchPullRequestOwnerToShow({
+  row,
+  shownThread,
+}: {
+  readonly row: WorkbenchTicketPullRequest;
+  readonly shownThread: WorkbenchPullRequestThread | null;
+}) {
+  if (shownThread === null) return null;
+  const identity = pullRequestIdentity(row.pullRequest.url);
+  const shownLinksPullRequest = getThreadPullRequestReferences(shownThread, true).some(
+    (pullRequest) => pullRequest != null && pullRequestIdentity(pullRequest.url) === identity,
+  );
+  return shownLinksPullRequest ? null : row.threadId;
+}
+
 /** Collect the distinct PR references carried by the Ticket's visible Threads. */
 export function getWorkbenchTicketPullRequests({
   assignments,
