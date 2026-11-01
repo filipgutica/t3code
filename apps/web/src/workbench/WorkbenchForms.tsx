@@ -3327,30 +3327,34 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "settlementPendingThreadId"
   | "onDeleteThread"
 >;
-/** A linked Thread opens like any other row; otherwise the row names its Ticket action. */
+/** A row with a Thread is named by it; a start in progress shows in place of its run status. */
 function getWorkbenchPrimaryThreadRowLabels({
   thread,
   threadActionPending,
   threadActionLabel,
+  displayedThread,
   nativeThread,
+  nativeStatus,
   ticketTitle,
 }: {
   thread: ReturnType<typeof getWorkbenchThreadPresentation>;
   threadActionPending: boolean;
   threadActionLabel: string | null | undefined;
+  displayedThread: EnvironmentThreadShell | undefined;
   nativeThread: EnvironmentThreadShell | undefined;
+  nativeStatus: WorkbenchThreadExecutionStatusData | null;
   ticketTitle: string;
 }) {
   const progressLabel = threadActionPending
     ? (threadActionLabel ?? thread.pendingActionLabel)
     : null;
-  const actionLabel = getWorkbenchThreadRowAction(thread);
-  if (actionLabel === undefined && progressLabel === null) {
-    return { actionLabel, ariaLabel: undefined, stateLabel: null };
-  }
   return {
-    actionLabel: thread.actionLabel,
-    ariaLabel: `${progressLabel ?? thread.actionLabel} for ${ticketTitle}`,
+    actionLabel: getWorkbenchThreadRowAction(thread),
+    ariaLabel:
+      progressLabel === null && displayedThread
+        ? undefined
+        : `${progressLabel ?? thread.actionLabel} for ${ticketTitle}`,
+    executionStatus: progressLabel === null ? nativeStatus : null,
     stateLabel: progressLabel ?? (nativeThread ? null : thread.stateLabel),
   };
 }
@@ -3415,7 +3419,9 @@ function WorkbenchTicketPrimaryThread({
     thread,
     threadActionPending,
     threadActionLabel,
+    displayedThread,
     nativeThread,
+    nativeStatus,
     ticketTitle: displayedTitle,
   });
   return (
@@ -3438,7 +3444,7 @@ function WorkbenchTicketPrimaryThread({
         onOpenThread(actionableTicket, assignment?.threadId);
       }}
       stateLabel={labels.stateLabel}
-      executionStatus={nativeStatus}
+      executionStatus={labels.executionStatus}
       title={agentTitle}
       menu={
         assignment && displayedThread

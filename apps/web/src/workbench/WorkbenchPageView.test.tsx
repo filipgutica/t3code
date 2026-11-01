@@ -720,15 +720,19 @@ it.each([false, true])(
 it.each([false, true])(
   "requires operate permission to restore an archived Thread (detail=%s)",
   async (detail) => {
+    // The Ticket page's row is named by its Thread; the Board card by its Ticket.
+    const label = detail
+      ? "Restore and open Release agent"
+      : "Restore and open for Ship the release";
     await render({ detail, archivedAssignedThread: true, canOperate: false });
-    expect(button("Restore and open for Ship the release").disabled).toBe(true);
+    expect(button(label).disabled).toBe(true);
     await render({
       detail,
       archivedAssignedThread: true,
       workspaceState: "archived",
       canOperate: true,
     });
-    const restore = button("Restore and open for Ship the release");
+    const restore = button(label);
     expect(restore.disabled).toBe(false);
     await act(async () => restore.click());
     expect(requestTicketThread).toHaveBeenCalledWith(
