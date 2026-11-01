@@ -3247,6 +3247,15 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "settlementPendingThreadId"
   | "onDeleteThread"
 >;
+function getWorkbenchPrimaryThreadStateLabel(
+  thread: ReturnType<typeof getWorkbenchThreadPresentation>,
+  nativeThread: EnvironmentThreadShell | undefined,
+  assignment: WorkbenchAssignment | undefined,
+) {
+  if (nativeThread) return null;
+  return assignment ? thread.stateLabel : "Create a Thread";
+}
+
 function WorkbenchTicketPrimaryThread({
   context,
   records,
@@ -3303,13 +3312,14 @@ function WorkbenchTicketPrimaryThread({
     settlementPendingThreadId,
     onDeleteThread,
   } = actions;
+  const progressLabel = threadActionPending
+    ? (threadActionLabel ?? thread.pendingActionLabel)
+    : null;
   return (
     <WorkbenchThreadRow
       thread={displayedThread}
       actionLabel={thread.actionLabel}
-      ariaLabel={`${
-        threadActionPending ? (threadActionLabel ?? thread.pendingActionLabel) : thread.actionLabel
-      } for ${displayedTitle}`}
+      ariaLabel={`${progressLabel ?? thread.actionLabel} for ${displayedTitle}`}
       disabled={isWorkbenchThreadOpenDisabled({
         pending,
         threadMutationsDisabled,
@@ -3324,13 +3334,7 @@ function WorkbenchTicketPrimaryThread({
         onOpenThread(actionableTicket, assignment?.threadId);
       }}
       stateLabel={
-        threadActionPending
-          ? (threadActionLabel ?? thread.pendingActionLabel)
-          : nativeThread
-            ? null
-            : assignment
-              ? thread.stateLabel
-              : "Create a Thread"
+        progressLabel ?? getWorkbenchPrimaryThreadStateLabel(thread, nativeThread, assignment)
       }
       executionStatus={nativeStatus}
       title={agentTitle}
