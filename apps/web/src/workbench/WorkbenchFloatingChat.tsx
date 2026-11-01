@@ -43,7 +43,11 @@ import {
   type WorkbenchFloatingChatMode,
 } from "./workbenchFloatingChatState";
 import { WorkbenchFloatingChatPicker } from "./WorkbenchFloatingChatPicker";
-import { useWorkbenchPanelHost, useWorkbenchThreadPanel } from "./WorkbenchPagePanel";
+import {
+  useWorkbenchPageHosts,
+  useWorkbenchThreadPanel,
+  type WorkbenchPageHosts,
+} from "./WorkbenchPagePanel";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
 import {
@@ -237,7 +241,7 @@ function FloatingChatThread({
   thread,
   hidden,
   composerFocusRequest,
-  panelHost,
+  hosts,
   threadDetails,
   onOpenThread,
   planning,
@@ -246,7 +250,7 @@ function FloatingChatThread({
   readonly thread: WorkbenchFloatingChatThread;
   readonly hidden: boolean;
   readonly composerFocusRequest: number | null;
-  readonly panelHost: HTMLElement | null;
+  readonly hosts: WorkbenchPageHosts;
   readonly threadDetails: FloatingChatThreadDetails;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly planning: WorkbenchFloatingChatPlanning | undefined;
@@ -267,7 +271,7 @@ function FloatingChatThread({
         workbenchEmbed={{
           composerFocusRequest,
           openThread,
-          panelHost,
+          ...hosts,
           threadDetails,
           conversationHidden: hidden,
         }}
@@ -286,9 +290,8 @@ function FloatingChatThread({
 }
 
 /**
- * The conversation stays mounted, hidden, while its Thread's panel is open, so collapsing the
- * chat keeps the panel; hidden, it does not mark the Thread read. Otherwise only an expanded chat
- * mounts it.
+ * The conversation stays mounted, hidden, while the chat is collapsed, so the Thread's panel,
+ * terminal, and their page toggles stay; hidden, it does not mark the Thread read.
  */
 function FloatingChatBody({
   environmentId,
@@ -297,9 +300,8 @@ function FloatingChatBody({
   selected,
   hasHistory,
   expanded,
-  mounted,
   composerFocusRequest,
-  panelHost,
+  hosts,
   threadDetails,
   onExpand,
   onOpenThread,
@@ -313,9 +315,8 @@ function FloatingChatBody({
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
-  readonly mounted: boolean;
   readonly composerFocusRequest: number | null;
-  readonly panelHost: HTMLElement | null;
+  readonly hosts: WorkbenchPageHosts;
   readonly threadDetails: FloatingChatThreadDetails;
   readonly onExpand: () => void;
   readonly onOpenThread: (threadId: ThreadId) => void;
@@ -337,18 +338,16 @@ function FloatingChatBody({
   return (
     <>
       {expanded ? null : <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />}
-      {mounted ? (
-        <FloatingChatThread
-          environmentId={environmentId}
-          thread={selected}
-          hidden={!expanded}
-          composerFocusRequest={composerFocusRequest}
-          panelHost={panelHost}
-          threadDetails={threadDetails}
-          onOpenThread={onOpenThread}
-          planning={planning}
-        />
-      ) : null}
+      <FloatingChatThread
+        environmentId={environmentId}
+        thread={selected}
+        hidden={!expanded}
+        composerFocusRequest={composerFocusRequest}
+        hosts={hosts}
+        threadDetails={threadDetails}
+        onOpenThread={onOpenThread}
+        planning={planning}
+      />
     </>
   );
 }
@@ -578,7 +577,7 @@ function useFloatingChatLayout(
       : null;
   const launcher = mode === "launcher" || closeSheet !== null;
   const expanded = !launcher && mode === "expanded" && threadId !== null;
-  return { launcher, expanded, mounted: expanded || open, maximized, closeSheet };
+  return { launcher, expanded, maximized, closeSheet };
 }
 
 /** The Thread menu and the chat's actions. */
@@ -690,12 +689,12 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     pendingFocusRef.current = true;
     change();
   };
-  const { launcher, expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
+  const { launcher, expanded, maximized, closeSheet } = useFloatingChatLayout(
     environmentId,
     selectedThreadId,
     mode,
   );
-  const panelHost = useWorkbenchPanelHost();
+  const hosts = useWorkbenchPageHosts();
   const [detailsHandle] = useState(PopoverCreateHandle);
   const detailsAnchorRef = useRef<HTMLDivElement>(null);
   const threadDetails = { anchor: detailsAnchorRef, handle: detailsHandle };
@@ -732,9 +731,8 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
           selected={selected}
           hasHistory={hasHistory}
           expanded={expanded}
-          mounted={mounted}
           composerFocusRequest={composerFocus.requestFor(selectedThreadId)}
-          panelHost={panelHost}
+          hosts={hosts}
           threadDetails={threadDetails}
           onExpand={() => expand()}
           onOpenThread={onOpenThread}

@@ -56,6 +56,8 @@ vi.mock("./WorkbenchSidebarThreadRow.logic", () => ({
     pullRequestIndicator: null,
   }),
 }));
+// The provider icon reads real atoms, which this file stubs to `true`.
+vi.mock("./WorkbenchThreadProviderIcon", () => ({ WorkbenchThreadProviderIcon: () => null }));
 vi.mock("./useWorkbenchThreadRecaps", () => ({
   useWorkbenchThreadRecaps: () => new Map([["first", "Refunded the duplicate charge."]]),
 }));

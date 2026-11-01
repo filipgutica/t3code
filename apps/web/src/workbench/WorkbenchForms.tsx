@@ -77,6 +77,7 @@ import {
 } from "./WorkbenchThreadExecutionStatus";
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import { WorkbenchThreadProviderIcon } from "./WorkbenchThreadProviderIcon";
+import { useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { readLocalApi } from "../localApi";
 import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 import {
@@ -1983,6 +1984,7 @@ function WorkbenchTicketHeader({
   } = presentation;
   const { ticket, issue, actionableTicket, assignment } = records;
   const { environmentId } = context;
+  const controlsHostRef = useWorkbenchControlsHostRef();
   return (
     <WorkspacePageHeader
       electron={isElectron}
@@ -2040,6 +2042,7 @@ function WorkbenchTicketHeader({
           }}
         />
       </div>
+      <div ref={controlsHostRef} className="flex shrink-0 self-start" />
     </WorkspacePageHeader>
   );
 }

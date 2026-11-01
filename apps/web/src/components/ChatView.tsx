@@ -50,7 +50,7 @@ import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
-import { useChatShortcuts } from "./chat/useChatShortcuts";
+import { type ChatShortcutCommands, useChatShortcuts } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
 import * as Schema from "effect/Schema";
 import {
@@ -406,6 +406,10 @@ interface ChatViewEmbedding {
   readonly openThread: () => void;
   /** The host page's element the Thread's right panel renders into; null leaves the panel out. */
   readonly panelHost?: HTMLElement | null;
+  /** The host page's element the Thread's terminal drawer renders into; null leaves it out. */
+  readonly terminalHost?: HTMLElement | null;
+  /** Where the terminal and panel toggles render while the panel is closed. */
+  readonly controlsHost?: HTMLElement | null;
   /** The host's Thread details trigger: the popover anchors to `anchor` and opens from `handle`. */
   readonly threadDetails?: {
     readonly anchor: RefObject<Element | null>;
@@ -418,8 +422,8 @@ interface ChatViewEmbedding {
 /**
  * `readOnlyPlanning` hides controls a planning-only runtime policy rejects; the server enforces it.
  * `workbenchEmbed` mounts the Thread in a host page that owns the window: no window-wide input;
- * focus only on host request; terminals open the full Thread; the panel and details render only
- * into the host's `panelHost` and `threadDetails` (catalog U09).
+ * focus only on host request; shell commands open the full Thread; the panel, terminal drawer,
+ * their toggles, and details render only into the host's elements (catalog U09).
  */
 type ChatViewProps =
   | {
@@ -469,6 +473,8 @@ export default function ChatView(props: ChatViewProps) {
   // Either embed: a side chat in its parent's panel or a Workbench host page.
   const isEmbedded = embedded || workbenchEmbed !== undefined;
   const panelHost = workbenchEmbed?.panelHost ?? null;
+  const terminalHost = workbenchEmbed?.terminalHost ?? null;
+  const controlsHost = workbenchEmbed?.controlsHost ?? null;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -2844,21 +2850,30 @@ export default function ChatView(props: ChatViewProps) {
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
     });
   }, [isEmbedded, panelHost, toggleRightPanelStable, toggleRightPanelMaximizedStable]);
-  // A Workbench page hosting the panel takes only its chords; the page keeps the rest of the
-  // keyboard (U09).
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the hosted panel's toggle and maximize chords
+  // A Workbench page hosting the panel or terminal takes only their chords; the page keeps the
+  // rest of the keyboard (U09).
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the hosted panel and terminal chords
   useEffect(() => {
-    if (panelHost === null) return;
+    if (panelHost === null && terminalHost === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented || isCommandPaletteOpen() || isInSideChatPane(event.target))
+      const terminalFocusOwner = getTerminalFocusOwner();
+      if (
+        (event.defaultPrevented && terminalFocusOwner === null) ||
+        isCommandPaletteOpen() ||
+        isInSideChatPane(event.target)
+      )
         return;
       const command = resolveShortcutCommand(event, keybindings, {
         context: getShortcutContextStable(event.target),
       });
-      if (command === "rightPanel.toggle") toggleRightPanelStable();
-      else if (command === "rightPanel.toggleMaximized") {
+      if (panelHost !== null && command === "rightPanel.toggle") toggleRightPanelStable();
+      else if (panelHost !== null && command === "rightPanel.toggleMaximized") {
         if (!event.repeat) toggleRightPanelMaximizedStable();
-      } else return;
+      } else {
+        const hostedTerminalShortcuts: ChatShortcutCommands = terminalShortcuts;
+        const run = terminalHost !== null && command ? hostedTerminalShortcuts[command] : undefined;
+        if (!run || run({ event, terminalFocusOwner }) === false) return;
+      }
       event.preventDefault();
       event.stopPropagation();
     };
@@ -2866,8 +2881,10 @@ export default function ChatView(props: ChatViewProps) {
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [
     panelHost,
+    terminalHost,
     keybindings,
     getShortcutContextStable,
+    terminalShortcuts,
     toggleRightPanelStable,
     toggleRightPanelMaximizedStable,
   ]);
@@ -3378,9 +3395,9 @@ export default function ChatView(props: ChatViewProps) {
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      // A Workbench host has its own details button and no terminal drawer (U09).
+      // A Workbench host has its own details button; it shows the drawer only with a host (U09).
       showThreadPanelControl={!inlineRightPanelOwnsTitleBar && workbenchEmbed === undefined}
-      showTerminalControl={workbenchEmbed === undefined}
+      showTerminalControl={workbenchEmbed === undefined || terminalHost !== null}
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
@@ -3414,6 +3431,9 @@ export default function ChatView(props: ChatViewProps) {
         />
       )}
       {rightPanelControlsAtRoot && !isEmbedded ? panelLayoutControls : null}
+      {controlsHost !== null && !(rightPanelControlsAtRoot && panelHost !== null)
+        ? createPortal(panelToggleControls, controlsHost)
+        : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
@@ -4042,19 +4062,21 @@ export default function ChatView(props: ChatViewProps) {
           </ThreadFindCanvas>
         </div>
 
-        {isEmbedded ? null : (
-          <ChatTerminalDrawers
-            activeThreadKey={activeThreadKey}
-            activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
-            composerHeight={composerReservedHeight}
-            launchContext={activeTerminalLaunchContext ?? null}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraftStable}
-          />
+        {isEmbedded && terminalHost === null ? null : (
+          <PanelHostPortal host={terminalHost}>
+            <ChatTerminalDrawers
+              activeThreadKey={activeThreadKey}
+              activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
+              composerHeight={terminalHost === null ? composerReservedHeight : 0}
+              launchContext={activeTerminalLaunchContext ?? null}
+              splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+              splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+              newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+              closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+              keybindings={keybindings}
+              onAddTerminalContext={addTerminalContextToDraftStable}
+            />
+          </PanelHostPortal>
         )}
       </div>
 

@@ -145,14 +145,14 @@ function Harness(props: {
   );
 }
 
-it("mounts the chat only when expanded and focuses the composer for an explicit expand", async () => {
+it("hides the chat until expanded and focuses the composer for an explicit expand", async () => {
   setup();
   await using screen = await render(<Harness threads={[thread("a"), thread("b")]} />);
 
   await expect
     .element(screen.getByRole("button", { name: "Ticket Threads: Thread a" }))
     .toBeInTheDocument();
-  await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
 
   await userEvent.click(screen.getByRole("button", { name: "Message Thread a…" }));
 
@@ -357,7 +357,7 @@ it("returns focus to the control that brings the panel back", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
-  await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
+  await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
 
   await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
   const launcher = screen.getByRole("button", { name: "Show PAY-1 chat" });

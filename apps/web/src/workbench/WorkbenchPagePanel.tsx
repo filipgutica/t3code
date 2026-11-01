@@ -5,10 +5,24 @@ import { cn } from "../lib/utils";
 import { selectThreadRightPanelState, useRightPanelStore } from "../rightPanelStore";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const WorkbenchPanelHostContext = createContext<HTMLElement | null>(null);
+/** Page elements the floating chat's embedded Thread renders its panel, terminal, and toggles into. */
+export interface WorkbenchPageHosts {
+  readonly panelHost: HTMLElement | null;
+  readonly terminalHost: HTMLElement | null;
+  readonly controlsHost: HTMLElement | null;
+}
 
-/** The page element the floating chat's embedded Thread renders its right panel into. */
-export const useWorkbenchPanelHost = () => useContext(WorkbenchPanelHostContext);
+const WorkbenchPageHostsContext = createContext<WorkbenchPageHosts>({
+  panelHost: null,
+  terminalHost: null,
+  controlsHost: null,
+});
+const WorkbenchControlsHostContext = createContext<(element: HTMLElement | null) => void>(() => {});
+
+export const useWorkbenchPageHosts = () => useContext(WorkbenchPageHostsContext);
+
+/** A ref for the page header element that shows the open Thread's terminal and panel toggles. */
+export const useWorkbenchControlsHostRef = () => useContext(WorkbenchControlsHostContext);
 
 export function useWorkbenchThreadPanel(threadRef: ScopedThreadRef | null) {
   const open = useRightPanelStore(
@@ -26,7 +40,9 @@ export function useWorkbenchThreadPanel(threadRef: ScopedThreadRef | null) {
  * it, invisible and click-through, so only the floating chat shows over the panel.
  */
 export function WorkbenchPageRow({ children }: { readonly children: ReactNode }) {
-  const [host, setHost] = useState<HTMLElement | null>(null);
+  const [panelHost, setPanelHost] = useState<HTMLElement | null>(null);
+  const [terminalHost, setTerminalHost] = useState<HTMLElement | null>(null);
+  const [controlsHost, setControlsHost] = useState<HTMLElement | null>(null);
   const shownThread = useWorkbenchFloatingChatStore((state) => state.shownThread);
   const { maximized } = useWorkbenchThreadPanel(shownThread);
   return (
@@ -37,10 +53,15 @@ export function WorkbenchPageRow({ children }: { readonly children: ReactNode })
           maximized && "pointer-events-none invisible relative z-10",
         )}
       >
-        <WorkbenchPanelHostContext value={host}>{children}</WorkbenchPanelHostContext>
+        <WorkbenchControlsHostContext value={setControlsHost}>
+          <WorkbenchPageHostsContext value={{ panelHost, terminalHost, controlsHost }}>
+            {children}
+          </WorkbenchPageHostsContext>
+        </WorkbenchControlsHostContext>
+        <div ref={setTerminalHost} data-workbench-terminal-host="" className="contents" />
       </div>
       <div
-        ref={setHost}
+        ref={setPanelHost}
         data-workbench-panel-host=""
         className={cn("isolate flex min-h-0 shrink-0", maximized && "absolute inset-0")}
       />
