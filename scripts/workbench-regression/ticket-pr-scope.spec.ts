@@ -307,10 +307,10 @@ test("ticket PR References show without changing Ticket scope", async ({
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(threadBadge).toBeVisible();
   await page.screenshot({ path: testInfo.outputPath("ticket-metadata-narrow.png") });
+  // A Thread link on the Ticket shows the Thread in the floating chat, on the same page.
   await threadBadge.click();
-  await expect(page).toHaveURL(
-    (url) => url.pathname.includes(threadId) && url.searchParams.get("workbench") === "true",
-  );
+  await expect(page.getByRole("region", { name: threadTitle, exact: true })).toBeVisible();
+  expect(new URL(page.url()).pathname).toBe("/workbench");
   // Showing the PR must not add its repository to the Ticket's saved preparation scope.
   expect((await snapshot(demo)).tickets.find((candidate) => candidate.id === ticket.id)).toEqual(
     ticket,

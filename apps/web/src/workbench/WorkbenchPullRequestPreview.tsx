@@ -1,6 +1,6 @@
 import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
-import type { EnvironmentId, PullRequestRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import {
   createContext,
   lazy,
@@ -18,6 +18,7 @@ import {
   useWorkbenchAttentionData,
 } from "./WorkbenchAttentionProvider";
 import { resolveThreadRouteRef } from "../threadRoutes";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import {
   type PullRequestDetailTab,
   selectActiveRightPanelSurface,
@@ -35,6 +36,8 @@ export interface WorkbenchPullRequestSelection {
   readonly reference: PullRequestRef;
   readonly initialTab?: PullRequestDetailTab;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
+  /** The Thread whose panel opens the PR, when not the one the page shows yet. */
+  readonly panelThread?: ScopedThreadRef;
 }
 
 const WorkbenchPullRequestSheet = lazy(() =>
@@ -63,10 +66,13 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
   const { href } = useLocation();
   const { refreshAttention } = useWorkbenchAttentionData();
   const routeThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
+  // On the Board or Ticket page, the panel of the Thread the floating chat shows.
+  const shownThreadRef = useWorkbenchFloatingChatStore((state) => state.shownThread);
+  const panelThreadRef = routeThreadRef ?? shownThreadRef;
   const dockedPullRequestKey = useRightPanelStore((state) => {
-    const surface = selectActiveRightPanelSurface(state.byThreadKey, routeThreadRef);
-    return surface?.kind === "pull-request" && routeThreadRef
-      ? JSON.stringify([routeThreadRef.environmentId, routeThreadRef.threadId, surface.id])
+    const surface = selectActiveRightPanelSurface(state.byThreadKey, panelThreadRef);
+    return surface?.kind === "pull-request" && panelThreadRef
+      ? JSON.stringify([panelThreadRef.environmentId, panelThreadRef.threadId, surface.id])
       : null;
   });
   const previousDockedPullRequestKey = useRef(dockedPullRequestKey);
@@ -87,15 +93,16 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
     setSelection(null);
   }
   const openSelection = (next: WorkbenchPullRequestSelection) => {
-    if (routeThreadRef) {
+    const targetThreadRef = next.panelThread ?? panelThreadRef;
+    if (targetThreadRef) {
       setSelection(null);
-      useRightPanelStore.getState().openPullRequest(routeThreadRef, {
+      useRightPanelStore.getState().openPullRequest(targetThreadRef, {
         projectId: next.reference.projectId,
         repository: next.reference.repository,
         number: next.reference.number,
         ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
         ...(next.initialTab === undefined ? {} : { detailTab: next.initialTab }),
-        ...(routeThreadRef.environmentId === next.environmentId
+        ...(targetThreadRef.environmentId === next.environmentId
           ? {}
           : { environmentId: next.environmentId }),
       });

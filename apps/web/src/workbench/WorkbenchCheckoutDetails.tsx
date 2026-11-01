@@ -1,5 +1,4 @@
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId, VcsStatusResult, WorkbenchTicketWorkspace } from "@t3tools/contracts";
+import type { EnvironmentId, VcsStatusResult } from "@t3tools/contracts";
 import { CheckIcon, CopyIcon, FolderIcon, GitBranchIcon } from "lucide-react";
 import { useEffect, useRef, type ReactNode } from "react";
 
@@ -15,7 +14,6 @@ import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
-import type { Project } from "../types";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 
 export function useWorkbenchCheckoutStatusRefresh({
@@ -50,52 +48,6 @@ export function useWorkbenchCheckoutStatusRefresh({
       document.removeEventListener("visibilitychange", refresh);
     };
   }, [cwdKey, environmentId, refreshStatus]);
-}
-
-export function WorkbenchThreadCheckoutDetails({
-  environmentId,
-  thread,
-  projects,
-  workspace,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly thread: EnvironmentThreadShell;
-  readonly projects: ReadonlyArray<Project>;
-  readonly workspace: WorkbenchTicketWorkspace | undefined;
-}) {
-  const cwd =
-    thread.worktreePath ??
-    projects.find((project) => project.id === thread.projectId)?.workspaceRoot;
-  if (!cwd)
-    return <span className="block text-xs text-muted-foreground">Directory unavailable</span>;
-  const shared =
-    workspace?.repositories.some(
-      (repository) => repository.status === "ready" && repository.worktreePath === cwd,
-    ) ?? false;
-  return (
-    <details className="w-full overflow-hidden rounded-md border border-border/50 bg-muted/15">
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <summary className="cursor-pointer px-2 py-1.5 text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring" />
-          }
-        >
-          Checkout details
-          <span className="ml-1 font-normal text-muted-foreground/75">
-            · {shared ? "Ticket checkout" : "Other checkout"}
-          </span>
-        </TooltipTrigger>
-        <TooltipPopup className="max-w-72">
-          {shared
-            ? "This thread uses the ticket’s prepared working directory. Threads using this directory share files, branch, and uncommitted changes. This does not mean another thread is currently using it."
-            : "This thread uses a working directory outside the ticket’s prepared checkouts. Other threads may still use the same directory."}
-        </TooltipPopup>
-      </Tooltip>
-      <div className="border-t border-border/50 px-2 pb-2">
-        <WorkbenchCheckoutDetails environmentId={environmentId} cwd={cwd} />
-      </div>
-    </details>
-  );
 }
 
 export function WorkbenchCheckoutDirectory({

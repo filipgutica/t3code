@@ -34,7 +34,7 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
-/* Detail rows use the native sidebar row inset; the chevron centers on the first line. */
+/* Ticket rows use the native sidebar row inset under the Workspace's chevron column. */
 [data-workbench-sidebar-disclosure="ticket"] {
   height: calc(2 * var(--sidebar-content-inset) + 66px);
   align-items: start;
@@ -51,13 +51,6 @@ button[data-workbench-sidebar-disclosure] {
   min-width: 0;
   padding: var(--sidebar-content-inset) var(--workbench-sidebar-row-end-inset, 8px)
     var(--sidebar-content-inset) 4px;
-}
-
-/* Threads are compact children: title and slot, then branch, PR and provider. */
-[data-workbench-sidebar-detail-row="thread"] {
-  grid-template-rows: 20px 18px;
-  padding-block: 6px;
-  padding-inline-start: calc(var(--workbench-sidebar-disclosure-width, 20px) + 4px);
 }
 
 [data-workbench-sidebar-navigation] {
@@ -149,42 +142,6 @@ button[data-workbench-sidebar-disclosure] {
   overflow: hidden;
 }
 
-[data-workbench-sidebar-branch] {
-  container-type: inline-size;
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-[data-workbench-sidebar-branch-prefix] {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-[data-workbench-sidebar-branch-suffix] {
-  display: flex;
-  justify-content: flex-end;
-  flex-shrink: 0;
-  max-width: 60%;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-[data-workbench-sidebar-branch-suffix] > span {
-  flex-shrink: 0;
-}
-
-@container (max-width: 80px) {
-  [data-workbench-sidebar-branch] > * {
-    display: none;
-  }
-}
-
 /* Clicks between controls fall through to the navigation button underneath. */
 :is([data-workbench-sidebar-slot], [data-workbench-sidebar-metadata-controls]) {
   position: relative;
@@ -222,13 +179,6 @@ button[data-workbench-sidebar-disclosure] {
   align-items: center;
   flex-shrink: 0;
   white-space: nowrap;
-}
-
-[data-workbench-sidebar-provider-end] {
-  display: grid;
-  place-items: center;
-  flex: 0 0 20px;
-  height: 18px;
 }
 
 /* Like native rows, hover swaps a plain status for the row's quick action. */
@@ -270,20 +220,6 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-quick-action]:hover {
   color: var(--sidebar-foreground);
   background: var(--sidebar-row-hover);
-}
-
-/* Threads hang off a rail under the Ticket's chevron. */
-[data-workbench-sidebar-thread-list] {
-  position: relative;
-}
-
-[data-workbench-sidebar-thread-list]::before {
-  position: absolute;
-  inset-block: 0 6px;
-  inset-inline-start: calc(var(--workbench-sidebar-disclosure-width, 20px) / 2 - 0.5px);
-  width: 1px;
-  content: "";
-  background: var(--sidebar-border);
 }
 
 /* Like native rows, keyboard focus rings the whole row rather than the inset title area. */

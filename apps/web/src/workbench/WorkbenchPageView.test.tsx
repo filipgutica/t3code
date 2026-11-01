@@ -28,6 +28,7 @@ import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
 vi.mock("../state/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/server")>();
@@ -38,6 +39,8 @@ vi.mock("../state/server", async (importOriginal) => {
     serverEnvironment: { ...actual.serverEnvironment, configValueAtom: () => config },
   };
 });
+const contextMenu = vi.hoisted(() => ({ show: vi.fn(async () => null) }));
+vi.mock("../localApi", () => ({ readLocalApi: () => ({ contextMenu }) }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
@@ -530,15 +533,20 @@ it("closes an already open create dialog when its Workspace is archived", async 
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
+const expectThreadShownInChat = () => {
+  expect(requestTicketThread).not.toHaveBeenCalled();
+  const chat = useWorkbenchFloatingChatStore.getState();
+  expect(Object.values(chat.pickedThreads).map((pick) => pick?.threadId)).toContain(thread.id);
+  expect(chat.mode).toBe("expanded");
+};
+
 it("keeps linked native Threads openable in an archived Workspace", async () => {
   await render({ detail: true, workspaceState: "archived" });
-  const openThread = button("Open Thread for Ship the release");
+  useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
+  const openThread = button("Show in chat Release agent");
   expect(openThread.disabled).toBe(false);
   await act(async () => openThread.click());
-  expect(requestTicketThread).toHaveBeenCalledWith(
-    expect.objectContaining({ id: ticket.id }),
-    thread.id,
-  );
+  expectThreadShownInChat();
 });
 
 it.each(["active", "archived"] as const)(
@@ -562,7 +570,7 @@ it("shows the deleted assignment and a visible replacement action in Ticket deta
   const replacement = [...container.querySelectorAll("button")].find(
     (candidate) =>
       candidate.getAttribute("aria-label") === "Create replacement Thread for Ship the release" &&
-      candidate.textContent?.includes("Thread deleted"),
+      candidate.parentElement?.textContent?.includes("Thread deleted"),
   );
   if (!replacement) throw new Error("Missing deleted Thread row action");
   const label = [...replacement.querySelectorAll("span")].find(
@@ -638,7 +646,7 @@ it("opens a planning ticket's own page with Start work until work starts", async
   await render({ conversation: "working" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(button("Start work", { optional: true })).toBeNull();
-  expect(button("Open Thread for Ship the release").disabled).toBe(false);
+  expect(button("Show in chat Release agent").disabled).toBe(false);
 });
 
 it("shows the ticket's Threads in the floating chat, also while the ticket is planning", async () => {
@@ -695,28 +703,36 @@ it.each([false, true])(
   "keeps assigned Thread navigation available without operate permission (detail=%s)",
   async (detail) => {
     await render({ detail, canOperate: false });
-    const open = button("Open Thread for Ship the release");
+    useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
+    const open = button(detail ? "Show in chat Release agent" : "Open Thread for Ship the release");
     expect(open.disabled).toBe(false);
     await act(async () => open.click());
-    expect(requestTicketThread).toHaveBeenCalledWith(
-      expect.objectContaining({ id: ticket.id }),
-      thread.id,
-    );
+    // The Ticket page shows its Threads in the floating chat; the Board card opens the Thread.
+    if (detail) expectThreadShownInChat();
+    else
+      expect(requestTicketThread).toHaveBeenCalledWith(
+        expect.objectContaining({ id: ticket.id }),
+        thread.id,
+      );
   },
 );
 
 it.each([false, true])(
   "requires operate permission to restore an archived Thread (detail=%s)",
   async (detail) => {
+    // The Ticket page's row is named by its Thread; the Board card by its Ticket.
+    const label = detail
+      ? "Restore and open Release agent"
+      : "Restore and open for Ship the release";
     await render({ detail, archivedAssignedThread: true, canOperate: false });
-    expect(button("Restore and open for Ship the release").disabled).toBe(true);
+    expect(button(label).disabled).toBe(true);
     await render({
       detail,
       archivedAssignedThread: true,
       workspaceState: "archived",
       canOperate: true,
     });
-    const restore = button("Restore and open for Ship the release");
+    const restore = button(label);
     expect(restore.disabled).toBe(false);
     await act(async () => restore.click());
     expect(requestTicketThread).toHaveBeenCalledWith(
@@ -735,16 +751,28 @@ it("does not start a fresh planning conversation through the URL without operate
 it("disables Ticket Thread mutations when permission is revoked and restores them when granted", async () => {
   for (const canOperate of [true, false, true]) {
     await render({ detail: true, canOperate });
-    for (const label of [
-      "Create Thread",
-      "Link existing Thread",
-      "Unlink Thread Release agent",
-      "Delete Thread Release agent",
-      "Settle Thread Release agent",
-    ]) {
+    for (const label of ["Create Thread", "Link existing Thread", "Settle Thread Release agent"]) {
       expect(button(label).disabled, label).toBe(!canOperate);
     }
-    expect(button("Open Thread for Ship the release").disabled).toBe(false);
+    const open = button("Show in chat Release agent");
+    expect(open.disabled).toBe(false);
+    const menuItems = [
+      expect.objectContaining({ label: "Unlink from Ticket", disabled: !canOperate }),
+      expect.objectContaining({ label: "Delete Thread", disabled: !canOperate }),
+    ];
+    contextMenu.show.mockClear();
+    await act(async () => {
+      open.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
+    });
+    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(menuItems, expect.anything());
+    // Keyboard users reach the same menu with Shift+F10, as on Workbench sidebar rows.
+    contextMenu.show.mockClear();
+    await act(async () => {
+      open.dispatchEvent(
+        new KeyboardEvent("keydown", { key: "F10", shiftKey: true, bubbles: true }),
+      );
+    });
+    expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(menuItems, expect.anything());
   }
 });
 

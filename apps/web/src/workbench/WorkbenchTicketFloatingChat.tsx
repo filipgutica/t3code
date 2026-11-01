@@ -9,6 +9,7 @@ import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { useEffect } from "react";
 
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useUiStateStore } from "../uiStateStore";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import { useRefreshOnThreadActivity } from "./useWorkbenchTicketConversation";
@@ -19,7 +20,10 @@ import {
   type WorkbenchFloatingChatTicket,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
-import { getWorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
+import {
+  getWorkbenchThreadExecutionStatus,
+  hasWorkbenchUnreadReply,
+} from "./workbenchThreadStatus.logic";
 import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
 
 type ThreadsById = ReadonlyMap<ThreadId, EnvironmentThreadShell>;
@@ -37,8 +41,15 @@ export const getWorkbenchFloatingChatInset = (enabled: boolean) =>
 const chatThreads = (
   assignments: ReadonlyArray<WorkbenchAssignment>,
   threadsById: ThreadsById,
-  recaps: ReadonlyMap<ThreadId, string>,
-  ticket: WorkbenchFloatingChatTicket,
+  {
+    recaps,
+    ticket,
+    localVisits,
+  }: {
+    readonly recaps: ReadonlyMap<ThreadId, string>;
+    readonly ticket: WorkbenchFloatingChatTicket;
+    readonly localVisits: Readonly<Record<string, string>>;
+  },
 ): WorkbenchFloatingChatThread[] =>
   assignments.flatMap(({ threadId }) => {
     const thread = threadsById.get(threadId);
@@ -48,8 +59,10 @@ const chatThreads = (
             threadId,
             title: thread.title,
             status: getWorkbenchThreadExecutionStatus(thread),
+            unread: hasWorkbenchUnreadReply(thread, localVisits),
             ticket,
             recap: recaps.get(threadId) ?? null,
+            settledAt: thread.settledAt ?? null,
           },
         ]
       : [];
@@ -73,7 +86,7 @@ interface WorkbenchTicketFloatingChatProps {
   readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }
 
-/** The ticket's Threads in the floating chat. Narrow screens keep the header's Open thread. */
+/** The ticket's Threads in the floating chat. Narrow screens open Threads on their own page. */
 export function WorkbenchTicketFloatingChat({
   enabled,
   ...props
@@ -87,11 +100,11 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   const { ticket, onNewThread, environmentId } = props;
   const ticketId = ticket.id;
   const pageChatKey = `${environmentId}:ticket:${ticketId}`;
-  const explicitThreadId = useWorkbenchFloatingChatStore(
-    (state) => state.pickedThreads[pageChatKey] ?? null,
-  );
+  const pick = useWorkbenchFloatingChatStore((state) => state.pickedThreads[pageChatKey] ?? null);
   const setExplicitThreadId = (threadId: ThreadId) =>
-    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
+    useWorkbenchFloatingChatStore
+      .getState()
+      .pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- registers the mounted Ticket chat as the target for imperative show-Thread actions and removes the registration on unmount
   useEffect(() => {
     const { setPageChat, pickThread, expand } = useWorkbenchFloatingChatStore.getState();
@@ -100,25 +113,25 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
       kind: "ticket",
       ticketId,
       showThread: (threadId) => {
-        pickThread(pageChatKey, threadId);
+        pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
         expand(threadId);
       },
     });
     return () => setPageChat(null);
   }, [environmentId, ticketId, pageChatKey]);
   const recaps = useWorkbenchThreadRecaps(environmentId);
-  const chatTicket = {
-    id: ticketId,
-    key: props.ticketKey ?? null,
-    title: ticket.title,
-    kind: ticket.kind,
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const threadContext = {
+    recaps,
+    ticket: { id: ticketId, key: props.ticketKey ?? null, title: ticket.title, kind: ticket.kind },
+    localVisits,
   };
   const chat = resolveWorkbenchFloatingChat({
-    active: chatThreads(props.activeAssignments, props.threadsById, recaps, chatTicket),
-    archived: chatThreads(props.activeAssignments, props.archivedThreadsById, recaps, chatTicket),
-    settled: chatThreads(props.settledAssignments, props.threadsById, recaps, chatTicket),
+    active: chatThreads(props.activeAssignments, props.threadsById, threadContext),
+    archived: chatThreads(props.activeAssignments, props.archivedThreadsById, threadContext),
+    settled: chatThreads(props.settledAssignments, props.threadsById, threadContext),
     primaryThreadId: props.primaryAssignment?.threadId ?? null,
-    explicitThreadId,
+    pick,
   });
   const snapshot = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
   useRefreshOnThreadActivity(

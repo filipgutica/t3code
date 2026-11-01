@@ -43,7 +43,6 @@ export interface WorkbenchSidebarTicketSections {
 
 export interface WorkbenchSidebarExpansion {
   readonly workspaceId: WorkbenchProjectId | null;
-  readonly ticketId: WorkbenchTicketId | null;
   readonly done: boolean;
   readonly archived: boolean;
 }
@@ -52,12 +51,6 @@ export type WorkbenchSidebarExpansionAction =
   | {
       readonly type: "toggleWorkspace";
       readonly workspaceId: WorkbenchProjectId;
-    }
-  | {
-      readonly type: "toggleTicket";
-      readonly workspaceId: WorkbenchProjectId;
-      readonly ticketId: WorkbenchTicketId;
-      readonly done: boolean;
     }
   | {
       readonly type: "toggleArchived";
@@ -70,41 +63,30 @@ export type WorkbenchSidebarExpansionAction =
 
 export function getWorkbenchSidebarExpansionDefaults({
   workspaceId,
-  ticketId,
   ticketIsDone,
 }: {
   readonly workspaceId: WorkbenchProjectId | undefined;
-  readonly ticketId: WorkbenchTicketId | undefined;
   readonly ticketIsDone: boolean;
 }): WorkbenchSidebarExpansion {
-  return {
-    workspaceId: workspaceId ?? null,
-    ticketId: ticketId ?? null,
-    done: ticketIsDone,
-    archived: false,
-  };
+  return { workspaceId: workspaceId ?? null, done: ticketIsDone, archived: false };
 }
 
-/** Reveals a newly selected route without replacing disclosure choices elsewhere. */
+/** Reveals a newly selected route, opening Done for a done Ticket, and keeps other choices. */
 export function revealWorkbenchSidebarSelection(
   state: WorkbenchSidebarExpansion,
   {
     workspaceId,
-    ticketId,
     ticketIsDone,
   }: {
     readonly workspaceId: WorkbenchProjectId | undefined;
-    readonly ticketId: WorkbenchTicketId | undefined;
     readonly ticketIsDone: boolean;
   },
 ): WorkbenchSidebarExpansion {
   if (workspaceId === undefined) return state;
   if (state.workspaceId !== workspaceId) {
-    return getWorkbenchSidebarExpansionDefaults({ workspaceId, ticketId, ticketIsDone });
+    return getWorkbenchSidebarExpansionDefaults({ workspaceId, ticketIsDone });
   }
-  if (ticketId && (state.ticketId !== ticketId || state.done !== ticketIsDone)) {
-    return { ...state, ticketId, done: ticketIsDone, archived: false };
-  }
+  if (ticketIsDone && !state.done) return { ...state, done: true, archived: false };
   return state;
 }
 
@@ -114,37 +96,20 @@ export function reduceWorkbenchSidebarExpansion(
 ): WorkbenchSidebarExpansion {
   switch (action.type) {
     case "toggleWorkspace":
-      return action.workspaceId === state.workspaceId
-        ? { workspaceId: null, ticketId: null, done: false, archived: false }
-        : {
-            workspaceId: action.workspaceId,
-            ticketId: null,
-            done: false,
-            archived: false,
-          };
-    case "toggleTicket":
       return {
-        workspaceId: action.workspaceId,
-        ticketId:
-          action.workspaceId === state.workspaceId &&
-          action.ticketId === state.ticketId &&
-          action.done === state.done
-            ? null
-            : action.ticketId,
-        done: action.done,
+        workspaceId: action.workspaceId === state.workspaceId ? null : action.workspaceId,
+        done: false,
         archived: false,
       };
     case "toggleArchived":
       return {
         workspaceId: action.workspaceId,
-        ticketId: null,
         done: false,
         archived: action.workspaceId === state.workspaceId ? !state.archived : true,
       };
     case "toggleDone":
       return {
         workspaceId: action.workspaceId,
-        ticketId: null,
         done: action.workspaceId === state.workspaceId ? !state.done : true,
         archived: false,
       };

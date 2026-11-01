@@ -55,7 +55,7 @@ export function getWorkbenchAttentionSignalPresentation(signal: WorkbenchAttenti
   const kind = getWorkbenchAttentionReasonKind(signal);
   const action =
     signal.source.type === "thread"
-      ? "Open thread"
+      ? "Open Thread"
       : signal.kind === "failed-checks"
         ? "View checks"
         : signal.kind === "changes-requested"

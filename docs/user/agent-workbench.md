@@ -130,17 +130,22 @@ in **Work area**, review the repositories, and confirm.
   <img src="./media/workbench/thread.png" alt="The same native Thread continues from planning into the prepared Ticket work area.">
 </picture>
 
-Use **Create Thread** for another conversation on the same Ticket. Use **Link existing
-Thread** to add an unassigned native conversation, or **Unlink Thread from Ticket**
-to remove the association without deleting it. **Settle** moves a conversation out
-of the active group; **Thread history** keeps earlier conversations available.
+Use **Create Thread** for another conversation on the same Ticket, or **Link existing
+Thread** to add an unassigned native conversation. Hover a Thread for its details, or
+right-click it to unlink it from the Ticket without deleting it, or to delete it.
+**Settle** moves a conversation out of the active group; **Thread history** keeps
+earlier conversations available.
 
-Opening a Thread from a Ticket keeps the Workbench context visible. Use the Board
-or Ticket links to return to the work, or choose **Back to Threads** to restore the
-regular T3 sidebar. The command palette also offers **Open Workbench**, **New
-Ticket** for the current Workspace, and **Back to Ticket** from a linked Thread.
+Selecting a Thread on a Ticket shows it in the Ticket's chat. Choose **Open full
+Thread** in the chat for the regular Thread page, and use its Board or Ticket links to
+return. The terminal and side panel buttons at the top right of the Ticket open the
+chat Thread's terminal and side panel without leaving the page. The command palette also offers **Open
+Workbench**, **New Ticket** for the current Workspace, and **Back to Ticket** from a
+linked Thread.
 
-Workbench sidebar Thread rows offer the same pin and snooze actions as native Threads.
+The Workbench sidebar lists Tickets. Reach a Ticket's Threads from its page or its
+chat, which list them like an inbox: **Unread** holds new replies and Threads waiting
+on you, then **Idle**, with **Working** and **Settled** collapsed.
 
 ## Chat with Threads
 
@@ -156,7 +161,10 @@ Ticket's Threads. Use it to follow and answer agents without leaving the page.
   you** opens the menu on the first of them.
 - Select the message field to expand the conversation, or choose **Show chat** in
   the command palette. Drag the chat's left edge, top edge, or top-left corner to
-  resize it.
+  resize it. Clicking elsewhere on the page minimizes the chat; select it to bring it
+  back with your message intact.
+- **Settle Thread** in the chat's header settles the open Thread and shows the
+  Ticket's next one. Open a settled Thread from the menu to **Un-settle** it.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-chat-light.png">
@@ -186,10 +194,15 @@ collapsed to one row.
   <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft, offering Discard and Create ticket.">
 </picture>
 
-The chat leaves out the Thread's side panels: opening a file or diff from it, or
-choosing **Open full Thread**, opens the Thread itself. The chat is not available on
-narrow screens, and a Ticket that is still being planned shows its conversation in
-the page instead.
+Files, diffs, side chats, and pull requests you open from the chat open in the
+Thread's side panel beside it, and you stay on the page. While the chat shows a
+Thread, pull requests you open on the page open there too. Maximize the panel to
+fill the page; the chat stays over it. In a smaller window the panel opens as a
+sheet and the chat minimizes until you close it. The details button in the chat
+header shows the Thread's details, as on a Thread page. Terminal commands and
+**Open full Thread** open the Thread itself. The chat is not available on narrow
+screens, and a Ticket that is still being planned shows its conversation in the
+page instead.
 
 ## Follow progress and review results
 

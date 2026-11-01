@@ -77,6 +77,7 @@ import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoa
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
+import { WorkbenchPageRow } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { getTicketReferences } from "./workbenchReferences.logic";
 import {
@@ -1167,12 +1168,12 @@ function WorkbenchPageNoWorkspace(
 
 export function WorkbenchPageView(props: WorkbenchPageViewProps) {
   return (
-    <div className="flex min-h-0 flex-1 flex-col" data-workbench-page="">
+    <WorkbenchPageRow>
       <WorkbenchPageContent {...props} />
 
       <WorkbenchPageWorkspaceDialogs {...props} />
       <WorkbenchPageThreadDialogs {...props} />
       <WorkbenchPageTicketDialogs {...props} />
-    </div>
+    </WorkbenchPageRow>
   );
 }

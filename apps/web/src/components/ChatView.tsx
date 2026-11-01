@@ -47,7 +47,7 @@ import type { UsageLimitSourceSnapshots } from "@t3tools/contracts";
 import { feedbackBannerItem } from "./chat/ComposerFeedback";
 import { useUsageLimitsPanel } from "./chat/useUsageLimitsPanel";
 import { useWorktreeSetup } from "./chat/useWorktreeSetup";
-import { useChatShortcuts } from "./chat/useChatShortcuts";
+import { type ChatShortcutCommands, useChatShortcuts } from "./chat/useChatShortcuts";
 import { ChatBannerLane } from "./chat/ChatBannerLane";
 import * as Schema from "effect/Schema";
 import {
@@ -65,6 +65,7 @@ import {
   type PreviewAnnotationPayload,
   ProviderInstanceId,
   type ServerProvider,
+  type KeybindingCommand,
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
@@ -109,7 +110,17 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { resolveThreadReferenceCopyTarget } from "@t3tools/client-runtime/thread-reference";
 import { resolveTerminalSessionLabel } from "@t3tools/shared/terminalLabels";
 import { useAtomValue } from "@effect/atom-react";
-import { type SetStateAction, use, useEffect, useLayoutEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  use,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { BackgroundThreadContext } from "./chat/backgroundThread";
 import { useLocation, useNavigate } from "@tanstack/react-router";
 import { assistantCitationFromLocation } from "../lib/assistantCitationNavigation";
@@ -180,7 +191,8 @@ import { resolveCompatibleRuntimeMode } from "./chat/runtimeModeConfig";
 import { makeWorkspaceFileDropHandlers } from "./chat/workspaceFileDrop";
 import { isEditableFocused } from "../lib/editableFocus";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
-import { shortcutLabelForCommand } from "../keybindings";
+import { resolveShortcutCommand, shortcutLabelForCommand } from "../keybindings";
+import { isCommandPaletteOpen } from "../commandPaletteBus";
 import { cn } from "~/lib/utils";
 import { isModelPickerOpen } from "../modelPickerVisibility";
 import { COLLAPSED_SIDEBAR_TITLEBAR_INSET_CLASS } from "~/workspaceTitlebar";
@@ -204,7 +216,16 @@ import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations"
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { focusTerminalOnThreadEnter, getTerminalFocusOwner } from "../lib/terminalFocus";
+import {
+  focusTerminalOnThreadEnter,
+  getTerminalFocusOwner,
+  type TerminalFocusOwner,
+} from "../lib/terminalFocus";
+import { isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import {
+  preventRepeatedTerminalCloseShortcut,
+  preventTerminalCloseShortcut,
+} from "../lib/terminalCloseShortcut";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
@@ -391,12 +412,26 @@ interface ChatViewEmbedding {
   readonly composerFocusRequest: number | null;
   /** Shows the full Thread, where the surfaces the embed leaves out live. */
   readonly openThread: () => void;
+  /** The host page's element the Thread's right panel renders into; null leaves the panel out. */
+  readonly panelHost?: HTMLElement | null;
+  /** The host page's element the Thread's terminal drawer renders into; null leaves it out. */
+  readonly terminalHost?: HTMLElement | null;
+  /** Where the terminal and panel toggles render while the panel is closed. */
+  readonly controlsHost?: HTMLElement | null;
+  /** The host's Thread details trigger: the popover anchors to `anchor` and opens from `handle`. */
+  readonly threadDetails?: {
+    readonly anchor: RefObject<Element | null>;
+    readonly handle: ReturnType<typeof PopoverCreateHandle>;
+  };
+  /** The host hides the conversation and keeps only its panel, so the Thread is not marked read. */
+  readonly conversationHidden?: boolean;
 }
 
 /**
  * `readOnlyPlanning` hides controls a planning-only runtime policy rejects; the server enforces it.
- * `workbenchEmbed` mounts the Thread in a host page that owns the window: no side panels, window-wide
- * input, or persisted panel state; focus only on host request; terminals open the full Thread.
+ * `workbenchEmbed` mounts the Thread in a host page that owns the window: no window-wide input;
+ * focus only on host request; shell commands open the full Thread; the panel, terminal drawer,
+ * their toggles, and details render only into the host's elements (catalog U09).
  */
 type ChatViewProps =
   | {
@@ -445,6 +480,9 @@ export default function ChatView(props: ChatViewProps) {
   const embedded = parentPanel !== undefined;
   // Either embed: a side chat in its parent's panel or a Workbench host page.
   const isEmbedded = embedded || workbenchEmbed !== undefined;
+  const panelHost = workbenchEmbed?.panelHost ?? null;
+  const terminalHost = workbenchEmbed?.terminalHost ?? null;
+  const controlsHost = workbenchEmbed?.controlsHost ?? null;
   const canOperateThread = useEnvironmentScope(environmentId, AuthOrchestrationOperateScope);
   const canOperateTerminal = useEnvironmentScope(environmentId, AuthTerminalOperateScope);
   const draftId = routeKind === "draft" ? props.draftId : null;
@@ -1080,7 +1118,7 @@ export default function ChatView(props: ChatViewProps) {
   );
   const canReuseTerminal = activeThreadKnownSessionsRaw !== null;
   const previewPanelOpen = activeRightPanelKind === "preview" && browserAvailable;
-  const rightPanelOpen = !isEmbedded && rightPanelState.isOpen;
+  const rightPanelOpen = (!isEmbedded || panelHost !== null) && rightPanelState.isOpen;
   const { active: panelAnimationsActive, durationMs: panelAnimationDurationMs } =
     usePanelAnimationSettings();
   const rightPanelPresenceValue = {
@@ -1113,6 +1151,8 @@ export default function ChatView(props: ChatViewProps) {
   const rightPanelMaximized =
     !embedded && canMaximizeRightPanel && rightPanelState.maximized === true;
   const inlineRightPanelOwnsTitleBar = rightPanelOpen && !shouldUsePlanSidebarSheet;
+  // A hosted panel maximizes over the host page; the embedded chat floats above it (U09).
+  const chatColumnMaximizedAway = rightPanelMaximized && panelHost === null;
   const [threadPanelPopoverHandle] = useState(PopoverCreateHandle);
   const [chatCanvasStore] = useState(createChatCanvasStore);
 
@@ -1952,6 +1992,12 @@ export default function ChatView(props: ChatViewProps) {
     runShellCommandStable(command);
     workbenchEmbed?.openThread();
   });
+  const runProjectScriptInViewStable = useStableCallback(
+    (script: Parameters<typeof runProjectScriptStable>[0]) => {
+      void runProjectScriptStable(script);
+      workbenchEmbed?.openThread();
+    },
+  );
   const openWorktreeSetupTerminalInView =
     workbenchEmbed && onOpenWorktreeSetupTerminal
       ? (terminalId: string) => {
@@ -2800,12 +2846,68 @@ export default function ChatView(props: ChatViewProps) {
   // A focused desktop browser page forwards these chords as menu actions.
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to desktop bridge menu actions that toggle the right panel
   useEffect(() => {
-    if (isEmbedded) return;
+    if (isEmbedded && panelHost === null) return;
     return window.desktopBridge?.onMenuAction((action) => {
       if (action === "rightPanel.toggle") toggleRightPanelStable();
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
     });
-  }, [isEmbedded, toggleRightPanelStable, toggleRightPanelMaximizedStable]);
+  }, [isEmbedded, panelHost, toggleRightPanelStable, toggleRightPanelMaximizedStable]);
+  const runHostedTerminalShortcut = useStableCallback(
+    (
+      command: KeybindingCommand,
+      event: KeyboardEvent,
+      terminalFocusOwner: TerminalFocusOwner | null,
+    ) => {
+      const shortcuts: ChatShortcutCommands = terminalShortcuts;
+      const run = shortcuts[command];
+      return run !== undefined && run({ event, terminalFocusOwner }) !== false;
+    },
+  );
+  // A Workbench page hosting the panel or terminal takes only their chords; the page keeps the
+  // rest of the keyboard (U09).
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the hosted panel and terminal chords
+  useEffect(() => {
+    if (panelHost === null && terminalHost === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      // The same close guards as useChatShortcuts, whose listener can't stop this one.
+      if (
+        preventRepeatedTerminalCloseShortcut(event, keybindings) ||
+        (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings))
+      )
+        return;
+      const terminalFocusOwner = getTerminalFocusOwner();
+      if (
+        (event.defaultPrevented && terminalFocusOwner === null) ||
+        isCommandPaletteOpen() ||
+        isInSideChatPane(event.target)
+      )
+        return;
+      const command = resolveShortcutCommand(event, keybindings, {
+        context: getShortcutContextStable(event.target),
+      });
+      if (panelHost !== null && command === "rightPanel.toggle") toggleRightPanelStable();
+      else if (panelHost !== null && command === "rightPanel.toggleMaximized") {
+        if (!event.repeat) toggleRightPanelMaximizedStable();
+      } else if (
+        terminalHost === null ||
+        command === null ||
+        !runHostedTerminalShortcut(command, event, terminalFocusOwner)
+      )
+        return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [
+    panelHost,
+    terminalHost,
+    keybindings,
+    getShortcutContextStable,
+    runHostedTerminalShortcut,
+    toggleRightPanelStable,
+    toggleRightPanelMaximizedStable,
+  ]);
 
   usePasteToFocusComposer(isEmbedded ? null : activeThreadId, composerRef);
   // A delegated task is a remote thread's subagent.
@@ -2828,6 +2930,7 @@ export default function ChatView(props: ChatViewProps) {
   const runSideChatShellCommandStable = useStableCallback((command: string) => {
     if (activeThreadRef) useRightPanelStore.getState().setMaximized(activeThreadRef, false);
     runShellCommandStable(command);
+    workbenchEmbed?.openThread();
   });
   // Main-thread surfaces show this reason; `/side` sent anyway gets it as a toast.
   const sideChatDisabledReason =
@@ -3314,7 +3417,9 @@ export default function ChatView(props: ChatViewProps) {
   const panelToggleControls = (
     <PanelLayoutControls
       {...panelToggleControlProps}
-      showThreadPanelControl={!inlineRightPanelOwnsTitleBar}
+      // A Workbench host has its own details button; it shows the drawer only with a host (U09).
+      showThreadPanelControl={!inlineRightPanelOwnsTitleBar && workbenchEmbed === undefined}
+      showTerminalControl={workbenchEmbed === undefined || terminalHost !== null}
     />
   );
   const threadPanelHeaderControl = <ThreadPanelHeaderControl {...panelToggleControlProps} />;
@@ -3347,15 +3452,18 @@ export default function ChatView(props: ChatViewProps) {
           state={deviceState}
         />
       )}
-      {rightPanelControlsAtRoot && !embedded ? panelLayoutControls : null}
+      {rightPanelControlsAtRoot && !isEmbedded ? panelLayoutControls : null}
+      {controlsHost !== null && !(rightPanelControlsAtRoot && panelHost !== null)
+        ? createPortal(panelToggleControls, controlsHost)
+        : null}
       <div
         className={cn(
           "flex min-h-0 min-w-0 flex-col overflow-x-hidden",
-          rightPanelMaximized ? "w-0 flex-none" : "flex-1",
+          chatColumnMaximizedAway ? "w-0 flex-none" : "flex-1",
         )}
-        data-chat-column-maximized-away={rightPanelMaximized ? "true" : "false"}
+        data-chat-column-maximized-away={chatColumnMaximizedAway ? "true" : "false"}
         data-chat-column
-        inert={rightPanelMaximized}
+        inert={chatColumnMaximizedAway}
       >
         {embedded ? null : (
           <header
@@ -3891,10 +3999,10 @@ export default function ChatView(props: ChatViewProps) {
                   onConfirm={handleSwitchCheckoutToThreadStable}
                 />
 
-                {workbenchEmbed === undefined ? (
+                {workbenchEmbed === undefined || workbenchEmbed.threadDetails ? (
                   <ThreadDetailsPanel
-                    anchor={threadPanelPopoverAnchorRef}
-                    handle={threadPanelPopoverHandle}
+                    anchor={workbenchEmbed?.threadDetails?.anchor ?? threadPanelPopoverAnchorRef}
+                    handle={workbenchEmbed?.threadDetails?.handle ?? threadPanelPopoverHandle}
                     forceNewWorktree={multipleModelSelections !== null}
                     environmentId={activeThread.environmentId}
                     threadId={activeThread.id}
@@ -3952,7 +4060,7 @@ export default function ChatView(props: ChatViewProps) {
                     {...(isServerThread && isGitRepo
                       ? { onOpenChanges: openChangesFromThreadPanelStable }
                       : {})}
-                    onRunProjectScript={runProjectScriptStable}
+                    onRunProjectScript={runProjectScriptInViewStable}
                     onAddProjectScript={saveProjectScriptStable}
                     onUpdateProjectScript={updateProjectScriptStable}
                     onDeleteProjectScript={deleteProjectScriptStable}
@@ -3977,89 +4085,96 @@ export default function ChatView(props: ChatViewProps) {
           </ThreadFindCanvas>
         </div>
 
-        {isEmbedded ? null : (
-          <ChatTerminalDrawers
-            activeThreadKey={activeThreadKey}
-            activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
-            composerHeight={composerReservedHeight}
-            launchContext={activeTerminalLaunchContext ?? null}
-            splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
-            splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
-            newShortcutLabel={newTerminalShortcutLabel ?? undefined}
-            closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
-            keybindings={keybindings}
-            onAddTerminalContext={addTerminalContextToDraftStable}
-          />
+        {isEmbedded && terminalHost === null ? null : (
+          <PanelHostPortal host={terminalHost}>
+            <ChatTerminalDrawers
+              activeThreadKey={activeThreadKey}
+              activeTerminalOpen={Boolean(terminalUiState.terminalOpen)}
+              composerHeight={terminalHost === null ? composerReservedHeight : 0}
+              launchContext={activeTerminalLaunchContext ?? null}
+              splitShortcutLabel={splitTerminalShortcutLabel ?? undefined}
+              splitVerticalShortcutLabel={splitTerminalVerticalShortcutLabel ?? undefined}
+              newShortcutLabel={newTerminalShortcutLabel ?? undefined}
+              closeShortcutLabel={closeTerminalShortcutLabel ?? undefined}
+              keybindings={keybindings}
+              onAddTerminalContext={addTerminalContextToDraftStable}
+            />
+          </PanelHostPortal>
         )}
       </div>
 
       {rightPanelPresent && activeThreadRef && !embedded ? (
-        <ChatRightPanel
-          sheet={shouldUsePlanSidebarSheet}
-          workspaceLayoutElement={workspaceLayoutElement}
-          widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
-          sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
-          onCloseSheet={closePreviewPanelStable}
-          open={rightPanelOpen}
-          keybindings={keybindings}
-          getShortcutContext={getShortcutContextStable}
-          maximized={rightPanelMaximized}
-          layoutControls={
-            rightPanelOpen ? (
-              <div className="mr-px flex items-center gap-1">
-                <RightPanelMaximizeControl
-                  maximized={rightPanelMaximized}
-                  onToggle={toggleRightPanelMaximizedStable}
-                />
-                {panelToggleControls}
-              </div>
-            ) : null
-          }
-          surfaces={renderedRightPanelSurfaces}
-          environmentId={activeThreadRef.environmentId}
-          activeSurfaceId={renderedRightPanelSurface?.id ?? null}
-          pendingSurfaceIds={pendingFileSurfaceIds}
-          previewSessions={activePreviewState.sessions}
-          desktopByTabId={activePreviewState.desktopByTabId}
-          previewRuntimeTabId={resolvePreviewRuntimeTabId}
-          terminalLabelsById={activeTerminalLabelsById}
-          onActivate={activateRightPanelSurfaceStable}
-          onCloseSurface={closeRightPanelSurfaceStable}
-          onRenameDevice={(surfaceId, title) => {
-            if (activeThreadRef)
-              useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
-          }}
-          onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
-          onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
-          onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
-          onMoveSurface={moveRightPanelSurfaceStable}
-          onCopyFilePath={copyRightPanelFilePathStable}
-          onAddBrowser={() => createBrowserSurface()}
-          onAddBrowserInProfile={createBrowserSurfaceStable}
-          onAddTerminal={addTerminalSurfaceStable}
-          onAddDiff={addDiffSurfaceStable}
-          onAddFiles={addFilesSurfaceStable}
-          onAddPullRequest={addPullRequestSurfaceStable}
-          onAddPullRequests={addPullRequestsSurfaceStable}
-          onAddDevice={addDeviceSurfaceStable}
-          onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
-          browserAvailable={canOperatePreview && browserAvailable}
-          terminalAvailable={activeProject !== null && canOperateTerminal}
-          diffAvailable={isServerThread && isGitRepo}
-          filesAvailable={activeProject !== null}
-          pullRequestAvailable={pullRequestSurfaceAvailable}
-          pullRequestsAvailable={pullRequestsSurfaceAvailable}
-          deviceAvailable={activeThreadRef !== null}
-          sideChatAvailable={sideChat.available}
-          sideChatDisabledReason={sideChatDisabledReason}
-        >
-          {rightPanelContent}
-        </ChatRightPanel>
+        <PanelHostPortal host={panelHost}>
+          {panelHost !== null && rightPanelControlsAtRoot ? panelLayoutControls : null}
+          <ChatRightPanel
+            sheet={shouldUsePlanSidebarSheet}
+            workspaceLayoutElement={panelHost?.parentElement ?? workspaceLayoutElement}
+            widthStorageKey={`t3code:preview-panel-width:${activeThreadKey}`}
+            sheetAnimationDurationMs={panelAnimationsActive ? panelAnimationDurationMs : 0}
+            onCloseSheet={closePreviewPanelStable}
+            open={rightPanelOpen}
+            keybindings={keybindings}
+            getShortcutContext={getShortcutContextStable}
+            maximized={rightPanelMaximized}
+            layoutControls={
+              rightPanelOpen ? (
+                <div className="mr-px flex items-center gap-1">
+                  <RightPanelMaximizeControl
+                    maximized={rightPanelMaximized}
+                    onToggle={toggleRightPanelMaximizedStable}
+                  />
+                  {panelToggleControls}
+                </div>
+              ) : null
+            }
+            surfaces={renderedRightPanelSurfaces}
+            environmentId={activeThreadRef.environmentId}
+            activeSurfaceId={renderedRightPanelSurface?.id ?? null}
+            pendingSurfaceIds={pendingFileSurfaceIds}
+            previewSessions={activePreviewState.sessions}
+            desktopByTabId={activePreviewState.desktopByTabId}
+            previewRuntimeTabId={resolvePreviewRuntimeTabId}
+            terminalLabelsById={activeTerminalLabelsById}
+            onActivate={activateRightPanelSurfaceStable}
+            onCloseSurface={closeRightPanelSurfaceStable}
+            onRenameDevice={(surfaceId, title) => {
+              if (activeThreadRef)
+                useRightPanelStore.getState().renameDevice(activeThreadRef, surfaceId, title);
+            }}
+            onCloseOtherSurfaces={closeOtherRightPanelSurfacesStable}
+            onCloseSurfacesToRight={closeRightPanelSurfacesToRightStable}
+            onCloseAllSurfaces={closeAllRightPanelSurfacesStable}
+            onMoveSurface={moveRightPanelSurfaceStable}
+            onCopyFilePath={copyRightPanelFilePathStable}
+            onAddBrowser={() => createBrowserSurface()}
+            onAddBrowserInProfile={createBrowserSurfaceStable}
+            onAddTerminal={addTerminalSurfaceStable}
+            onAddDiff={addDiffSurfaceStable}
+            onAddFiles={addFilesSurfaceStable}
+            onAddPullRequest={addPullRequestSurfaceStable}
+            onAddPullRequests={addPullRequestsSurfaceStable}
+            onAddDevice={addDeviceSurfaceStable}
+            onAddSideChat={sideChatsOffered ? openSideChatStable : undefined}
+            browserAvailable={canOperatePreview && browserAvailable}
+            terminalAvailable={activeProject !== null && canOperateTerminal}
+            diffAvailable={isServerThread && isGitRepo}
+            filesAvailable={activeProject !== null}
+            pullRequestAvailable={pullRequestSurfaceAvailable}
+            pullRequestsAvailable={pullRequestsSurfaceAvailable}
+            deviceAvailable={activeThreadRef !== null}
+            sideChatAvailable={sideChat.available}
+            sideChatDisabledReason={sideChatDisabledReason}
+          >
+            {rightPanelContent}
+          </ChatRightPanel>
+        </PanelHostPortal>
       ) : null}
 
       <RevertConfirmHost threadKey={routeThreadKey} onConfirm={onConfirmRevertStable} />
       {embedded ? null : <LinkPullRequestDialogHost />}
-      <ThreadVisitWatermark threadRef={routeThreadRef} />
+      {workbenchEmbed?.conversationHidden ? null : (
+        <ThreadVisitWatermark threadRef={routeThreadRef} />
+      )}
       <ExpandedImageDialogHost threadKey={routeThreadKey} />
     </div>
   );
@@ -4072,6 +4187,14 @@ export default function ChatView(props: ChatViewProps) {
       {content}
     </FileMetadataThreadProvider>
   );
+}
+
+/** A Workbench host page's panel element, where the embed's panel and its controls render (U09). */
+function PanelHostPortal(props: {
+  readonly host: HTMLElement | null;
+  readonly children: ReactNode;
+}) {
+  return props.host ? createPortal(props.children, props.host) : props.children;
 }
 
 function PreviewSessionSync(props: { readonly threadRef: ScopedThreadRef }) {

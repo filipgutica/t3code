@@ -14,6 +14,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toastManager } from "../components/ui/toast";
 import { useThreadHasUnsentDraft } from "../composerDraftStore";
 import { useMediaQuery } from "../hooks/useMediaQuery";
+import { useUiStateStore } from "../uiStateStore";
 import { randomUUID } from "../lib/utils";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
@@ -154,11 +155,11 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const { environmentId, workspace } = props;
   const projectId = workspace.id;
   const pageChatKey = `${environmentId}:board:${projectId}`;
-  const explicitThreadId = useWorkbenchFloatingChatStore(
-    (state) => state.pickedThreads[pageChatKey] ?? null,
-  );
+  const pick = useWorkbenchFloatingChatStore((state) => state.pickedThreads[pageChatKey] ?? null);
   const setExplicitThreadId = (threadId: ThreadId | null) =>
-    useWorkbenchFloatingChatStore.getState().pickThread(pageChatKey, threadId);
+    useWorkbenchFloatingChatStore
+      .getState()
+      .pickThread(pageChatKey, threadId === null ? null : scopeThreadRef(environmentId, threadId));
   const showThread = (threadId: ThreadId) => {
     setExplicitThreadId(threadId);
     useWorkbenchFloatingChatStore.getState().expand(threadId);
@@ -171,7 +172,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       kind: "board",
       projectId,
       showThread: (threadId) => {
-        pickThread(pageChatKey, threadId);
+        pickThread(pageChatKey, scopeThreadRef(environmentId, threadId));
         expand(threadId);
       },
     });
@@ -196,6 +197,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       showThread(threadId);
     },
   });
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const threads = getWorkbenchBoardChatThreads({
     projectId,
     tickets: props.tickets,
@@ -205,11 +207,12 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     archivedThreadsById: props.archivedThreadsById,
     recaps: useWorkbenchThreadRecaps(environmentId),
     referencesByTicket: props.referencesByTicket,
+    localVisits,
   });
   const chat = resolveWorkbenchFloatingChat({
     ...threads,
     primaryThreadId: null,
-    explicitThreadId,
+    pick,
   });
   useRefreshOnThreadActivity(
     chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,

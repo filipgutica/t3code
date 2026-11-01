@@ -271,7 +271,6 @@ export function useWorkbenchPageDialogs({
     void navigate({
       to: "/$environmentId/$threadId",
       params: { environmentId, threadId: draft.threadId },
-      search: { workbench: true },
     });
   };
   const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
