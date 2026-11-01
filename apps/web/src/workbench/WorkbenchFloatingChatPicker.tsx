@@ -242,11 +242,14 @@ function PickerTriggerThreadContext({
 
 function PickerTriggerContent({
   environmentId,
+  grouped,
   selected,
   title,
   descriptionId,
 }: {
   readonly environmentId: EnvironmentId;
+  /** The board's picker, whose trigger keeps the full title. */
+  readonly grouped: boolean;
   readonly descriptionId: string;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly title: string;
@@ -259,7 +262,13 @@ function PickerTriggerContent({
           {selected.ticket.key}
         </span>
       ) : null}
-      <span className="min-w-0 truncate text-xs font-medium">{selected?.title ?? title}</span>
+      <span className="min-w-0 truncate text-xs font-medium">
+        {selected === null
+          ? title
+          : grouped
+            ? selected.title
+            : getWorkbenchFloatingChatPickerRow(selected, false).title}
+      </span>
       {selected?.status ? (
         <WorkbenchThreadExecutionStatus
           compact
@@ -528,6 +537,7 @@ export function WorkbenchFloatingChatPicker({
         >
           <PickerTriggerContent
             environmentId={environmentId}
+            grouped={grouped}
             selected={selected}
             title={title}
             descriptionId={descriptionId}

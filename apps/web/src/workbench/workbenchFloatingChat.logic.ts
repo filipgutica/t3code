@@ -242,7 +242,7 @@ export interface WorkbenchFloatingChatPickerRow {
 }
 
 // Threads often start with their ticket's title; beside it only the rest tells them apart.
-const titleUnderHeading = (title: string, ticketTitle: string) => {
+export const titleUnderHeading = (title: string, ticketTitle: string) => {
   const match = title.startsWith(ticketTitle)
     ? /^[\s\-–—:·|]+(.+)$/.exec(title.slice(ticketTitle.length))
     : null;
@@ -256,13 +256,11 @@ export const getWorkbenchFloatingChatPickerRow = (
 ): WorkbenchFloatingChatPickerRow => {
   const { ticket } = thread;
   if (ticket === null) return { thread, ticketLabel: null, title: thread.title };
-  const ticketLabel = board ? (ticket.key ?? ticket.title) : null;
   const keyShown = board && ticket.key !== null;
-  return {
-    thread,
-    ticketLabel,
-    title: keyShown ? thread.title : titleUnderHeading(thread.title, ticket.title),
-  };
+  const title = keyShown ? thread.title : titleUnderHeading(thread.title, ticket.title);
+  // Without a key, a Thread named just like its ticket already names it.
+  const ticketLabel = board ? (ticket.key ?? (title === ticket.title ? null : ticket.title)) : null;
+  return { thread, ticketLabel, title };
 };
 
 export const filterWorkbenchFloatingChatThreads = (

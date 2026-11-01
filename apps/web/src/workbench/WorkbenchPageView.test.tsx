@@ -543,7 +543,7 @@ const expectThreadShownInChat = () => {
 it("keeps linked native Threads openable in an archived Workspace", async () => {
   await render({ detail: true, workspaceState: "archived" });
   useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
-  const openThread = button("Open Thread for Ship the release");
+  const openThread = button("Show in chat Release agent");
   expect(openThread.disabled).toBe(false);
   await act(async () => openThread.click());
   expectThreadShownInChat();
@@ -646,7 +646,7 @@ it("opens a planning ticket's own page with Start work until work starts", async
   await render({ conversation: "working" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(button("Start work", { optional: true })).toBeNull();
-  expect(button("Open Thread for Ship the release").disabled).toBe(false);
+  expect(button("Show in chat Release agent").disabled).toBe(false);
 });
 
 it("shows the ticket's Threads in the floating chat, also while the ticket is planning", async () => {
@@ -704,7 +704,7 @@ it.each([false, true])(
   async (detail) => {
     await render({ detail, canOperate: false });
     useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
-    const open = button("Open Thread for Ship the release");
+    const open = button(detail ? "Show in chat Release agent" : "Open Thread for Ship the release");
     expect(open.disabled).toBe(false);
     await act(async () => open.click());
     // The Ticket page shows its Threads in the floating chat; the Board card opens the Thread.
@@ -750,7 +750,7 @@ it("disables Ticket Thread mutations when permission is revoked and restores the
     for (const label of ["Create Thread", "Link existing Thread", "Settle Thread Release agent"]) {
       expect(button(label).disabled, label).toBe(!canOperate);
     }
-    const open = button("Open Thread for Ship the release");
+    const open = button("Show in chat Release agent");
     expect(open.disabled).toBe(false);
     const menuItems = [
       expect.objectContaining({ label: "Unlink from Ticket", disabled: !canOperate }),

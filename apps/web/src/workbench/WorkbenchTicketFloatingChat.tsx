@@ -85,7 +85,7 @@ interface WorkbenchTicketFloatingChatProps {
   readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }
 
-/** The ticket's Threads in the floating chat. Narrow screens keep the header's Open thread. */
+/** The ticket's Threads in the floating chat. Narrow screens open Threads on their own page. */
 export function WorkbenchTicketFloatingChat({
   enabled,
   ...props

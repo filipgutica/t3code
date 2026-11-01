@@ -27,13 +27,7 @@ test("C1: the ticket chat embeds the Thread view, opens its terminal on the Tick
       page,
       demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-006"),
     );
-    await page
-      .getByRole("button", {
-        name: "Create Thread for Expire unused invitation links",
-        exact: true,
-      })
-      .first()
-      .click();
+    await page.getByRole("button", { name: "Create Thread", exact: true }).click();
     await page
       .getByRole("dialog")
       .getByRole("button", { name: "Create work area and Thread", exact: true })

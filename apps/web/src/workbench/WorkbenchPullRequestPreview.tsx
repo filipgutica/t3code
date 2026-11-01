@@ -1,6 +1,6 @@
 import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
-import type { EnvironmentId, PullRequestRef, ThreadId } from "@t3tools/contracts";
+import type { EnvironmentId, PullRequestRef, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import {
   createContext,
   lazy,
@@ -36,6 +36,8 @@ export interface WorkbenchPullRequestSelection {
   readonly reference: PullRequestRef;
   readonly initialTab?: PullRequestDetailTab;
   readonly linkedThread?: WorkbenchLinkedPullRequestThread;
+  /** The Thread whose panel opens the PR, when not the one the page shows yet. */
+  readonly panelThread?: ScopedThreadRef;
 }
 
 const WorkbenchPullRequestSheet = lazy(() =>
@@ -91,15 +93,16 @@ function WorkbenchPullRequestPreview({ children }: { children: ReactNode }) {
     setSelection(null);
   }
   const openSelection = (next: WorkbenchPullRequestSelection) => {
-    if (panelThreadRef) {
+    const targetThreadRef = next.panelThread ?? panelThreadRef;
+    if (targetThreadRef) {
       setSelection(null);
-      useRightPanelStore.getState().openPullRequest(panelThreadRef, {
+      useRightPanelStore.getState().openPullRequest(targetThreadRef, {
         projectId: next.reference.projectId,
         repository: next.reference.repository,
         number: next.reference.number,
         ...(next.reference.host === undefined ? {} : { host: next.reference.host }),
         ...(next.initialTab === undefined ? {} : { detailTab: next.initialTab }),
-        ...(panelThreadRef.environmentId === next.environmentId
+        ...(targetThreadRef.environmentId === next.environmentId
           ? {}
           : { environmentId: next.environmentId }),
       });

@@ -86,3 +86,9 @@ export const showWorkbenchPageChatThread = ({
   pageChat.showThread(threadId);
   return true;
 };
+
+/** Thread links show the Thread in a mounted Ticket chat; elsewhere they open its page. */
+export const useWorkbenchThreadOpenLabel = () =>
+  useWorkbenchFloatingChatStore((state) =>
+    state.pageChat?.kind === "ticket" ? "Show in chat" : "Open Thread",
+  );

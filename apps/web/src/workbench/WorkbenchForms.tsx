@@ -66,6 +66,8 @@ import {
   type Dispatch,
   type SetStateAction,
   type FormEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { WorkbenchTicketStatusMenu } from "./WorkbenchTicketStatusMenu";
@@ -77,7 +79,10 @@ import {
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import { WorkbenchThreadProviderIcon } from "./WorkbenchThreadProviderIcon";
 import { useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
-import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import {
+  useWorkbenchFloatingChatStore,
+  useWorkbenchThreadOpenLabel,
+} from "./workbenchFloatingChatState";
 import { readLocalApi } from "../localApi";
 import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 import {
@@ -86,7 +91,7 @@ import {
   hasWorkbenchUnreadReply,
   type WorkbenchThreadExecutionStatus as WorkbenchThreadExecutionStatusData,
 } from "./workbenchThreadStatus.logic";
-import { getWorkbenchThreadStatusSections } from "./workbenchFloatingChat.logic";
+import { getWorkbenchThreadStatusSections, titleUnderHeading } from "./workbenchFloatingChat.logic";
 import { serverEnvironment } from "../state/server";
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { cn } from "../lib/utils";
@@ -1274,6 +1279,7 @@ function WorkbenchTicketDetailController({
                 ticketId={ticket.id}
                 ticketTitle={ticket.title}
                 onOpenThread={openAssignedThread}
+                onShowThread={showThreadInChat}
               />
               <WorkbenchTicketThreadsPanel
                 expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
@@ -1683,7 +1689,7 @@ function WorkbenchThreadRowIcon({
   );
 }
 
-/** The row's state, then its time, which the quick action replaces on hover or focus. */
+/** The row's state, then its time or run status, which the quick action replaces on hover or focus. */
 function WorkbenchThreadRowTrailing({
   executionStatus,
   quickAction,
@@ -1695,27 +1701,28 @@ function WorkbenchThreadRowTrailing({
   readonly recencyLabel: string | null;
   readonly stateLabel: string | null;
 }) {
+  const time = executionStatus ? (
+    <WorkbenchThreadExecutionStatus
+      status={executionStatus.presentation}
+      startedAt={executionStatus.startedAt}
+    />
+  ) : recencyLabel ? (
+    <span>{recencyLabel}</span>
+  ) : null;
   return (
     <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-      {executionStatus ? (
-        <WorkbenchThreadExecutionStatus
-          status={executionStatus.presentation}
-          startedAt={executionStatus.startedAt}
-        />
-      ) : stateLabel ? (
-        <span>{stateLabel}</span>
-      ) : null}
-      {recencyLabel && quickAction ? (
+      {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
+      {time && quickAction ? (
         <span className="relative flex items-center">
           <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
-            {recencyLabel}
+            {time}
           </span>
           <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
             {quickAction}
           </span>
         </span>
       ) : (
-        (quickAction ?? (recencyLabel ? <span>{recencyLabel}</span> : null))
+        (quickAction ?? time)
       )}
     </span>
   );
@@ -1723,12 +1730,65 @@ function WorkbenchThreadRowTrailing({
 
 const VISIBLE_THREAD_ROW_ACTIONS = new Set(["Restore and open", "Create replacement Thread"]);
 
+/** Unlink and Delete open on right-click, or from the keyboard as on Workbench sidebar rows. */
+const getWorkbenchThreadRowMenuHandlers = (menu: WorkbenchThreadRowMenu | undefined) =>
+  menu
+    ? {
+        row: {
+          onContextMenu: (event: ReactMouseEvent) => {
+            event.preventDefault();
+            openWorkbenchThreadRowMenu(menu, { x: event.clientX, y: event.clientY });
+          },
+        },
+        button: {
+          onKeyDown: (event: ReactKeyboardEvent<HTMLButtonElement>) =>
+            handleWorkbenchSidebarMenuKeyDown(event, (position) =>
+              openWorkbenchThreadRowMenu(menu, position),
+            ),
+        },
+      }
+    : { row: {}, button: {} };
+
+function useWorkbenchThreadRowState({
+  thread,
+  actionLabel,
+  ariaLabel,
+  title,
+}: {
+  thread: EnvironmentThreadShell | undefined;
+  actionLabel: string | undefined;
+  ariaLabel: string | undefined;
+  title: string;
+}) {
+  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
+  // The page's floating chat shows this Thread, as the native sidebar marks the open one.
+  const showing = useWorkbenchFloatingChatStore(
+    (state) =>
+      thread !== undefined &&
+      state.shownThread?.environmentId === thread.environmentId &&
+      state.shownThread.threadId === thread.id,
+  );
+  const openLabel = useWorkbenchThreadOpenLabel();
+  const label = actionLabel ?? openLabel;
+  return {
+    unread: thread ? hasWorkbenchUnreadReply(thread, localVisits) : false,
+    showing,
+    label,
+    accessibleName: ariaLabel ?? `${label} ${title}`,
+  };
+}
+
+/** A row that opens its Thread names no action; the row's default label says how it opens. */
+const getWorkbenchThreadRowAction = (thread: ReturnType<typeof getWorkbenchThreadPresentation>) =>
+  thread.state === "linked" ? undefined : thread.actionLabel;
+
 /** A Ticket's Thread laid out like a native sidebar row: hover for details, right-click for more. */
 function WorkbenchThreadRow({
   actionLabel,
   ariaLabel,
   disabled,
   executionStatus,
+  heading,
   menu,
   onClick,
   quickAction,
@@ -1737,10 +1797,13 @@ function WorkbenchThreadRow({
   thread,
   title,
 }: {
+  /** Replaces opening the Thread, such as restoring it first; also its accessible name. */
   readonly actionLabel?: string | undefined;
-  readonly ariaLabel: string;
+  readonly ariaLabel?: string | undefined;
   readonly disabled: boolean;
   readonly executionStatus?: WorkbenchThreadExecutionStatusData | null;
+  /** The page's Ticket title, which the row leaves out of a Thread title that repeats it. */
+  readonly heading: string;
   /** Unlink and Delete, on right-click or the context-menu key. */
   readonly menu?: WorkbenchThreadRowMenu | undefined;
   readonly onClick: () => void;
@@ -1752,42 +1815,41 @@ function WorkbenchThreadRow({
   readonly thread: EnvironmentThreadShell | undefined;
   readonly title: string;
 }) {
-  const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
-  const unread = thread ? hasWorkbenchUnreadReply(thread, localVisits) : false;
+  const { unread, showing, label, accessibleName } = useWorkbenchThreadRowState({
+    thread,
+    actionLabel,
+    ariaLabel,
+    title,
+  });
   const row = (
     <div
-      className="group/thread-row relative isolate flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-muted/45 focus-within:bg-muted/45"
-      onContextMenu={(event) => {
-        if (!menu) return;
-        event.preventDefault();
-        openWorkbenchThreadRowMenu(menu, { x: event.clientX, y: event.clientY });
-      }}
+      className={cn(
+        "group/thread-row relative isolate flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-sidebar-row-hover focus-within:bg-sidebar-row-hover",
+        showing && "bg-sidebar-row-active hover:bg-sidebar-row-active",
+      )}
+      {...getWorkbenchThreadRowMenuHandlers(menu).row}
     >
       <button
-        aria-label={ariaLabel}
+        aria-current={showing || undefined}
+        aria-label={accessibleName}
         className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring disabled:cursor-default disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
-        onKeyDown={
-          menu
-            ? (event) =>
-                handleWorkbenchSidebarMenuKeyDown(event, (position) =>
-                  openWorkbenchThreadRowMenu(menu, position),
-                )
-            : undefined
-        }
+        {...getWorkbenchThreadRowMenuHandlers(menu).button}
         type="button"
       >
         <WorkbenchThreadRowIcon executionStatus={executionStatus} thread={thread} unread={unread} />
-        <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>{title}</span>
+        <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>
+          {titleUnderHeading(title, heading)}
+        </span>
         <span
           className={
-            actionLabel && VISIBLE_THREAD_ROW_ACTIONS.has(actionLabel)
+            VISIBLE_THREAD_ROW_ACTIONS.has(label)
               ? "shrink-0 text-xs text-muted-foreground"
               : "sr-only"
           }
         >
-          {actionLabel ?? "Open Thread"}
+          {label}
         </span>
       </button>
       <WorkbenchThreadRowTrailing
@@ -2528,6 +2590,7 @@ function WorkbenchTicketThreadsPanel({
       archivedThreadsById={archivedThreadsById}
       onOpenAssignedThread={onOpenAssignedThread}
       settledAssignment={settledAssignment}
+      heading={ticket.title}
     />
   );
   return (
@@ -2545,8 +2608,11 @@ function WorkbenchTicketThreadsPanel({
             <p className="px-4 pb-3 text-sm text-muted-foreground">
               No Thread is available for this Ticket.
             </p>
-          ) : assignment ? null : (
+          ) : assignment ? null : threadActionPending ? (
+            // A starting Thread shows its progress here until it is listed.
             <div className="px-2 pb-2">{primaryThread}</div>
+          ) : (
+            <p className="px-4 pb-3 text-sm text-muted-foreground">{agentTitle}</p>
           )}
           {sections.map((section) => {
             const open = sectionToggles.get(section.id) ?? section.openByDefault;
@@ -3247,13 +3313,32 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "settlementPendingThreadId"
   | "onDeleteThread"
 >;
-function getWorkbenchPrimaryThreadStateLabel(
-  thread: ReturnType<typeof getWorkbenchThreadPresentation>,
-  nativeThread: EnvironmentThreadShell | undefined,
-  assignment: WorkbenchAssignment | undefined,
-) {
-  if (nativeThread) return null;
-  return assignment ? thread.stateLabel : "Create a Thread";
+/** A linked Thread opens like any other row; otherwise the row names its Ticket action. */
+function getWorkbenchPrimaryThreadRowLabels({
+  thread,
+  threadActionPending,
+  threadActionLabel,
+  nativeThread,
+  ticketTitle,
+}: {
+  thread: ReturnType<typeof getWorkbenchThreadPresentation>;
+  threadActionPending: boolean;
+  threadActionLabel: string | null | undefined;
+  nativeThread: EnvironmentThreadShell | undefined;
+  ticketTitle: string;
+}) {
+  const progressLabel = threadActionPending
+    ? (threadActionLabel ?? thread.pendingActionLabel)
+    : null;
+  const actionLabel = getWorkbenchThreadRowAction(thread);
+  if (actionLabel === undefined && progressLabel === null) {
+    return { actionLabel, ariaLabel: undefined, stateLabel: null };
+  }
+  return {
+    actionLabel: thread.actionLabel,
+    ariaLabel: `${progressLabel ?? thread.actionLabel} for ${ticketTitle}`,
+    stateLabel: progressLabel ?? (nativeThread ? null : thread.stateLabel),
+  };
 }
 
 function WorkbenchTicketPrimaryThread({
@@ -3312,14 +3397,19 @@ function WorkbenchTicketPrimaryThread({
     settlementPendingThreadId,
     onDeleteThread,
   } = actions;
-  const progressLabel = threadActionPending
-    ? (threadActionLabel ?? thread.pendingActionLabel)
-    : null;
+  const labels = getWorkbenchPrimaryThreadRowLabels({
+    thread,
+    threadActionPending,
+    threadActionLabel,
+    nativeThread,
+    ticketTitle: displayedTitle,
+  });
   return (
     <WorkbenchThreadRow
       thread={displayedThread}
-      actionLabel={thread.actionLabel}
-      ariaLabel={`${progressLabel ?? thread.actionLabel} for ${displayedTitle}`}
+      actionLabel={labels.actionLabel}
+      ariaLabel={labels.ariaLabel}
+      heading={displayedTitle}
       disabled={isWorkbenchThreadOpenDisabled({
         pending,
         threadMutationsDisabled,
@@ -3333,9 +3423,7 @@ function WorkbenchTicketPrimaryThread({
         }
         onOpenThread(actionableTicket, assignment?.threadId);
       }}
-      stateLabel={
-        progressLabel ?? getWorkbenchPrimaryThreadStateLabel(thread, nativeThread, assignment)
-      }
+      stateLabel={labels.stateLabel}
       executionStatus={nativeStatus}
       title={agentTitle}
       menu={
@@ -3567,7 +3655,7 @@ function WorkbenchTicketActiveThreadRow({
     <WorkbenchThreadRow
       thread={displayedActiveThread}
       actionLabel={archivedActiveThread ? "Restore and open" : undefined}
-      ariaLabel={rowPresentation.ariaLabel}
+      heading={ticket.title}
       disabled={
         pending ||
         displayedActiveThread === undefined ||
@@ -3682,8 +3770,9 @@ function WorkbenchTicketHistoricalThreadRow({
   return (
     <WorkbenchThreadRow
       thread={displayedHistoricalThread}
-      actionLabel={historicalArchivedThread ? "Restore and open" : undefined}
+      actionLabel={historicalArchivedThread ? "Restore and open" : "Open Thread"}
       ariaLabel={rowPresentation.ariaLabel}
+      heading={ticket.title}
       disabled={
         pending ||
         !displayedHistoricalThread ||
@@ -3732,6 +3821,7 @@ function WorkbenchTicketSettledThreadRow({
   archivedThreadsById,
   onOpenAssignedThread,
   settledAssignment,
+  heading,
 }: Pick<
   WorkbenchTicketThreadsPanelProps,
   | "threadMutationsDisabled"
@@ -3745,7 +3835,7 @@ function WorkbenchTicketSettledThreadRow({
   | "threadsById"
   | "archivedThreadsById"
   | "onOpenAssignedThread"
-> & { settledAssignment: WorkbenchAssignment }) {
+> & { settledAssignment: WorkbenchAssignment; heading: string }) {
   const liveThread = threadsById.get(settledAssignment.threadId);
   const settledThread = liveThread ?? archivedThreadsById.get(settledAssignment.threadId);
   const executionStatus = liveThread ? getWorkbenchThreadExecutionStatus(liveThread) : null;
@@ -3760,8 +3850,8 @@ function WorkbenchTicketSettledThreadRow({
   return (
     <WorkbenchThreadRow
       thread={settledThread}
-      actionLabel={thread.actionLabel}
-      ariaLabel={`${thread.actionLabel} ${settledThread.title}`}
+      actionLabel={getWorkbenchThreadRowAction(thread)}
+      heading={heading}
       disabled={isWorkbenchThreadOpenDisabled({
         pending,
         threadMutationsDisabled,
@@ -4912,7 +5002,6 @@ function getWorkbenchActiveThreadRowPresentation({
   | "activeThreadRecency"
 > & { threadLookupReady: boolean }) {
   return {
-    ariaLabel: `${displayedActiveThread?.archivedAt ? "Restore and open" : "Open Thread"} ${displayedActiveThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…")}`,
     modelLabel: activeThreadModel,
     recencyLabel: activeThreadRecency,
     stateLabel: displayedActiveThread?.archivedAt
@@ -5198,5 +5287,5 @@ function getWorkbenchAgentTitle({
 }) {
   if (displayedThread) return displayedThread.title;
   if (assignment && !threadLookupReady) return "Checking Thread…";
-  return settledCount > 0 ? "No active Threads" : "No Thread";
+  return settledCount > 0 ? "No active Threads" : "No Threads yet";
 }

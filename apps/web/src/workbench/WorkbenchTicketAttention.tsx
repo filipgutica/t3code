@@ -2,9 +2,11 @@ import { useNavigate } from "@tanstack/react-router";
 import type {
   EnvironmentId,
   PullRequestReviewThread,
+  ScopedThreadRef,
   ThreadId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
 import {
   BadgeCheckIcon,
@@ -23,6 +25,11 @@ import { Button } from "../components/ui/button";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
+import type { WorkbenchTicketPullRequest } from "./workbenchPullRequests.logic";
+import {
+  useWorkbenchFloatingChatStore,
+  useWorkbenchThreadOpenLabel,
+} from "./workbenchFloatingChatState";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
@@ -40,6 +47,7 @@ import {
   getWorkbenchAttentionBadgePresentation,
   getWorkbenchAttentionReasonPresentation,
   getWorkbenchAttentionSignalPresentation,
+  getWorkbenchPullRequestOwnerToShow,
   getWorkbenchThreadAttention,
 } from "./workbenchAttentionPresentation.logic";
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
@@ -49,6 +57,8 @@ type TicketAttentionProps = {
   ticketId: WorkbenchTicketId;
   ticketTitle: string;
   onOpenThread?: (threadId: ThreadId) => void;
+  /** Shows a Ticket Thread in the page's chat; false when the chat cannot show it. */
+  onShowThread?: (threadId: ThreadId) => boolean;
 };
 const reasonIcons = {
   approval: ShieldQuestionIcon,
@@ -68,7 +78,10 @@ function AttentionSignalItem({
   signal: WorkbenchAttentionSignal;
   onOpenSignal: (signal: WorkbenchAttentionSignal) => void;
 }) {
-  const { icon, className, label, action } = getWorkbenchAttentionSignalPresentation(signal);
+  const presentation = getWorkbenchAttentionSignalPresentation(signal);
+  const { icon, className, label } = presentation;
+  const openLabel = useWorkbenchThreadOpenLabel();
+  const action = signal.source.type === "thread" ? openLabel : presentation.action;
   const Icon = reasonIcons[icon];
   return (
     <button
@@ -124,19 +137,45 @@ function ReviewThreadPreviews({ threads }: { threads: readonly PullRequestReview
   );
 }
 
+/** Shows the Thread that owns an attention PR, so the PR opens in that Thread's panel. */
+function showPullRequestOwner({
+  environmentId,
+  row,
+  signals,
+  shownThread,
+  onShowThread,
+}: {
+  environmentId: EnvironmentId;
+  row: WorkbenchTicketPullRequest;
+  signals: readonly WorkbenchAttentionSignal[];
+  shownThread: ScopedThreadRef | null;
+  onShowThread: ((threadId: ThreadId) => boolean) | undefined;
+}) {
+  const ownerId = getWorkbenchPullRequestOwnerToShow({
+    row,
+    signals,
+    shownThreadId: shownThread?.environmentId === environmentId ? shownThread.threadId : null,
+  });
+  return ownerId !== null && onShowThread?.(ownerId)
+    ? scopeThreadRef(environmentId, ownerId)
+    : undefined;
+}
+
 function AttentionItems({
   environmentId,
   cardTitle,
   signals,
   onOpenThread,
+  onShowThread,
   onNavigate,
-}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread"> & {
+}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread" | "onShowThread"> & {
   cardTitle: string;
   signals: readonly WorkbenchAttentionSignal[];
   onNavigate?: () => void;
 }) {
   const navigate = useNavigate();
   const openPullRequest = useOpenWorkbenchPullRequest();
+  const shownThread = useWorkbenchFloatingChatStore((state) => state.shownThread);
   const openThread = (threadId: ThreadId) => {
     onNavigate?.();
     if (onOpenThread) onOpenThread(threadId);
@@ -154,6 +193,13 @@ function AttentionItems({
     const { row } = signal.source;
     const host = sourceControlClients.parseChangeRequestUrl(row.pullRequest.url)?.link.host;
     onNavigate?.();
+    const panelThread = showPullRequestOwner({
+      environmentId,
+      row,
+      signals,
+      shownThread,
+      onShowThread,
+    });
     openPullRequest?.({
       environmentId,
       reference: {
@@ -169,6 +215,7 @@ function AttentionItems({
         title: row.threadTitle,
         onOpen: () => openThread(row.threadId),
       },
+      ...(panelThread ? { panelThread } : {}),
     });
   };
   return (

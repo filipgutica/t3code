@@ -29,13 +29,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await expect(
     page.getByRole("heading", { name: "Fix focus after creating a project", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "Create Thread for Fix focus after creating a project",
-      exact: true,
-    })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Create Thread", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Create work area and Thread", exact: true })
@@ -141,13 +135,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await waitForWorkbench(page);
   await expect(settledToggle).toHaveAttribute("aria-expanded", "false");
   await expect(page.getByText("No active Threads", { exact: true })).toBeVisible();
-  await page
-    .getByRole("button", {
-      name: "Create Thread for Fix focus after creating a project",
-      exact: true,
-    })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Create Thread", exact: true }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
   await page.getByRole("dialog").getByRole("button", { name: "Cancel", exact: true }).click();
   const sidebar = page.locator('[data-slot="sidebar-content"]');

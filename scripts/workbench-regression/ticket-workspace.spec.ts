@@ -133,10 +133,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     page,
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-008"),
   );
-  await page
-    .getByRole("button", { name: "Create Thread for Validate invitation addresses", exact: true })
-    .first()
-    .click();
+  await page.getByRole("button", { name: "Create Thread", exact: true }).click();
   await page
     .getByRole("dialog")
     .getByRole("button", { name: "Create work area and Thread", exact: true })

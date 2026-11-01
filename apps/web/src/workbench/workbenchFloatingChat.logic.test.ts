@@ -454,6 +454,9 @@ describe("getWorkbenchFloatingChatPickerRow", () => {
     expect(row("First: copy", keyed, true)).toEqual({ ticketLabel: "WB-1", title: "First: copy" });
     expect(row("Second · copy", unkeyed, true)).toEqual({ ticketLabel: "Second", title: "copy" });
     expect(row("Draft", null, true)).toEqual({ ticketLabel: null, title: "Draft" });
+    // A Thread named just like its unkeyed ticket would repeat the title beside itself.
+    expect(row("Second", unkeyed, true)).toEqual({ ticketLabel: null, title: "Second" });
+    expect(row("First", keyed, true)).toEqual({ ticketLabel: "WB-1", title: "First" });
   });
 });
 

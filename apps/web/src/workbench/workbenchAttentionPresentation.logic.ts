@@ -9,6 +9,7 @@ import {
   type WorkbenchAttentionReasonKind,
   type WorkbenchAttentionSignal,
 } from "./workbenchAttention.logic";
+import type { WorkbenchTicketPullRequest } from "./workbenchPullRequests.logic";
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 
 type ThreadStatusKind = WorkbenchThreadExecutionStatus["kind"] | null;
@@ -51,11 +52,34 @@ export function getWorkbenchThreadAttention({
   };
 }
 
+/**
+ * The Thread to show before opening an attention PR in the shown Thread's panel: none while the
+ * shown Thread links the PR or no Thread shows, else the PR's own Thread.
+ */
+export function getWorkbenchPullRequestOwnerToShow({
+  row,
+  signals,
+  shownThreadId,
+}: {
+  readonly row: WorkbenchTicketPullRequest;
+  readonly signals: ReadonlyArray<WorkbenchAttentionSignal>;
+  readonly shownThreadId: ThreadId | null;
+}) {
+  if (shownThreadId === null) return null;
+  const shownLinksPullRequest = signals.some(
+    ({ source }) =>
+      source.type === "pull-request" &&
+      source.row.pullRequest.url === row.pullRequest.url &&
+      source.row.threadId === shownThreadId,
+  );
+  return shownLinksPullRequest ? null : row.threadId;
+}
+
 export function getWorkbenchAttentionSignalPresentation(signal: WorkbenchAttentionSignal) {
   const kind = getWorkbenchAttentionReasonKind(signal);
   const action =
     signal.source.type === "thread"
-      ? "Open thread"
+      ? "Open Thread"
       : signal.kind === "failed-checks"
         ? "View checks"
         : signal.kind === "changes-requested"
