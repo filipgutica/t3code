@@ -136,8 +136,10 @@ right-click it to unlink it from the Ticket without deleting it, or to delete it
 **Settle** moves a conversation out of the active group; **Thread history** keeps
 earlier conversations available.
 
-Opening a Thread from a Ticket opens the regular Thread page. Use its Board or
-Ticket links to return to the work. The command palette also offers **Open
+Selecting a Thread on a Ticket shows it in the Ticket's chat. Choose **Open full
+Thread** in the chat for the regular Thread page, and use its Board or Ticket links to
+return. The terminal and side panel buttons at the top right of the Ticket open the
+chat Thread's terminal and side panel without leaving the page. The command palette also offers **Open
 Workbench**, **New Ticket** for the current Workspace, and **Back to Ticket** from a
 linked Thread.
 

@@ -28,6 +28,7 @@ import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
 vi.mock("../state/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/server")>();
@@ -532,15 +533,20 @@ it("closes an already open create dialog when its Workspace is archived", async 
   expect(document.querySelector('[role="dialog"]')).toBeNull();
 });
 
+const expectThreadShownInChat = () => {
+  expect(requestTicketThread).not.toHaveBeenCalled();
+  const chat = useWorkbenchFloatingChatStore.getState();
+  expect(Object.values(chat.pickedThreads)).toContain(thread.id);
+  expect(chat.mode).toBe("expanded");
+};
+
 it("keeps linked native Threads openable in an archived Workspace", async () => {
   await render({ detail: true, workspaceState: "archived" });
+  useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
   const openThread = button("Open Thread for Ship the release");
   expect(openThread.disabled).toBe(false);
   await act(async () => openThread.click());
-  expect(requestTicketThread).toHaveBeenCalledWith(
-    expect.objectContaining({ id: ticket.id }),
-    thread.id,
-  );
+  expectThreadShownInChat();
 });
 
 it.each(["active", "archived"] as const)(
@@ -697,13 +703,17 @@ it.each([false, true])(
   "keeps assigned Thread navigation available without operate permission (detail=%s)",
   async (detail) => {
     await render({ detail, canOperate: false });
+    useWorkbenchFloatingChatStore.setState({ mode: "collapsed", pickedThreads: {} });
     const open = button("Open Thread for Ship the release");
     expect(open.disabled).toBe(false);
     await act(async () => open.click());
-    expect(requestTicketThread).toHaveBeenCalledWith(
-      expect.objectContaining({ id: ticket.id }),
-      thread.id,
-    );
+    // The Ticket page shows its Threads in the floating chat; the Board card opens the Thread.
+    if (detail) expectThreadShownInChat();
+    else
+      expect(requestTicketThread).toHaveBeenCalledWith(
+        expect.objectContaining({ id: ticket.id }),
+        thread.id,
+      );
   },
 );
 

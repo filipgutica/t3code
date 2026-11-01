@@ -78,6 +78,7 @@ import {
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import { WorkbenchThreadProviderIcon } from "./WorkbenchThreadProviderIcon";
 import { useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { readLocalApi } from "../localApi";
 import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 import {
@@ -1058,6 +1059,24 @@ function WorkbenchTicketDetailController({
     ],
   });
   const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
+  // Thread links on the Ticket show the Thread in its floating chat, which offers the full page.
+  const showThreadInChat = (threadId: ThreadId) => {
+    const { pageChat } = useWorkbenchFloatingChatStore.getState();
+    const inChat =
+      floatingChat &&
+      pageChat?.kind === "ticket" &&
+      pageChat.ticketId === ticket.id &&
+      threadsById.has(threadId) &&
+      [...activeAssignments, ...settledAssignments].some((entry) => entry.threadId === threadId);
+    if (inChat) pageChat.showThread(threadId);
+    return inChat;
+  };
+  const openAssignedThread = (threadId: ThreadId) => {
+    if (!showThreadInChat(threadId)) onOpenAssignedThread(threadId);
+  };
+  const openThread = (target: WorkbenchTicket, threadId?: ThreadId) => {
+    if (threadId === undefined || !showThreadInChat(threadId)) onOpenThread(target, threadId);
+  };
   const executionStatus =
     getWorkbenchTicketExecutionStatuses({ environmentId, assignments, threadsById }).get(
       ticket.id,
@@ -1076,7 +1095,7 @@ function WorkbenchTicketDetailController({
           onReplaceThread: onReplaceThread,
           settledAssignments: settledAssignments,
           onNewThread: onNewThread,
-          onOpenThread: onOpenThread,
+          onOpenThread: openThread,
           onArchive: onArchive,
           setDeleteConfirmationOpen: setDeleteConfirmationOpen,
         }}
@@ -1265,7 +1284,7 @@ function WorkbenchTicketDetailController({
                 environmentId={environmentId}
                 ticketId={ticket.id}
                 ticketTitle={ticket.title}
-                onOpenThread={onOpenAssignedThread}
+                onOpenThread={openAssignedThread}
               />
               <WorkbenchTicketThreadsPanel
                 expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
@@ -1273,12 +1292,12 @@ function WorkbenchTicketDetailController({
                   setThreadPanelCollapsed: setThreadPanelCollapsed,
                   settledAssignments: settledAssignments,
                   onNewThread: onNewThread,
-                  onOpenThread: onOpenThread,
+                  onOpenThread: openThread,
                   onUnlinkThread: onUnlinkThread,
                   toggleThreadSettlement: toggleThreadSettlement,
                   settlementPendingThreadId: settlementPendingThreadId,
                   onDeleteThread: onDeleteThread,
-                  onOpenAssignedThread: onOpenAssignedThread,
+                  onOpenAssignedThread: openAssignedThread,
                   onReplaceThread: onReplaceThread,
                   onAttachThread: onAttachThread,
                 }}
@@ -1314,7 +1333,7 @@ function WorkbenchTicketDetailController({
 
               <WorkbenchTicketPullRequests
                 readOnly={workspaceReadOnly ?? false}
-                onOpenThread={onOpenAssignedThread}
+                onOpenThread={openAssignedThread}
                 environmentId={environmentId}
                 ticketId={ticket.id}
                 assignments={activeAssignments}

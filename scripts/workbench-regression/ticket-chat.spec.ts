@@ -2,16 +2,17 @@
 import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodePath from "node:path";
-import { test, expect, openWorkbench, ticketChat } from "./fixtures.ts";
+import { test, expect, openWorkbench, snapshot, ticketChat } from "./fixtures.ts";
 import { providerControlPath, REGRESSION_PROVIDER_MESSAGE } from "./provider-settings.mts";
 
-test("C1: the ticket chat embeds the Thread view and continues terminal actions on the full Thread", async ({
+test("C1: the ticket chat embeds the Thread view, opens its terminal on the Ticket, and continues terminal actions on the full Thread", async ({
   page,
   demo,
 }) => {
   const controlPath = providerControlPath(demo.home);
   const original = await NodeFSP.readFile(controlPath, "utf8");
   const marker = NodePath.join(demo.home, "ticket-chat-terminal-ran");
+  const cwdMarker = NodePath.join(demo.home, "ticket-terminal-cwd");
   try {
     await NodeFSP.writeFile(
       controlPath,
@@ -55,6 +56,24 @@ test("C1: the ticket chat embeds the Thread view and continues terminal actions 
     await editor.pressSequentially("Suggest a command.");
     await chat.getByRole("button", { name: "Submit message", exact: true }).click();
     await expect(chat.getByText(REGRESSION_PROVIDER_MESSAGE, { exact: true })).toBeVisible();
+
+    // The Ticket header opens the chat Thread's terminal on the page, in the Thread's checkout.
+    await page.getByRole("button", { name: "Toggle terminal drawer", exact: true }).click();
+    const drawer = page.locator('[data-terminal-owner="drawer"]');
+    await expect(drawer).toBeVisible();
+    await drawer.click();
+    await page.keyboard.type(`pwd > ${cwdMarker}\n`);
+    const assignment = (await snapshot(demo)).assignments.find(
+      (entry) => entry.ticketId === "orbit-006",
+    );
+    const worktreePath = (await demo.shellSnapshot()).threads.find(
+      (entry) => entry.id === assignment?.threadId,
+    )?.worktreePath;
+    expect(worktreePath).toBeTruthy();
+    await expect
+      .poll(() => (NodeFS.existsSync(cwdMarker) ? NodeFS.readFileSync(cwdMarker, "utf8") : ""))
+      .toBe(`${NodeFS.realpathSync(worktreePath!)}\n`);
+    expect(new URL(page.url()).pathname).toBe("/workbench");
 
     await chat.getByRole("button", { name: "Run in terminal", exact: true }).click();
     await expect(page).toHaveURL(
