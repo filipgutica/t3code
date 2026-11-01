@@ -54,7 +54,14 @@ export function WorkbenchPageRow({ children }: { readonly children: ReactNode })
         )}
       >
         <WorkbenchControlsHostContext value={setControlsHost}>
-          <WorkbenchPageHostsContext value={{ panelHost, terminalHost, controlsHost }}>
+          {/* The terminal opens only where the page shows its toggle. */}
+          <WorkbenchPageHostsContext
+            value={{
+              panelHost,
+              terminalHost: controlsHost === null ? null : terminalHost,
+              controlsHost,
+            }}
+          >
             {children}
           </WorkbenchPageHostsContext>
         </WorkbenchControlsHostContext>

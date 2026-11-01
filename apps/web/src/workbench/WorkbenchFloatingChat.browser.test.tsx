@@ -7,6 +7,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 import "~/index.css";
 
 import { act, render } from "../../test/render";
+import { ComposerHandleContext } from "../composerHandleContext";
 import { useRightPanelStore } from "../rightPanelStore";
 import { WorkbenchFloatingChat } from "./WorkbenchFloatingChat";
 import { WorkbenchPageRow } from "./WorkbenchPagePanel";
@@ -18,9 +19,11 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const { openPullRequest, panelClick } = vi.hoisted(() => ({
+const { openPullRequest, panelClick, pageComposer } = vi.hoisted(() => ({
   openPullRequest: vi.fn(),
   panelClick: vi.fn(),
+  // The page's shared composer handle, which the command palette focuses when it closes.
+  pageComposer: { current: null },
 }));
 vi.mock("./WorkbenchPullRequestPreview", () => ({
   useOpenWorkbenchPullRequest: () => openPullRequest,
@@ -34,14 +37,14 @@ vi.mock("@t3tools/client-runtime/change-request-links", async (importOriginal) =
   }),
 }));
 
-// The real ChatView needs a connected environment. The stand-in honors the embedding inputs
-// the panel controls, as ChatView does: each new focus request focuses the composer, a pull
-// request link in the timeline opens through the native link handler, and the Thread's open
-// right panel renders into the page's panel host.
+// The real ChatView needs a connected environment. Like ChatView, the stand-in focuses the
+// composer per focus request, opens PR links through the native handler, renders an open panel
+// into the page's panel host, and names the composer handle context it would register in.
 vi.mock("../components/ChatView", async () => {
   const { useEffect, useRef } = await import("react");
   const { createPortal } = await import("react-dom");
   const { useOpenChangeRequestLink } = await import("../lib/openPullRequestLink");
+  const { useComposerHandleContext } = await import("../composerHandleContext");
   const { selectThreadRightPanelState, useRightPanelStore } = await import("../rightPanelStore");
   return {
     default: function ChatViewStub(props: {
@@ -50,6 +53,7 @@ vi.mock("../components/ChatView", async () => {
       workbenchEmbed?: { composerFocusRequest: number | null; panelHost?: HTMLElement | null };
     }) {
       const ref = useRef<HTMLTextAreaElement>(null);
+      const composerHandle = useComposerHandleContext();
       const request = props.workbenchEmbed?.composerFocusRequest ?? null;
       const threadRef = scopeThreadRef(props.environmentId, props.threadId);
       const openChangeRequest = useOpenChangeRequestLink(threadRef);
@@ -70,7 +74,11 @@ vi.mock("../components/ChatView", async () => {
                 panelHost,
               )
             : null}
-          <textarea ref={ref} aria-label={`Composer for ${props.threadId}`} />
+          <textarea
+            ref={ref}
+            aria-label={`Composer for ${props.threadId}`}
+            data-composer-handle={composerHandle === pageComposer ? "page" : "own"}
+          />
           <a
             href="https://github.com/acme/app/pull/42"
             onClick={(event) => openChangeRequest(event, "https://github.com/acme/app/pull/42")}
@@ -145,14 +153,14 @@ function Harness(props: {
   );
 }
 
-it("hides the chat until expanded and focuses the composer for an explicit expand", async () => {
+it("mounts the chat only when expanded and focuses the composer for an explicit expand", async () => {
   setup();
   await using screen = await render(<Harness threads={[thread("a"), thread("b")]} />);
 
   await expect
     .element(screen.getByRole("button", { name: "Ticket Threads: Thread a" }))
     .toBeInTheDocument();
-  await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
+  await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "Message Thread a…" }));
 
@@ -350,6 +358,20 @@ it("restores an expanded panel from the launcher without moving focus into the c
   await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toHaveFocus();
 });
 
+it("keeps the page's composer handle for native chats", async () => {
+  setup();
+  await using screen = await render(
+    <ComposerHandleContext value={pageComposer}>
+      <Harness threads={[thread("a")]} />
+    </ComposerHandleContext>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+
+  await expect
+    .element(screen.getByLabelText("Composer for a"))
+    .toHaveAttribute("data-composer-handle", "own");
+});
+
 it("returns focus to the control that brings the panel back", async () => {
   setup();
   await using screen = await render(<Harness threads={[thread("a")]} />);
@@ -357,7 +379,7 @@ it("returns focus to the control that brings the panel back", async () => {
 
   await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
-  await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
+  await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
   const launcher = screen.getByRole("button", { name: "Show PAY-1 chat" });

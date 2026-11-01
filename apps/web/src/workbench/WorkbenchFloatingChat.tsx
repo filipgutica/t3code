@@ -31,6 +31,8 @@ import { ChangeRequestLinkOpenProvider } from "../lib/openPullRequestLink";
 import { cn } from "../lib/utils";
 import { RIGHT_PANEL_INLINE_LAYOUT_MEDIA_QUERY } from "../rightPanelLayout";
 import { useRightPanelStore } from "../rightPanelStore";
+import { ComposerHandleContext } from "../composerHandleContext";
+import type { ChatComposerHandle } from "../components/chat/ChatComposer";
 import "./WorkbenchFloatingChat.css";
 import type {
   resolveWorkbenchFloatingChat,
@@ -257,25 +259,30 @@ function FloatingChatThread({
 }) {
   const openThread = () => onOpenThread(thread.threadId);
   const openPullRequest = useOpenWorkbenchPullRequest();
+  // The page's composer handle belongs to native chats; a hidden floating composer can't take
+  // focus, so the command palette returns focus to its opener instead.
+  const composerHandle = useRef<ChatComposerHandle | null>(null);
   const planningThread = planning?.threadIds.has(thread.threadId) === true;
   // Pull request links open in the page's preview, so the user stays on the Board or Ticket.
   const conversation = (
     <ChangeRequestLinkOpenProvider value={openPullRequest}>
-      <ChatView
-        key={thread.threadId}
-        environmentId={environmentId}
-        threadId={thread.threadId}
-        routeKind="server"
-        hideHeader
-        readOnlyPlanning={planningThread}
-        workbenchEmbed={{
-          composerFocusRequest,
-          openThread,
-          ...hosts,
-          threadDetails,
-          conversationHidden: hidden,
-        }}
-      />
+      <ComposerHandleContext value={composerHandle}>
+        <ChatView
+          key={thread.threadId}
+          environmentId={environmentId}
+          threadId={thread.threadId}
+          routeKind="server"
+          hideHeader
+          readOnlyPlanning={planningThread}
+          workbenchEmbed={{
+            composerFocusRequest,
+            openThread,
+            ...hosts,
+            threadDetails,
+            conversationHidden: hidden,
+          }}
+        />
+      </ComposerHandleContext>
     </ChangeRequestLinkOpenProvider>
   );
   return (
@@ -290,8 +297,9 @@ function FloatingChatThread({
 }
 
 /**
- * The conversation stays mounted, hidden, while the chat is collapsed, so the Thread's panel,
- * terminal, and their page toggles stay; hidden, it does not mark the Thread read.
+ * The conversation stays mounted, hidden, while its Thread's panel is open or the page shows its
+ * terminal and toggles, so collapsing the chat keeps them; hidden, it does not mark the Thread
+ * read. Otherwise only an expanded chat mounts it.
  */
 function FloatingChatBody({
   environmentId,
@@ -300,6 +308,7 @@ function FloatingChatBody({
   selected,
   hasHistory,
   expanded,
+  mounted,
   composerFocusRequest,
   hosts,
   threadDetails,
@@ -315,6 +324,7 @@ function FloatingChatBody({
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
+  readonly mounted: boolean;
   readonly composerFocusRequest: number | null;
   readonly hosts: WorkbenchPageHosts;
   readonly threadDetails: FloatingChatThreadDetails;
@@ -338,16 +348,18 @@ function FloatingChatBody({
   return (
     <>
       {expanded ? null : <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />}
-      <FloatingChatThread
-        environmentId={environmentId}
-        thread={selected}
-        hidden={!expanded}
-        composerFocusRequest={composerFocusRequest}
-        hosts={hosts}
-        threadDetails={threadDetails}
-        onOpenThread={onOpenThread}
-        planning={planning}
-      />
+      {mounted ? (
+        <FloatingChatThread
+          environmentId={environmentId}
+          thread={selected}
+          hidden={!expanded}
+          composerFocusRequest={composerFocusRequest}
+          hosts={hosts}
+          threadDetails={threadDetails}
+          onOpenThread={onOpenThread}
+          planning={planning}
+        />
+      ) : null}
     </>
   );
 }
@@ -559,6 +571,8 @@ function useFloatingChatLayout(
   environmentId: EnvironmentId,
   threadId: ThreadId | null,
   mode: WorkbenchFloatingChatMode,
+  /** The page shows the Thread's terminal and toggles, which the mounted conversation renders. */
+  keepMounted: boolean,
 ) {
   const threadRef = threadId === null ? null : scopeThreadRef(environmentId, threadId);
   const { open, maximized } = useWorkbenchThreadPanel(threadRef);
@@ -577,7 +591,13 @@ function useFloatingChatLayout(
       : null;
   const launcher = mode === "launcher" || closeSheet !== null;
   const expanded = !launcher && mode === "expanded" && threadId !== null;
-  return { launcher, expanded, maximized, closeSheet };
+  return {
+    launcher,
+    expanded,
+    mounted: expanded || open || keepMounted,
+    maximized,
+    closeSheet,
+  };
 }
 
 /** The Thread menu and the chat's actions. */
@@ -689,12 +709,13 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     pendingFocusRef.current = true;
     change();
   };
-  const { launcher, expanded, maximized, closeSheet } = useFloatingChatLayout(
+  const hosts = useWorkbenchPageHosts();
+  const { launcher, expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
     environmentId,
     selectedThreadId,
     mode,
+    hosts.controlsHost !== null,
   );
-  const hosts = useWorkbenchPageHosts();
   const [detailsHandle] = useState(PopoverCreateHandle);
   const detailsAnchorRef = useRef<HTMLDivElement>(null);
   const threadDetails = { anchor: detailsAnchorRef, handle: detailsHandle };
@@ -731,6 +752,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
           selected={selected}
           hasHistory={hasHistory}
           expanded={expanded}
+          mounted={mounted}
           composerFocusRequest={composerFocus.requestFor(selectedThreadId)}
           hosts={hosts}
           threadDetails={threadDetails}

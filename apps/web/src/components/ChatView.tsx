@@ -68,6 +68,7 @@ import {
   type PreviewAnnotationPayload,
   ProviderInstanceId,
   type ServerProvider,
+  type KeybindingCommand,
   type ScopedThreadRef,
   type ThreadId,
   ProviderInteractionMode,
@@ -217,7 +218,16 @@ import { usePanelAnimationSettings, usePanelPresence } from "../panelAnimations"
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useOpenPanelPullRequestUrl } from "../hooks/useOpenPanelPullRequestUrl";
 import { isPreviewFocused } from "../lib/previewFocus";
-import { focusTerminalOnThreadEnter, getTerminalFocusOwner } from "../lib/terminalFocus";
+import {
+  focusTerminalOnThreadEnter,
+  getTerminalFocusOwner,
+  type TerminalFocusOwner,
+} from "../lib/terminalFocus";
+import { isTerminalCloseConfirmPending } from "../lib/terminalCloseConfirm";
+import {
+  preventRepeatedTerminalCloseShortcut,
+  preventTerminalCloseShortcut,
+} from "../lib/terminalCloseShortcut";
 import {
   deriveLogicalProjectKeyFromSettings,
   selectProjectGroupingSettings,
@@ -2850,12 +2860,29 @@ export default function ChatView(props: ChatViewProps) {
       else if (action === "rightPanel.toggleMaximized") toggleRightPanelMaximizedStable();
     });
   }, [isEmbedded, panelHost, toggleRightPanelStable, toggleRightPanelMaximizedStable]);
+  const runHostedTerminalShortcut = useStableCallback(
+    (
+      command: KeybindingCommand,
+      event: KeyboardEvent,
+      terminalFocusOwner: TerminalFocusOwner | null,
+    ) => {
+      const shortcuts: ChatShortcutCommands = terminalShortcuts;
+      const run = shortcuts[command];
+      return run !== undefined && run({ event, terminalFocusOwner }) !== false;
+    },
+  );
   // A Workbench page hosting the panel or terminal takes only their chords; the page keeps the
   // rest of the keyboard (U09).
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- window keydown listener for the hosted panel and terminal chords
   useEffect(() => {
     if (panelHost === null && terminalHost === null) return;
     const onKeyDown = (event: KeyboardEvent) => {
+      // The same close guards as useChatShortcuts, whose listener can't stop this one.
+      if (
+        preventRepeatedTerminalCloseShortcut(event, keybindings) ||
+        (isTerminalCloseConfirmPending() && preventTerminalCloseShortcut(event, keybindings))
+      )
+        return;
       const terminalFocusOwner = getTerminalFocusOwner();
       if (
         (event.defaultPrevented && terminalFocusOwner === null) ||
@@ -2869,11 +2896,12 @@ export default function ChatView(props: ChatViewProps) {
       if (panelHost !== null && command === "rightPanel.toggle") toggleRightPanelStable();
       else if (panelHost !== null && command === "rightPanel.toggleMaximized") {
         if (!event.repeat) toggleRightPanelMaximizedStable();
-      } else {
-        const hostedTerminalShortcuts: ChatShortcutCommands = terminalShortcuts;
-        const run = terminalHost !== null && command ? hostedTerminalShortcuts[command] : undefined;
-        if (!run || run({ event, terminalFocusOwner }) === false) return;
-      }
+      } else if (
+        terminalHost === null ||
+        command === null ||
+        !runHostedTerminalShortcut(command, event, terminalFocusOwner)
+      )
+        return;
       event.preventDefault();
       event.stopPropagation();
     };
@@ -2884,7 +2912,7 @@ export default function ChatView(props: ChatViewProps) {
     terminalHost,
     keybindings,
     getShortcutContextStable,
-    terminalShortcuts,
+    runHostedTerminalShortcut,
     toggleRightPanelStable,
     toggleRightPanelMaximizedStable,
   ]);
