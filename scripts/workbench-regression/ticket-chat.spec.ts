@@ -37,12 +37,14 @@ test("C1: the ticket chat embeds the Thread view, opens its terminal on the Tick
     await expect(editor).toBeFocused();
 
     // The full Thread view types into its composer from anywhere on the page; the ticket
-    // page keeps its own keyboard.
+    // page keeps its own keyboard. A page click minimizes the chat and keeps its draft.
     const draft = await editor.textContent();
     await page
       .getByRole("heading", { name: "Expire unused invitation links", exact: true })
       .click();
     await page.keyboard.type("q");
+    await expect(editor).toBeHidden();
+    await page.getByRole("button", { name: /^Show .* chat$/ }).click();
     await expect(editor).toHaveText(draft ?? "");
 
     await editor.click();
