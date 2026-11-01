@@ -36,6 +36,7 @@
         "sign-macos.ts",
         // The archived upstream release workflow invokes the nightly resolver.
         "resolve-nightly-release.ts",
+        "prepare-server-compile-cache.cjs",
         "smoke-desktop-app.ts",
         "verify-windows-desktop-artifact.ts",
         // Docker and Vercel Sandbox invoke the disposable preview runtime directly.
@@ -86,6 +87,7 @@
         "src/snapShot/SnapShotAccessibilityWorker.ts!",
         "src/boot.ts!",
         "src/compileCache.ts!",
+        "src/serverCompileCache.ts!",
         "src/main.ts!",
         "src/preload.ts!",
         "src/preview-pick-preload.ts!",

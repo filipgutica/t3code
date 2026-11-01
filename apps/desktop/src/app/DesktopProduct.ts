@@ -7,7 +7,6 @@ import { selectWorkbenchDesktopProduct } from "../workbench/desktopProduct.ts";
 export interface DesktopProductIdentity {
   readonly appUserModelId: string;
   readonly linuxDesktopEntryName: string;
-  readonly linuxWmClass: string;
   readonly scheme: string;
   readonly profileNames: {
     readonly current: string;
@@ -47,7 +46,6 @@ const nativeProduct: DesktopProduct = Object.freeze({
   production: Object.freeze({
     appUserModelId: "com.t3tools.t3code",
     linuxDesktopEntryName: "com.t3tools.T3Code.desktop",
-    linuxWmClass: "t3code",
     scheme: "t3code",
     profileNames: Object.freeze({
       current: "t3code-v2",
@@ -58,7 +56,6 @@ const nativeProduct: DesktopProduct = Object.freeze({
   development: Object.freeze({
     appUserModelId: "com.t3tools.t3code.dev",
     linuxDesktopEntryName: "com.t3tools.T3Code.Development.desktop",
-    linuxWmClass: "t3code-dev",
     scheme: "t3code-dev",
     profileNames: Object.freeze({
       current: "t3code-dev",
