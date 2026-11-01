@@ -84,10 +84,24 @@ const hostLayer = Layer.effect(
           .pipe(Effect.mapError(threadFailure));
         if (caller === null) return yield* threadFailure();
         const threadId = ThreadId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+        const commandId = CommandId.make(yield* newId("workbench:thread-create"));
+        // thread.create skips this check and the first message does not, so check before anything commits.
+        yield* threads
+          .assertProviderInstanceEnabled({
+            projectId: input.projectId,
+            commandId,
+            instanceId: caller.modelSelection.instanceId,
+          })
+          .pipe(
+            Effect.mapError(
+              (error) =>
+                new WorkbenchOperationError({ code: "persistence_failed", message: error.message }),
+            ),
+          );
         yield* threads
           .dispatch({
             type: "thread.create",
-            commandId: CommandId.make(yield* newId("workbench:thread-create")),
+            commandId,
             threadId,
             projectId: input.projectId,
             title: input.title,
@@ -130,7 +144,15 @@ const hostLayer = Layer.effect(
             createdBy: "agent",
             creationSource: "mcp",
           })
-          .pipe(Effect.mapError(threadFailure));
+          .pipe(
+            Effect.mapError(
+              () =>
+                new WorkbenchOperationError({
+                  code: "persistence_failed",
+                  message: `Thread ${input.threadId} is on the Ticket, but its first message failed. Send it with t3_thread_send instead of creating another Thread.`,
+                }),
+            ),
+          );
       }),
     });
   }),
