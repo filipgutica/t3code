@@ -54,6 +54,11 @@ export const ProviderAdapterV2RuntimePolicy = Schema.Struct({
   /** Research tools use native approvals independently of filesystem restrictions. */
   toolAccess: Schema.optional(Schema.Literal("research")),
   reasoningEffort: Schema.optional(Schema.String),
+  /**
+   * The administrator's ceiling, when a managed policy sets one. `runtimeMode` is already under
+   * it; adapters use it to refuse native mode choices a user makes beside T3 Code's own.
+   */
+  maxRuntimeMode: Schema.optional(RuntimeMode),
 });
 export type ProviderAdapterV2RuntimePolicy = typeof ProviderAdapterV2RuntimePolicy.Type;
 
