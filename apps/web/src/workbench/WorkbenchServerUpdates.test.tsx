@@ -90,6 +90,8 @@ vi.mock("~/rpc/atomRegistry", () => ({
     get: () => ({
       _tag: "Success",
       value: { authenticated: true, scopes: ["environment:maintain"] },
+      // Read as the server configs map: no environment has a managed policy.
+      get: () => undefined,
     }),
   },
 }));
