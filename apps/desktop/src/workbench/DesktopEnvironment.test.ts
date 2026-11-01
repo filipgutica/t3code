@@ -4,6 +4,7 @@ import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Stream from "effect/Stream";
 import { afterEach, vi } from "vite-plus/test";
 
 import * as DesktopConfig from "../app/DesktopConfig.ts";
@@ -62,6 +63,8 @@ it.effect("Workbench WSL uses its own Linux home for persisted state", () =>
           Layer.provide(
             Layer.succeed(DesktopShellEnvironment.DesktopShellEnvironment, {
               installIntoProcess: Effect.succeed(true),
+              awaitDiscovery: Effect.succeed(true),
+              updates: Stream.empty,
             }),
           ),
           Layer.provide(
