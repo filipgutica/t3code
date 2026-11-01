@@ -33,7 +33,7 @@ interface WorkbenchSidebarThreadRowData {
   pullRequestIndicator: ReturnType<typeof prStatusIndicator>;
 }
 
-function resolveProviderEntry(
+export function resolveProviderEntry(
   shell: ThreadShell,
   providers: ReturnType<typeof deriveProviderInstanceEntries>,
 ) {

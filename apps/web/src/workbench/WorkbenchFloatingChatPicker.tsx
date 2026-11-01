@@ -5,7 +5,6 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   FilePenLineIcon,
-  MessageSquareIcon,
 } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 
@@ -24,7 +23,9 @@ import {
   MenuTrigger,
 } from "../components/ui/menu";
 import { cn } from "../lib/utils";
+import { useThreadShell } from "../state/entities";
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
+import { WorkbenchThreadProviderIcon } from "./WorkbenchThreadProviderIcon";
 import {
   filterWorkbenchFloatingChatThreads,
   getWorkbenchFloatingChatPickerRow,
@@ -48,13 +49,20 @@ type FloatingChat = ReturnType<typeof resolveWorkbenchFloatingChat>;
 // Fewer Threads than this fit without scrolling, so a filter would only add noise.
 const SEARCH_THRESHOLD = 8;
 
-function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatThread }) {
+function ThreadStatusIcon({
+  environmentId,
+  thread,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly thread: WorkbenchFloatingChatThread;
+}) {
+  const shell = useThreadShell(scopeThreadRef(environmentId, thread.threadId));
   return (
     <span className="mt-0.5 flex size-3.5 shrink-0 text-muted-foreground">
       {thread.status ? (
         <WorkbenchThreadExecutionStatusIcon status={thread.status.presentation} />
       ) : (
-        <MessageSquareIcon aria-hidden className="size-3.5" />
+        <WorkbenchThreadProviderIcon shell={shell} />
       )}
     </span>
   );
@@ -88,7 +96,7 @@ function PickerThreadItem({
         onClick={() => onSelect(thread.threadId)}
       >
         <span className="flex min-w-0 flex-1 items-start gap-2">
-          <ThreadStatusIcon thread={thread} />
+          <ThreadStatusIcon environmentId={environmentId} thread={thread} />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-1.5">
               {ticketLabel ? (

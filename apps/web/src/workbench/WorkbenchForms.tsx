@@ -55,7 +55,6 @@ import {
   Layers3Icon,
   ListChecksIcon,
   LoaderCircleIcon,
-  MessageSquareIcon,
   MoreHorizontalIcon,
   PencilIcon,
   PlusIcon,
@@ -77,6 +76,7 @@ import {
   WorkbenchThreadExecutionStatusIcon,
 } from "./WorkbenchThreadExecutionStatus";
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
+import { WorkbenchThreadProviderIcon } from "./WorkbenchThreadProviderIcon";
 import { readLocalApi } from "../localApi";
 import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 import {
@@ -1653,9 +1653,11 @@ function openWorkbenchThreadRowMenu(
 
 function WorkbenchThreadRowIcon({
   executionStatus,
+  thread,
   unread,
 }: {
   readonly executionStatus: WorkbenchThreadExecutionStatusData | null | undefined;
+  readonly thread: EnvironmentThreadShell | undefined;
   readonly unread: boolean;
 }) {
   return (
@@ -1665,7 +1667,7 @@ function WorkbenchThreadRowIcon({
       ) : unread ? (
         <span aria-hidden className="size-2 rounded-full bg-success" />
       ) : (
-        <MessageSquareIcon aria-hidden className="size-3.5" />
+        <WorkbenchThreadProviderIcon shell={thread} />
       )}
     </span>
   );
@@ -1766,7 +1768,7 @@ function WorkbenchThreadRow({
         }
         type="button"
       >
-        <WorkbenchThreadRowIcon executionStatus={executionStatus} unread={unread} />
+        <WorkbenchThreadRowIcon executionStatus={executionStatus} thread={thread} unread={unread} />
         <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>{title}</span>
         <span
           className={
