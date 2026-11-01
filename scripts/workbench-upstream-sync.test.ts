@@ -278,8 +278,11 @@ it.each([
     // The preview reads the committed policy, so the working tree can run the real scripts.
     NodeFS.rmSync(NodePath.join(fixture.repository, "scripts"), { recursive: true });
     NodeFS.symlinkSync(import.meta.dirname, NodePath.join(fixture.repository, "scripts"));
-    // The workflow previews HEAD against upstream/main.
-    runGit(fixture.repository, ["update-ref", "refs/remotes/upstream/main", fixture.upstreamSha]);
+    runGit(fixture.repository, [
+      "update-ref",
+      "refs/remotes/upstream/published",
+      fixture.upstreamSha,
+    ]);
     runGit(fixture.repository, ["switch", "product"]);
     const result = runStep(fixture.repository, "Preview merge");
     assert.equal(result.status, 0, result.stderr);
@@ -615,7 +618,7 @@ it("a full rerun recognizes the exact published sync merge and repairs its missi
     runGit(root, ["checkout", "--detach", fixture.productSha]);
     runGit(root, ["merge", "--no-ff", "--no-edit", verified]);
     const published = runGit(root, ["rev-parse", "HEAD"]);
-    runGit(root, ["update-ref", "refs/remotes/upstream/main", fixture.upstreamSha]);
+    runGit(root, ["update-ref", "refs/remotes/upstream/published", fixture.upstreamSha]);
     const pending = runStep(root, "Check for upstream commits");
     assert.equal(pending.status, 0, pending.stderr);
     assert.include(

@@ -38,16 +38,27 @@ jobs:
           # Keep the read-only token until post-job cleanup on this disposable runner.
           persist-credentials: true
 
-      - name: Fetch T3 Code upstream
+      - name: Setup Node for published release selection
+        uses: actions/setup-node@v6
+        with:
+          node-version-file: package.json
+
+      - name: Fetch published T3 Code upstream
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+          gh api --paginate --slurp /repos/pingdotgg/t3code/releases?per_page=100 > "$RUNNER_TEMP/upstream-releases.json"
+          tag="$(node scripts/workbench-published-release.ts --releases-file "$RUNNER_TEMP/upstream-releases.json" | jq -er .tag)"
           git remote add upstream https://github.com/pingdotgg/t3code.git
-          git fetch --prune upstream main
+          git fetch --no-tags upstream "+refs/tags/$tag:refs/remotes/upstream/published"
+          echo "Published upstream: $tag ($(git rev-parse 'upstream/published^{commit}'))" >> "$GITHUB_STEP_SUMMARY"
 
       - id: pending
         name: Check for upstream commits
         run: |
           echo "product_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-          if git merge-base --is-ancestor upstream/main HEAD; then
+          if git merge-base --is-ancestor upstream/published HEAD; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
             echo "integrated=true" >> "$GITHUB_OUTPUT"
           else
@@ -65,19 +76,13 @@ jobs:
             exit 1
           fi
 
-      - name: Setup Node for merge preview
-        if: steps.pending.outputs.needed == 'true'
-        uses: actions/setup-node@v6
-        with:
-          node-version-file: package.json
-
       - id: preview
         name: Preview merge
         if: steps.pending.outputs.needed == 'true'
         shell: bash
         run: |
           status=0
-          node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/main > "$RUNNER_TEMP/upstream-sync-preview.json" || status=$?
+          node scripts/workbench-upstream-sync.ts --product HEAD --upstream upstream/published > "$RUNNER_TEMP/upstream-sync-preview.json" || status=$?
           cat "$RUNNER_TEMP/upstream-sync-preview.json"
           if [[ "$status" == 2 ]]; then
             echo "proceed=false" >> "$GITHUB_OUTPUT"
@@ -109,7 +114,7 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git switch -c "$SYNC_BRANCH"
-          if git merge --no-commit --no-ff upstream/main; then
+          if git merge --no-commit --no-ff upstream/published; then
             :
           else
             conflict_paths="$(git diff --name-only --diff-filter=U)"
@@ -124,7 +129,7 @@ jobs:
 
       - name: Review remaining fork ownership and regenerate focused CI
         if: steps.preview.outputs.proceed == 'true'
-        run: node scripts/workbench-ci.ts --upstream upstream/main
+        run: node scripts/workbench-ci.ts --upstream upstream/published
 
       - name: Setup Vite+
         if: steps.preview.outputs.proceed == 'true'

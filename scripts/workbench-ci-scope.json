@@ -457,6 +457,7 @@
     "scripts/update-release-package-versions.workbench.test.ts",
     "scripts/merge-update-manifests.test.ts",
     "scripts/resolve-workbench-daily-release.test.ts",
+    "scripts/workbench-published-release.test.ts",
     "scripts/workbench-verify-stable-release.test.ts"
   ],
   "packagingPaths": [
@@ -471,6 +472,7 @@
     "scripts/smoke-cli-archive.ts",
     "scripts/update-release-package-versions.ts",
     "scripts/resolve-workbench-daily-release.ts",
+    "scripts/workbench-published-release.ts",
     "scripts/workbench-verify-stable-release.ts",
     "scripts/merge-update-manifests.ts",
     "scripts/release-smoke.ts",

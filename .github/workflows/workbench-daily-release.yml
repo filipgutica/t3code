@@ -35,6 +35,7 @@ jobs:
       tag: ${{ steps.resolve.outputs.tag }}
       previous_tag: ${{ steps.resolve.outputs.previous_tag }}
       metadata_json: ${{ steps.resolve.outputs.metadata_json }}
+      upstream_tag: ${{ steps.source.outputs.tag }}
     steps:
       - name: Checkout trusted main history
         uses: actions/checkout@v6
@@ -49,16 +50,36 @@ jobs:
           cache: false
           run-install: false
 
+      - id: source
+        name: Select a checkpoint with the latest published upstream release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAPTURED_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          releases="$RUNNER_TEMP/upstream-releases.json"
+          gh api --paginate --slurp /repos/pingdotgg/t3code/releases?per_page=100 > "$releases"
+          tag="$(node scripts/workbench-published-release.ts --releases-file "$releases" | jq -er .tag)"
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git "+refs/tags/$tag:refs/remotes/upstream/published"
+          node scripts/workbench-published-release.ts --releases-file "$releases" \
+            --main "$CAPTURED_SHA" --github-output "$GITHUB_OUTPUT"
+
       - id: resolve
         name: Resolve daily version and successful checkpoint
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          CAPTURED_SHA: ${{ github.sha }}
+          CAPTURED_SHA: ${{ steps.source.outputs.sha }}
+          SOURCE_ELIGIBLE: ${{ steps.source.outputs.eligible }}
+          UPSTREAM_CHANNEL: ${{ steps.source.outputs.channel }}
           ORIGINAL_RUN_ID: ${{ github.run_id }}
           ORIGINAL_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
+          if [[ "$SOURCE_ELIGIBLE" != true || "$UPSTREAM_CHANNEL" != nightly ]]; then
+            printf 'should_release=false\nreason=no-published-nightly-source\n' >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # Build only a main snapshot whose latest push or dispatch runs passed both fork
           # gates. A missing, pending or failed run waits for the next schedule.
           for workflow in workbench-ci.yml workbench-quality.yml; do
@@ -106,6 +127,7 @@ jobs:
       version: ${{ needs.resolve.outputs.version }}
       previous_tag: ${{ needs.resolve.outputs.previous_tag }}
       metadata_json: ${{ needs.resolve.outputs.metadata_json }}
+      upstream_tag: ${{ needs.resolve.outputs.upstream_tag }}
       release_channel: nightly
       release_mode: release
       sign_macos: true
