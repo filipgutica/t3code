@@ -59,10 +59,16 @@ test("C1: the ticket chat embeds the Thread view, opens its terminal on the Tick
 
     // The Ticket header opens the chat Thread's terminal on the page, in the Thread's checkout.
     await page.getByRole("button", { name: "Toggle terminal drawer", exact: true }).click();
-    const drawer = page.locator('[data-terminal-owner="drawer"]');
-    await expect(drawer).toBeVisible();
-    await drawer.click();
-    await page.keyboard.type(`pwd > ${cwdMarker}\n`);
+    const terminalInput = page
+      .locator('[data-terminal-owner="drawer"]')
+      .getByRole("textbox", { name: "Terminal input", exact: true });
+    // Keys typed before the new shell starts are dropped, so type until the marker appears.
+    await expect(async () => {
+      await terminalInput.focus();
+      await terminalInput.pressSequentially(`pwd > ${cwdMarker}`);
+      await terminalInput.press("Enter");
+      await expect.poll(() => NodeFS.existsSync(cwdMarker)).toBe(true);
+    }).toPass();
     const assignment = (await snapshot(demo)).assignments.find(
       (entry) => entry.ticketId === "orbit-006",
     );
