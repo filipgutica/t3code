@@ -45,7 +45,6 @@ import {
   ArrowLeftIcon,
   ArrowRightIcon,
   ArchiveIcon,
-  BotIcon,
   ChevronDownIcon,
   ChevronRightIcon,
   CircleAlertIcon,
@@ -1092,10 +1091,6 @@ function WorkbenchTicketDetailController({
         actions={{
           onBack: onBack,
           onUpdate: onUpdate,
-          onReplaceThread: onReplaceThread,
-          settledAssignments: settledAssignments,
-          onNewThread: onNewThread,
-          onOpenThread: openThread,
           onArchive: onArchive,
           setDeleteConfirmationOpen: setDeleteConfirmationOpen,
         }}
@@ -1109,11 +1104,6 @@ function WorkbenchTicketDetailController({
             thread: displayedThread,
           }),
           editing: editing,
-          canOpenThread: canOpenThread,
-          threadActionPending: threadActionPending,
-          threadActionLabel: threadActionLabel,
-          thread: thread,
-          selectedThreadTitle: displayedThread?.title,
           lifecycleActionsEnabled: lifecycleActionsEnabled,
           executionStatus,
         }}
@@ -1121,7 +1111,6 @@ function WorkbenchTicketDetailController({
           ticket: ticket,
           issue: getTicketIssue(references),
           actionableTicket: actionableTicket,
-          assignment: assignment,
         }}
         context={{ environmentId: environmentId }}
       />
@@ -1304,6 +1293,7 @@ function WorkbenchTicketDetailController({
                 presentation={{
                   canOpenThread: canOpenThread,
                   threadActionPending: threadActionPending,
+                  threadActionLabel: threadActionLabel,
                   thread: thread,
                   displayedTitle: displayedTitle,
                   pending: pending,
@@ -1928,16 +1918,6 @@ type WorkbenchTicketHeaderProps = {
       >
     >,
   ) => void;
-  canOpenThread: boolean;
-  threadActionPending: boolean;
-  threadActionLabel: string | null | undefined;
-  thread: ReturnType<typeof getWorkbenchThreadPresentation>;
-  selectedThreadTitle: string | undefined;
-  assignment: WorkbenchAssignment | undefined;
-  onReplaceThread: (ticket: WorkbenchTicket, previousThreadId: ThreadId) => void;
-  settledAssignments: ReadonlyArray<WorkbenchAssignment>;
-  onNewThread: (ticket: WorkbenchTicket) => void;
-  onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
   lifecycleActionsEnabled: boolean;
   onArchive: (ticket: WorkbenchTicket, archivedAt: string | null) => Promise<boolean>;
   setDeleteConfirmationOpen: Dispatch<SetStateAction<boolean>>;
@@ -1950,14 +1930,7 @@ function WorkbenchTicketHeader({
 }: {
   actions: Pick<
     WorkbenchTicketHeaderProps,
-    | "onBack"
-    | "onUpdate"
-    | "onReplaceThread"
-    | "settledAssignments"
-    | "onNewThread"
-    | "onOpenThread"
-    | "onArchive"
-    | "setDeleteConfirmationOpen"
+    "onBack" | "onUpdate" | "onArchive" | "setDeleteConfirmationOpen"
   >;
   presentation: Pick<
     WorkbenchTicketHeaderProps,
@@ -1967,26 +1940,12 @@ function WorkbenchTicketHeader({
     | "isArchived"
     | "pending"
     | "editing"
-    | "canOpenThread"
-    | "threadActionPending"
-    | "threadActionLabel"
-    | "thread"
-    | "selectedThreadTitle"
     | "lifecycleActionsEnabled"
   >;
-  records: Pick<WorkbenchTicketHeaderProps, "ticket" | "issue" | "actionableTicket" | "assignment">;
+  records: Pick<WorkbenchTicketHeaderProps, "ticket" | "issue" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeaderProps, "environmentId">;
 }) {
-  const {
-    onBack,
-    onUpdate,
-    onReplaceThread,
-    settledAssignments,
-    onNewThread,
-    onOpenThread,
-    onArchive,
-    setDeleteConfirmationOpen,
-  } = actions;
+  const { onBack, onUpdate, onArchive, setDeleteConfirmationOpen } = actions;
   const {
     executionStatus,
     workspaceTitle,
@@ -1994,14 +1953,9 @@ function WorkbenchTicketHeader({
     isArchived,
     pending,
     editing,
-    canOpenThread,
-    threadActionPending,
-    threadActionLabel,
-    thread,
-    selectedThreadTitle,
     lifecycleActionsEnabled,
   } = presentation;
-  const { ticket, issue, actionableTicket, assignment } = records;
+  const { ticket, issue, actionableTicket } = records;
   const { environmentId } = context;
   const controlsHostRef = useWorkbenchControlsHostRef();
   return (
@@ -2033,33 +1987,17 @@ function WorkbenchTicketHeader({
             onUpdate: onUpdate,
           }}
         />
-        <WorkbenchTicketHeaderActions
-          presentation={{
-            displayedTitle: displayedTitle,
-            isArchived: isArchived,
-            pending: pending,
-            canOpenThread: canOpenThread,
-            threadActionPending: threadActionPending,
-            threadActionLabel: threadActionLabel,
-            thread: thread,
-            selectedThreadTitle: selectedThreadTitle,
-            lifecycleActionsEnabled: lifecycleActionsEnabled,
-          }}
-          records={{
-            ticket: ticket,
-            issue,
-            actionableTicket: actionableTicket,
-            assignment: assignment,
-          }}
-          actions={{
-            onReplaceThread: onReplaceThread,
-            settledAssignments: settledAssignments,
-            onNewThread: onNewThread,
-            onOpenThread: onOpenThread,
-            onArchive: onArchive,
-            setDeleteConfirmationOpen: setDeleteConfirmationOpen,
-          }}
-        />
+        <div className="col-start-2 row-start-1 flex min-w-0 justify-end @min-[48rem]/ticket:col-start-3">
+          <WorkbenchTicketActionsMenu
+            isArchived={isArchived}
+            pending={pending}
+            ticket={ticket}
+            issue={issue}
+            lifecycleActionsEnabled={lifecycleActionsEnabled}
+            onArchive={onArchive}
+            setDeleteConfirmationOpen={setDeleteConfirmationOpen}
+          />
+        </div>
       </div>
       <div ref={controlsHostRef} className="flex shrink-0 self-start" />
     </WorkspacePageHeader>
@@ -2360,6 +2298,8 @@ type WorkbenchTicketThreadsPanelProps = {
   canOpenThread: boolean;
   displayedThread: EnvironmentThreadShell | undefined;
   threadActionPending: boolean;
+  /** The current start stage, such as preparing the worktree, while one runs. */
+  threadActionLabel: string | null | undefined;
   thread: ReturnType<typeof getWorkbenchThreadPresentation>;
   displayedTitle: string;
   pending: boolean;
@@ -2415,6 +2355,7 @@ function WorkbenchTicketThreadsPanel({
     WorkbenchTicketThreadsPanelProps,
     | "canOpenThread"
     | "threadActionPending"
+    | "threadActionLabel"
     | "thread"
     | "displayedTitle"
     | "pending"
@@ -2456,6 +2397,7 @@ function WorkbenchTicketThreadsPanel({
   const {
     canOpenThread,
     threadActionPending,
+    threadActionLabel,
     thread,
     displayedTitle,
     pending,
@@ -2522,6 +2464,7 @@ function WorkbenchTicketThreadsPanel({
       }}
       presentation={{
         threadActionPending: threadActionPending,
+        threadActionLabel: threadActionLabel,
         thread: thread,
         displayedTitle: displayedTitle,
         pending: pending,
@@ -3284,6 +3227,7 @@ type WorkbenchTicketPrimaryThreadProps = Pick<
   | "threadMutationsDisabled"
   | "displayedThread"
   | "threadActionPending"
+  | "threadActionLabel"
   | "thread"
   | "displayedTitle"
   | "pending"
@@ -3317,6 +3261,7 @@ function WorkbenchTicketPrimaryThread({
   presentation: Pick<
     WorkbenchTicketPrimaryThreadProps,
     | "threadActionPending"
+    | "threadActionLabel"
     | "thread"
     | "displayedTitle"
     | "pending"
@@ -3340,11 +3285,11 @@ function WorkbenchTicketPrimaryThread({
   const { displayedThread, assignment, actionableTicket, nativeThread, archivedThread } = records;
   const {
     threadActionPending,
+    threadActionLabel,
     thread,
     displayedTitle,
     pending,
     nativeStatus,
-
     agentTitle,
     isArchived,
     supportsSettlement,
@@ -3363,7 +3308,7 @@ function WorkbenchTicketPrimaryThread({
       thread={displayedThread}
       actionLabel={thread.actionLabel}
       ariaLabel={`${
-        threadActionPending ? thread.pendingActionLabel : thread.actionLabel
+        threadActionPending ? (threadActionLabel ?? thread.pendingActionLabel) : thread.actionLabel
       } for ${displayedTitle}`}
       disabled={isWorkbenchThreadOpenDisabled({
         pending,
@@ -3378,7 +3323,15 @@ function WorkbenchTicketPrimaryThread({
         }
         onOpenThread(actionableTicket, assignment?.threadId);
       }}
-      stateLabel={nativeThread ? null : assignment ? thread.stateLabel : "Create a Thread"}
+      stateLabel={
+        threadActionPending
+          ? (threadActionLabel ?? thread.pendingActionLabel)
+          : nativeThread
+            ? null
+            : assignment
+              ? thread.stateLabel
+              : "Create a Thread"
+      }
       executionStatus={nativeStatus}
       title={agentTitle}
       menu={
@@ -4480,133 +4433,6 @@ function WorkbenchTicketHeading({
   );
 }
 
-type WorkbenchTicketHeaderActionsProps = Pick<
-  WorkbenchTicketHeaderProps,
-  | "displayedTitle"
-  | "ticket"
-  | "issue"
-  | "isArchived"
-  | "actionableTicket"
-  | "pending"
-  | "canOpenThread"
-  | "threadActionPending"
-  | "threadActionLabel"
-  | "thread"
-  | "selectedThreadTitle"
-  | "assignment"
-  | "onReplaceThread"
-  | "settledAssignments"
-  | "onNewThread"
-  | "onOpenThread"
-  | "lifecycleActionsEnabled"
-  | "onArchive"
-  | "setDeleteConfirmationOpen"
->;
-function WorkbenchTicketHeaderActions({
-  presentation,
-  records,
-  actions,
-}: {
-  presentation: Pick<
-    WorkbenchTicketHeaderActionsProps,
-    | "displayedTitle"
-    | "isArchived"
-    | "pending"
-    | "canOpenThread"
-    | "threadActionPending"
-    | "threadActionLabel"
-    | "thread"
-    | "selectedThreadTitle"
-    | "lifecycleActionsEnabled"
-  >;
-  records: Pick<
-    WorkbenchTicketHeaderActionsProps,
-    "ticket" | "issue" | "actionableTicket" | "assignment"
-  >;
-  actions: Pick<
-    WorkbenchTicketHeaderActionsProps,
-    | "onReplaceThread"
-    | "settledAssignments"
-    | "onNewThread"
-    | "onOpenThread"
-    | "onArchive"
-    | "setDeleteConfirmationOpen"
-  >;
-}) {
-  const {
-    displayedTitle,
-    isArchived,
-    pending,
-    canOpenThread,
-    threadActionPending,
-    threadActionLabel,
-    thread,
-    selectedThreadTitle,
-    lifecycleActionsEnabled,
-  } = presentation;
-  const { ticket, issue, actionableTicket, assignment } = records;
-  const {
-    onReplaceThread,
-    settledAssignments,
-    onNewThread,
-    onOpenThread,
-    onArchive,
-    setDeleteConfirmationOpen,
-  } = actions;
-  return (
-    <div className="col-start-2 row-start-1 flex min-w-0 flex-wrap justify-end gap-2 @min-[48rem]/ticket:col-start-3">
-      {canOpenThread ? (
-        <>
-          {threadActionPending ? (
-            <span aria-live="polite" className="sr-only" role="status">
-              {threadActionLabel ?? thread.pendingActionLabel}
-            </span>
-          ) : null}
-          <Button
-            aria-busy={threadActionPending}
-            aria-label={`${
-              threadActionLabel ??
-              (threadActionPending ? thread.pendingActionLabel : thread.actionLabel)
-            } for ${selectedThreadTitle ?? displayedTitle}`}
-            title={selectedThreadTitle}
-            disabled={pending}
-            onClick={() => {
-              if (assignment && thread.state === "missing") {
-                onReplaceThread(ticket, assignment.threadId);
-                return;
-              }
-              if (!assignment && settledAssignments.length > 0) {
-                onNewThread(actionableTicket);
-                return;
-              }
-              onOpenThread(actionableTicket, assignment?.threadId);
-            }}
-            size="sm"
-            type="button"
-          >
-            {threadActionPending ? (
-              <LoaderCircleIcon className="animate-spin" data-icon="inline-start" />
-            ) : (
-              <BotIcon data-icon="inline-start" />
-            )}
-            {threadActionLabel ??
-              (threadActionPending ? thread.pendingActionLabel : thread.actionLabel)}
-          </Button>
-        </>
-      ) : null}
-      <WorkbenchTicketActionsMenu
-        isArchived={isArchived}
-        pending={pending}
-        ticket={ticket}
-        issue={issue}
-        lifecycleActionsEnabled={lifecycleActionsEnabled}
-        onArchive={onArchive}
-        setDeleteConfirmationOpen={setDeleteConfirmationOpen}
-      />
-    </div>
-  );
-}
-
 function getWorkbenchActiveThreadRow({
   activeAssignment,
   threadsById,
@@ -4988,7 +4814,7 @@ function WorkbenchTicketActionsMenu({
   onArchive,
   setDeleteConfirmationOpen,
 }: Pick<
-  WorkbenchTicketHeaderActionsProps,
+  WorkbenchTicketHeaderProps,
   | "isArchived"
   | "pending"
   | "ticket"
