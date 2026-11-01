@@ -76,15 +76,12 @@ const testLayer = Layer.mergeAll(
   contextLayer,
   agentLayer.pipe(
     Layer.provide(
-      Layer.succeed(
-        WorkbenchAgentHost,
-        WorkbenchAgentHost.of({
-          ensureArtifactsDir: (ownerId) => Effect.succeed(`/artifacts/${ownerId}`),
-          describeProjects: (ids) => Effect.succeed(ids.map((id) => ({ id, title: id }))),
-          describeThreads: (ids) =>
-            Effect.succeed(ids.map((id) => ({ id, title: id, pullRequests: [] }))),
-        }),
-      ),
+      Layer.mock(WorkbenchAgentHost)({
+        ensureArtifactsDir: (ownerId) => Effect.succeed(`/artifacts/${ownerId}`),
+        describeProjects: (ids) => Effect.succeed(ids.map((id) => ({ id, title: id }))),
+        describeThreads: (ids) =>
+          Effect.succeed(ids.map((id) => ({ id, title: id, pullRequests: [] }))),
+      }),
     ),
     Layer.provide(Layer.mock(TicketWorkspaceService)({})),
   ),

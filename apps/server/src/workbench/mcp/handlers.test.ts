@@ -84,6 +84,11 @@ const makeHarness = (owned: boolean) =>
           ),
         removeReference: (input) =>
           record("removeReference", input).pipe(Effect.andThen(requireOwned)),
+        startThread: (input) =>
+          record("startThread", input).pipe(
+            Effect.andThen(requireOwned),
+            Effect.as({ threadId: ThreadId.make("thread-new"), title: "Expire invitations" }),
+          ),
       }),
       McpToolAccessTestkit.liveThreadsLayer,
     );
@@ -136,6 +141,10 @@ describe("Workbench toolkit handlers", () => {
         label: "ORBIT-1",
       });
       expect(yield* call("workbench_reference_remove", { url })).toEqual({});
+      expect(yield* call("workbench_thread_create", { message: "Implement PR 3" })).toEqual({
+        threadId: "thread-new",
+        title: "Expire invitations",
+      });
       expect(yield* Ref.get(calls)).toEqual([
         ["read", THREAD_ID],
         [
@@ -150,6 +159,10 @@ describe("Workbench toolkit handlers", () => {
         ["addReference", { url, title: "Expire invitations", threadId: THREAD_ID }],
         ["updateReference", { url, title: "Approved spec", threadId: THREAD_ID }],
         ["removeReference", { url, threadId: THREAD_ID }],
+        [
+          "startThread",
+          expect.objectContaining({ message: "Implement PR 3", threadId: THREAD_ID }),
+        ],
       ]);
     }),
   );
@@ -177,6 +190,9 @@ describe("Workbench toolkit handlers", () => {
       );
       expect(
         yield* Effect.flip(call("workbench_ticket_update", { expectedRevision: 3 }, clientCaller)),
+      ).toMatchObject(refused);
+      expect(
+        yield* Effect.flip(call("workbench_thread_create", { message: "Hi" }, clientCaller)),
       ).toMatchObject(refused);
       expect(yield* Ref.get(calls)).toEqual([]);
     }),

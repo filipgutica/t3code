@@ -385,6 +385,9 @@ own connectors, such as Jira or GitHub, when you ask.
 Agents use `workbench_ticket_read` to read the current Ticket or draft and
 `workbench_ticket_update` to revise it, including Progress. They use
 `workbench_reference_update` to retitle an existing Reference without removing it.
+When you ask a Ticket's agent to start another Thread, such as one for the next PR,
+it uses `workbench_thread_create`. The new Thread joins the Ticket like one from
+**Create Thread**, in the Ticket's worktree with the asking agent's model.
 
 Each Ticket has an artifacts folder on the machine that runs the environment,
 under `userdata/workbench-artifacts` in the T3 data directory. Agents save plans,

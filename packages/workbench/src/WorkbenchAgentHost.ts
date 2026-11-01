@@ -1,4 +1,10 @@
-import type { ProjectId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
+import type {
+  ProjectId,
+  ProviderInteractionMode,
+  RuntimeMode,
+  ThreadId,
+  WorkbenchOperationError,
+} from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
@@ -27,5 +33,21 @@ export class WorkbenchAgentHost extends Context.Service<
       }>,
       WorkbenchOperationError
     >;
+    /** Creates an idle native Thread in a Ticket worktree, with the model of the Thread that asked. */
+    readonly createThread: (input: {
+      readonly callerThreadId: ThreadId;
+      readonly projectId: ProjectId;
+      readonly title: string;
+      readonly branch: string;
+      readonly worktreePath: string;
+      readonly runtimeMode: RuntimeMode;
+      readonly interactionMode: ProviderInteractionMode;
+    }) => Effect.Effect<ThreadId, WorkbenchOperationError>;
+    readonly deleteThread: (threadId: ThreadId) => Effect.Effect<void, WorkbenchOperationError>;
+    readonly sendMessage: (input: {
+      readonly threadId: ThreadId;
+      readonly senderThreadId: ThreadId;
+      readonly text: string;
+    }) => Effect.Effect<void, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/WorkbenchAgentHost") {}

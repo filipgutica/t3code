@@ -1,6 +1,7 @@
-import { WorkbenchOperationError } from "@t3tools/contracts";
+import { CommandId, MessageId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
 import { WorkbenchAgentHost } from "@t3tools/workbench/WorkbenchAgentHost";
 import { layer as serviceLayer } from "@t3tools/workbench/WorkbenchAgentService";
+import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -38,6 +39,13 @@ const hostLayer = Layer.effect(
     const path = yield* Path.Path;
     const projects = yield* ProjectStoreV2;
     const threads = yield* ThreadManagementService;
+    const crypto = yield* Crypto.Crypto;
+    const newId = (prefix: string) =>
+      crypto.randomUUIDv4().pipe(
+        Effect.orDie,
+        Effect.map((id) => `${prefix}:${id}`),
+      );
+    const threadFailure = unavailable("The new Thread could not be started.");
     return WorkbenchAgentHost.of({
       ensureArtifactsDir: Effect.fn("WorkbenchAgentHost.ensureArtifactsDir")(function* (ownerId) {
         const directory = artifactsDirectory({ path, stateDir, ownerId });
@@ -69,6 +77,60 @@ const hostLayer = Layer.effect(
                 },
               ],
         );
+      }),
+      createThread: Effect.fn("WorkbenchAgentHost.createThread")(function* (input) {
+        const caller = yield* threads
+          .getThreadShell(input.callerThreadId)
+          .pipe(Effect.mapError(threadFailure));
+        if (caller === null) return yield* threadFailure();
+        const threadId = ThreadId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+        yield* threads
+          .dispatch({
+            type: "thread.create",
+            commandId: CommandId.make(yield* newId("workbench:thread-create")),
+            threadId,
+            projectId: input.projectId,
+            title: input.title,
+            createdBy: "agent",
+            creationSource: "mcp",
+            modelSelection: caller.modelSelection,
+            runtimeMode: input.runtimeMode,
+            interactionMode: input.interactionMode,
+            branch: input.branch,
+            worktreePath: input.worktreePath,
+          })
+          .pipe(Effect.mapError(threadFailure));
+        return threadId;
+      }),
+      deleteThread: Effect.fn("WorkbenchAgentHost.deleteThread")(function* (threadId) {
+        yield* threads
+          .dispatch({
+            type: "thread.delete",
+            commandId: CommandId.make(yield* newId("workbench:thread-delete")),
+            threadId,
+          })
+          .pipe(Effect.mapError(threadFailure));
+      }),
+      sendMessage: Effect.fn("WorkbenchAgentHost.sendMessage")(function* (input) {
+        const thread = yield* threads
+          .getThreadShell(input.threadId)
+          .pipe(Effect.mapError(threadFailure));
+        if (thread === null) return yield* threadFailure();
+        const commandId = CommandId.make(yield* newId("workbench:thread-message"));
+        yield* threads
+          .sendToThread({
+            projectId: thread.projectId,
+            commandId,
+            threadId: input.threadId,
+            messageId: MessageId.make(commandId),
+            senderThreadId: input.senderThreadId,
+            text: input.text,
+            attachments: [],
+            mode: "auto",
+            createdBy: "agent",
+            creationSource: "mcp",
+          })
+          .pipe(Effect.mapError(threadFailure));
       }),
     });
   }),
