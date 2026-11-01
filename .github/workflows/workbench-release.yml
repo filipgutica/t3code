@@ -32,6 +32,11 @@ on:
         required: false
         default: ""
         type: string
+      upstream_tag:
+        description: "Published upstream tag selected for a nightly source"
+        required: false
+        default: ""
+        type: string
     secrets:
       WORKBENCH_MAC_CSC_LINK:
         required: false
@@ -157,6 +162,7 @@ jobs:
           REQUESTED_COMMIT_SHA: ${{ inputs.commit_sha }}
           REQUESTED_PREVIOUS_TAG: ${{ inputs.previous_tag }}
           RELEASE_MODE: ${{ inputs.release_mode }}
+          PUBLISHED_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
         run: |
           set -euo pipefail
 
@@ -197,6 +203,12 @@ jobs:
           should_release=true
           metadata_json=""
           if [[ "$RELEASE_CHANNEL" == nightly ]]; then
+            gh api --paginate --slurp /repos/pingdotgg/t3code/releases?per_page=100 > "$RUNNER_TEMP/upstream-releases.json"
+            test -n "$PUBLISHED_UPSTREAM_TAG"
+            node scripts/workbench-published-release.ts --releases-file "$RUNNER_TEMP/upstream-releases.json" --tag "$PUBLISHED_UPSTREAM_TAG" > "$RUNNER_TEMP/upstream-release.json"
+            git fetch --no-tags https://github.com/pingdotgg/t3code.git "+refs/tags/$PUBLISHED_UPSTREAM_TAG:refs/remotes/upstream/published"
+            node scripts/workbench-published-release.ts --releases-file "$RUNNER_TEMP/upstream-releases.json" \
+              --tag "$PUBLISHED_UPSTREAM_TAG" --source "$sha"
             # Derive the same plan again with fresh release state. The resolver
             # validates provenance, first-parent history, version and tag custody.
             date="$(jq -er '.date' <<< "$DAILY_METADATA_JSON")"
@@ -641,6 +653,7 @@ jobs:
       PREVIOUS_TAG: ${{ needs.resolve.outputs.previous_tag }}
       UPSTREAM_SHA: ${{ needs.resolve.outputs.upstream_sha }}
       UPSTREAM_BASE: ${{ needs.resolve.outputs.upstream_base }}
+      PUBLISHED_UPSTREAM_TAG: ${{ inputs.upstream_tag }}
     steps:
       - name: Checkout selected commit
         uses: actions/checkout@v6
@@ -737,6 +750,17 @@ jobs:
             --draft \
             --notes-file "$RUNNER_TEMP/workbench-release-notes.md"
           gh release upload "$RELEASE_TAG" release-assets/* --repo "$GITHUB_REPOSITORY" --clobber
+
+      - name: Verify published upstream source before nightly publication
+        if: needs.resolve.outputs.release_channel == 'nightly'
+        shell: bash
+        run: |
+          set -euo pipefail
+          upstream_release="$RUNNER_TEMP/upstream-release-before-publish.json"
+          gh api "/repos/pingdotgg/t3code/releases/tags/$PUBLISHED_UPSTREAM_TAG" > "$upstream_release"
+          jq -e '.draft == false and .prerelease == true and .published_at != null and .tag_name == env.PUBLISHED_UPSTREAM_TAG' "$upstream_release" > /dev/null
+          git fetch --no-tags https://github.com/pingdotgg/t3code.git "+refs/tags/$PUBLISHED_UPSTREAM_TAG:refs/remotes/upstream/published"
+          test "$(git rev-parse 'upstream/published^{commit}')" = "$(jq -er .upstreamBase <<< "$DAILY_METADATA_JSON")"
 
       - name: Publish a complete daily prerelease
         if: needs.resolve.outputs.release_channel == 'nightly'

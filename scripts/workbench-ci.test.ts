@@ -270,8 +270,9 @@ it("advances ownership only after the canonical upstream ref is integrated", () 
     const upstream = git(["rev-parse", "HEAD"]);
     git(["remote", "add", "upstream", "https://github.com/pingdotgg/t3code.git"]);
     git(["update-ref", "refs/remotes/upstream/main", upstream]);
+    git(["update-ref", "refs/remotes/upstream/published", upstream]);
     git(["switch", "-q", branch]);
-    assert.equal(execute(root, ["--upstream", "upstream/main"]).status, 1);
+    assert.equal(execute(root, ["--upstream", "upstream/published"]).status, 1);
     assert.equal(NodeFS.readFileSync(path, "utf8"), original);
     git([
       "-c",
@@ -281,9 +282,9 @@ it("advances ownership only after the canonical upstream ref is integrated", () 
       "merge",
       "--no-commit",
       "--no-ff",
-      "upstream/main",
+      "upstream/published",
     ]);
-    const pending = execute(root, ["--upstream", "upstream/main"]);
+    const pending = execute(root, ["--upstream", "upstream/published"]);
     assert.equal(pending.status, 0, pending.stderr);
     assert.equal(JSON.parse(NodeFS.readFileSync(path, "utf8")).upstreamBase, upstream);
     assert.equal(execute(root, ["--check"]).status, 0);

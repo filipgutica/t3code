@@ -425,10 +425,10 @@ try {
     const policy = loadPolicy();
     if (command === "--upstream") {
       if (
-        argument !== "upstream/main" ||
+        !["upstream/main", "upstream/published"].includes(argument ?? "") ||
         git(["remote", "get-url", "upstream"]).trim() !== "https://github.com/pingdotgg/t3code.git"
       )
-        throw new Error("--upstream requires the canonical upstream/main ref");
+        throw new Error("--upstream requires a canonical upstream main or published ref");
       const upstream = git(["rev-parse", "--verify", `${argument}^{commit}`]).trim();
       git(["merge-base", "--is-ancestor", policy.upstreamBase, upstream]);
       policy.upstreamBase = upstream;
