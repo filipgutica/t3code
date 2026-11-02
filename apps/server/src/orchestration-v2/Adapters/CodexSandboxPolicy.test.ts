@@ -314,6 +314,7 @@ describe("Codex read-only sandbox integration", () => {
           config: {
             "tools.update_plan.enabled": true,
             mcp_optional_startup_grace_ms: 10_000,
+            "shell_environment_policy.set.T3CODE_THREAD_ID": threadId,
             ...(isolateIntegrations ? restrictedParams.config : {}),
             ...(research
               ? {
@@ -450,17 +451,24 @@ describe("Codex read-only sandbox integration", () => {
         const policy = { ...CODEX_TEST_RUNTIME_POLICY, sandboxPolicy: { type: "readOnly" } };
         const nativeThreadId = `native-${operation}-source`;
         const preamble = replayPreamble(nativeThreadId);
-        const initialParams =
-          operation === "rollback"
-            ? restrictedParams
-            : {
-                cwd: "/workspace",
-                model: "gpt-5.4",
-                config: {
-                  "tools.update_plan.enabled": true,
-                  mcp_optional_startup_grace_ms: 10_000,
-                },
-              };
+        const initialParams = {
+          cwd: "/workspace",
+          model: "gpt-5.4",
+          config: {
+            "tools.update_plan.enabled": true,
+            mcp_optional_startup_grace_ms: 10_000,
+            ...(operation === "rollback" ? restrictedParams.config : {}),
+            "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${operation}-source`,
+          },
+        };
+        const restrictedThreadParams = {
+          ...restrictedParams,
+          config: {
+            ...restrictedParams.config,
+            "shell_environment_policy.set.T3CODE_THREAD_ID":
+              operation === "fork" ? "thread-fork-target" : "thread-rollback-source",
+          },
+        };
         const entries =
           operation === "fork"
             ? [
@@ -470,7 +478,7 @@ describe("Codex read-only sandbox integration", () => {
                 ...exchange(
                   4,
                   "thread/fork",
-                  { threadId: nativeThreadId, ...restrictedParams },
+                  { threadId: nativeThreadId, ...restrictedThreadParams },
                   threadResult("native-fork-target"),
                 ),
               ]
@@ -488,7 +496,7 @@ describe("Codex read-only sandbox integration", () => {
                 ...exchange(
                   6,
                   "thread/resume",
-                  { threadId: nativeThreadId, excludeTurns: true, ...restrictedParams },
+                  { threadId: nativeThreadId, excludeTurns: true, ...restrictedThreadParams },
                   { thread: { id: nativeThreadId } },
                 ),
                 ...exchange(
@@ -563,7 +571,7 @@ describe("Codex read-only sandbox integration", () => {
           {
             threadId: nativeThreadId,
             ...(operation === "rollback" ? { excludeTurns: true } : {}),
-            ...restrictedParams,
+            ...restrictedThreadParams,
           },
         );
       }).pipe(
