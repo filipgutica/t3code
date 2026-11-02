@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import {
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactElement,
@@ -648,8 +649,9 @@ function useFloatingChatLayout(
 }
 
 // What the chat opened on the page: its conversation, its Thread's terminal, and the header toggles.
+// Controls that open a Ticket leave the decision to the Ticket chat's Board handoff.
 const CHAT_OWNED_SELECTOR =
-  "[data-workbench-floating-chat],[data-workbench-terminal-host],[data-workbench-chat-controls]";
+  "[data-workbench-floating-chat],[data-workbench-terminal-host],[data-workbench-chat-controls],[data-workbench-opens-ticket]";
 
 const isPageClickOutsideChat = (target: EventTarget | null) =>
   target instanceof Element &&
@@ -783,7 +785,56 @@ function useModeChangeFocus(mode: WorkbenchFloatingChatMode) {
   return { expandButtonRef, launcherRef, pendingFocusRef };
 }
 
+/**
+ * A Ticket opened from the Board keeps the chat on the Board's Thread, in the same mode, when the
+ * Ticket has that Thread; otherwise an expanded chat collapses. The Board records its Thread in a
+ * layout cleanup, which runs after the Ticket chat's first render but before its layout effect, so
+ * the Ticket chat shows nothing until then and never mounts, or marks read, the wrong Thread.
+ */
+function useBoardTicketHandoff({
+  kind,
+  environmentId,
+  chat,
+  onSelectThread,
+}: WorkbenchFloatingChatProps) {
+  const [ready, setReady] = useState(kind === "board");
+  const recordBoardThread = useStableCallback(() => {
+    const threadId = chat.selected?.threadId ?? null;
+    useWorkbenchFloatingChatStore.getState().setBoardHandoff({
+      thread: threadId === null ? null : scopeThreadRef(environmentId, threadId),
+    });
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the Board chat's Thread as it unmounts, for the Ticket chat that replaces it
+  useLayoutEffect(
+    () => (kind === "board" ? recordBoardThread : undefined),
+    [kind, recordBoardThread],
+  );
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- applies the Board's handoff once, before the Ticket chat first paints
+  useLayoutEffect(() => {
+    if (ready) return;
+    const { boardHandoff, mode, setBoardHandoff, collapse } =
+      useWorkbenchFloatingChatStore.getState();
+    if (boardHandoff !== null) {
+      setBoardHandoff(null);
+      const { thread } = boardHandoff;
+      if (
+        thread?.environmentId === environmentId &&
+        chat.active.some((candidate) => candidate.threadId === thread.threadId)
+      )
+        onSelectThread(thread.threadId);
+      else if (mode === "expanded") collapse();
+    }
+    // oxlint-disable-next-line react/set-state-in-effect -- the Board's handoff exists only after this chat's first commit
+    setReady(true);
+  }, [ready, environmentId, chat.active, onSelectThread]);
+  return ready;
+}
+
 export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
+  return useBoardTicketHandoff(props) ? <FloatingChatPanel {...props} /> : null;
+}
+
+function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
   const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
   const copy = CHAT_COPY[props.kind];
   const { mode, focusRequest, expand, collapse, minimize, restore } =
@@ -802,7 +853,14 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     pendingFocusRef.current = true;
     change();
   };
-  const hosts = useWorkbenchPageHosts();
+  const pageHosts = useWorkbenchPageHosts();
+  const boardDraftShown =
+    props.kind === "board" &&
+    selectedThreadId !== null &&
+    props.planning?.threadIds.has(selectedThreadId) === true;
+  const hosts = boardDraftShown
+    ? { ...pageHosts, terminalHost: null, controlsHost: null }
+    : pageHosts;
   const { launcher, expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
     environmentId,
     selectedThreadId,
