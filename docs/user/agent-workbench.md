@@ -338,19 +338,29 @@ paste a URL or an absolute file path, with an optional title. Drafts and the
 manual Ticket form have a paste field for References, which are saved with the
 Ticket. Use a Reference's remove button to remove it.
 
+Links in the description are References too. They show as chips in the
+description and in the **References** list marked **In description**; remove
+one by editing the description. Hover a chip or row to see its full URL or path
+and where it opens.
+
+When the floating chat shows a Thread, a file Reference opens in that Thread's
+side panel, an HTML or PDF file opens in its browser panel, and other links
+follow **Settings › Browser**. Without a Thread, files open in a file preview and
+links open in your browser.
+
 Issue References show their key or repository and number, such as `PROJ-123` or
 `orbit-web#12`. Board cards show up to two, and Board and sidebar search match
 them. The first issue Reference also names the branch when the work area is
 prepared, so add it before you prepare.
 
-Pull request References appear in **Pull Requests** instead of **References**,
-together with the PRs that linked Threads report. **Unlink** on such a row removes
+Pull request References and PR links in the description appear in **Pull
+Requests** instead of **References**, together with the PRs that linked Threads report. **Unlink** on such a row removes
 only the Reference; a PR that a Thread also links stays listed. **Needs
 attention** covers only PRs linked to a Thread.
 
-A file Reference is a path on the machine that runs the environment. It opens in
-the file viewer from any connected client, including remote ones. A file that no
-longer exists shows as unavailable.
+A file Reference is a path on the machine that runs the environment. It opens
+from any connected client, including remote ones. A file that no longer exists
+shows as unavailable.
 
 Epics keep a single Jira link. Open the Epic's details and choose **Link issue**
 under **Jira issue** to paste the issue's URL, or **Change** or **Unlink** to
@@ -373,7 +383,7 @@ scope, and Progress. It can also add, remove, or retitle References. Its changes
 apply at once and show in the Thread. It cannot remove a repository that an active Thread works in.
 
 A description an agent changed shows **Updated by** and the Thread's name until
-you edit it. A Reference an agent added shows **Added by**. Edit those fields as
+you edit it. A Reference an agent added shows **added by** on hover. Edit those fields as
 usual, or ask the agent to revise Progress.
 
 Agents record References on their own. When you paste supporting links into a planning

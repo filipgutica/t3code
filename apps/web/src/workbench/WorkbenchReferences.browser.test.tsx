@@ -9,6 +9,8 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
+import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { WorkbenchDraftReferences } from "./WorkbenchReferences";
 
 const mocks = vi.hoisted(() => ({
@@ -54,6 +56,8 @@ const references: ReadonlyArray<WorkbenchReference> = [
 ];
 
 function setup() {
+  useWorkbenchFloatingChatStore.setState({ shownThread: null });
+  useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   mocks.add.mockReset();
   mocks.add.mockResolvedValue({ _tag: "Success", value: undefined });
   mocks.remove.mockReset();
@@ -71,12 +75,12 @@ function setup() {
   });
 }
 
-const renderDraftReferences = () =>
+const renderDraftReferences = (owned: ReadonlyArray<WorkbenchReference> = references) =>
   render(
     <WorkbenchDraftReferences
       environmentId={environmentId}
       draftId={draftId}
-      references={references}
+      references={owned}
       threadsById={new Map([[planner, { title: "Planning" }]])}
       archivedThreadsById={new Map()}
       readOnly={false}
@@ -85,10 +89,18 @@ const renderDraftReferences = () =>
     />,
   );
 
+it("lists a legacy Reference whose URL no longer parses", async () => {
+  setup();
+  await using screen = await renderDraftReferences([
+    { ...references[0]!, url: "legacy reference", title: "Old link" },
+  ]);
+  await userEvent.hover(screen.getByRole("link", { name: "Old link" }));
+  await expect.element(page.getByText("Link · added by Planning")).toBeVisible();
+});
+
 it("adds a pasted URL to the draft and rejects text that is not a Reference", async () => {
   setup();
   await using screen = await renderDraftReferences();
-  await expect.element(screen.getByText("Added by Planning")).toBeVisible();
   const input = screen.getByRole("textbox", { name: "Add a reference URL" });
 
   await userEvent.fill(input, "ORBIT-375");
@@ -105,10 +117,30 @@ it("adds a pasted URL to the draft and rejects text that is not a Reference", as
   });
 });
 
+it("shows who added a Reference and its full path on hover", async () => {
+  setup();
+  await using screen = await renderDraftReferences();
+  await userEvent.hover(screen.getByRole("button", { name: "outline.md" }));
+  await expect.element(page.getByText("File · added by Planning")).toBeVisible();
+  await expect.element(page.getByText(references[0]!.url)).toBeVisible();
+});
+
+it("opens a file Reference in the side panel of the Thread the floating chat shows", async () => {
+  setup();
+  const shownThread = { environmentId, threadId: planner };
+  useWorkbenchFloatingChatStore.setState({ shownThread });
+  await using screen = await renderDraftReferences();
+  await userEvent.click(screen.getByRole("button", { name: "outline.md" }));
+  expect(
+    selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+  ).toMatchObject({ kind: "file", relativePath: references[0]!.url });
+  expect(mocks.readFile).not.toHaveBeenCalled();
+});
+
 it("reads a file Reference through the environment and reports a missing file", async () => {
   setup();
   await using screen = await renderDraftReferences();
-  await userEvent.click(screen.getByRole("button", { name: /^outline\.md/ }));
+  await userEvent.click(screen.getByRole("button", { name: "outline.md" }));
   await expect.element(page.getByText("This file is no longer available.")).toBeVisible();
   expect(mocks.readFile).toHaveBeenCalledWith({
     environmentId,

@@ -59,6 +59,8 @@ vi.mock("../state/entities", () => {
     readProjects: projects,
     readProject: () => null,
     readThreadShell: () => null,
+    useQuietThreadShell: () => null,
+    useProject: () => null,
     useProjects: projects,
     useServerConfigs: () =>
       new Map([
@@ -86,6 +88,15 @@ vi.mock("../state/query", () => ({
 vi.mock("../components/ui/tooltip", () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
   return { Tooltip: Passthrough, TooltipPopup: Passthrough, TooltipTrigger: Passthrough };
+});
+// Brief links are chips in a hover card, whose trigger needs a DOM this renderer lacks.
+vi.mock("../components/ui/preview-card", () => {
+  const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  return {
+    PreviewCard: Passthrough,
+    PreviewCardPopup: () => null,
+    PreviewCardTrigger: ({ render }: { render: ReactNode }) => <>{render}</>,
+  };
 });
 
 vi.mock("./WorkbenchPullRequestSheet", () => ({
@@ -306,6 +317,37 @@ describe("Workbench pull request navigation", () => {
       useWorkbenchFloatingChatStore.setState({ shownThread: null });
       useRightPanelStore.setState({ byThreadKey: {} });
       navigate.mockClear();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("opens a brief's file link in the side panel of the Thread the floating chat shows", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
+    useWorkbenchFloatingChatStore.setState({ shownThread });
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <WorkbenchPullRequestPreviewProvider>
+            <WorkbenchDescription markdown="Details in [plan.md](/work/artifacts/plan.md)." />
+          </WorkbenchPullRequestPreviewProvider>,
+        );
+      });
+      const click = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+      await act(() =>
+        renderer?.root
+          .findByType("button")
+          .props.onClick({ ...click, metaKey: false, ctrlKey: false }),
+      );
+      expect(click.preventDefault).toHaveBeenCalled();
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+      ).toMatchObject({ kind: "file", relativePath: "/work/artifacts/plan.md" });
+    } finally {
+      await act(() => renderer?.unmount());
+      useWorkbenchFloatingChatStore.setState({ shownThread: null });
+      useRightPanelStore.setState({ byThreadKey: {} });
       vi.unstubAllGlobals();
     }
   });

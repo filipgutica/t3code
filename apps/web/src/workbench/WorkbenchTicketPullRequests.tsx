@@ -32,6 +32,7 @@ import {
   type TicketPullRequestReference,
   type WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
+import type { WorkbenchDescriptionLink } from "./workbenchReferences.logic";
 
 const CheckoutTargets = Schema.Struct({
   environmentId: EnvironmentId,
@@ -59,6 +60,29 @@ const ticketCheckoutPullRequests = Atom.family((key: string) => {
   });
 });
 
+function usePullRequestUnlink({
+  environmentId,
+  ticketId,
+  readOnly,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
+  readonly readOnly: boolean;
+}) {
+  const referenceCommands = useWorkbenchReferenceCommands(environmentId);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const unlink = async (reference: WorkbenchReference) => {
+    setUnlinking(reference.url);
+    setUnlinkError(
+      await referenceCommands
+        .remove({ ticketId, url: reference.url })
+        .finally(() => setUnlinking(null)),
+    );
+  };
+  return { canUnlink: !readOnly && referenceCommands.canEdit, unlinking, unlinkError, unlink };
+}
+
 export function WorkbenchTicketPullRequests({
   readOnly = false,
   environmentId,
@@ -66,6 +90,7 @@ export function WorkbenchTicketPullRequests({
   assignments,
   threadsById,
   references,
+  descriptionPullRequests,
   pullRequests,
   checkouts,
   onOpenThread,
@@ -77,6 +102,8 @@ export function WorkbenchTicketPullRequests({
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   /** The Ticket's `github_pull_request` References. */
   readonly references: ReadonlyArray<WorkbenchReference>;
+  /** PR links in the description that no Reference saves. */
+  readonly descriptionPullRequests?: ReadonlyArray<WorkbenchDescriptionLink>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly checkouts: ReadonlyArray<{
@@ -90,23 +117,17 @@ export function WorkbenchTicketPullRequests({
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
-  const referenceCommands = useWorkbenchReferenceCommands(environmentId);
-  const [unlinking, setUnlinking] = useState<string | null>(null);
-  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const { canUnlink, unlinking, unlinkError, unlink } = usePullRequestUnlink({
+    environmentId,
+    ticketId,
+    readOnly,
+  });
   const rows = mergeWorkbenchTicketPullRequests({
     threadPullRequests: pullRequests,
     checkoutPullRequests: checkout.pullRequests,
     references,
+    descriptionLinks: descriptionPullRequests,
   });
-  const canUnlink = !readOnly && referenceCommands.canEdit;
-  const unlink = async (reference: WorkbenchReference) => {
-    setUnlinking(reference.url);
-    setUnlinkError(
-      await referenceCommands
-        .remove({ ticketId, url: reference.url })
-        .finally(() => setUnlinking(null)),
-    );
-  };
 
   return (
     <section className="flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
@@ -205,6 +226,8 @@ function WorkbenchTicketPullRequestRow({
               Linked through thread: {threadTitle}
             </TooltipPopup>
           </Tooltip>
+        ) : row.inDescription ? (
+          <Badge variant="outline">In description</Badge>
         ) : reference === null ? (
           <Badge variant="secondary">Work area</Badge>
         ) : null}

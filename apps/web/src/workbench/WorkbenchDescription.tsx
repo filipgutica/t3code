@@ -1,46 +1,60 @@
-import type { ReactNode } from "react";
+import type { ElementContent } from "hast";
+import { createContext, use, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
-import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
-import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
+import { parseDescriptionHref } from "./workbenchReferences.logic";
+import {
+  WorkbenchReferenceChip,
+  useWorkbenchReferenceOpener,
+  type WorkbenchReferenceOpener,
+} from "./WorkbenchReferenceLink";
 
-/** Pull request links open in the page's PR preview; other links open a new tab. */
+const DescriptionOpenerContext = createContext<WorkbenchReferenceOpener | null>(null);
+
+const hastText = (nodes: ReadonlyArray<ElementContent>): string =>
+  nodes
+    .map((node) =>
+      node.type === "text" ? node.value : node.type === "element" ? hastText(node.children) : "",
+    )
+    .join("");
+
+/** A link to a Reference is a chip that opens beside the chat; other links open a new tab. */
 function DescriptionLink({
   href,
+  text,
   children,
 }: {
   readonly href: string | undefined;
+  readonly text: string;
   readonly children: ReactNode;
 }) {
-  const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
-  // Resolve like a link in the floating chat's Thread, whose panel the PR opens in.
-  const shownThread = useWorkbenchFloatingChatStore((state) => state.shownThread) ?? undefined;
-  const openChangeRequestLink = useOpenChangeRequestLink(
-    shownThread,
-    shownThread,
-    openWorkbenchPullRequest,
-  );
+  const opener = use(DescriptionOpenerContext);
+  const reference = href === undefined ? null : parseDescriptionHref(href);
+  if (opener === null || reference === null) {
+    return (
+      <a href={href} target="_blank" rel="noreferrer" className="text-primary underline">
+        {children}
+      </a>
+    );
+  }
+  const title = text.trim();
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="text-primary underline"
-      onClick={(event) => {
-        // Without the page's preview the native handler would leave the page for PR review.
-        if (openWorkbenchPullRequest && href) openChangeRequestLink(event, href);
-      }}
-    >
-      {children}
-    </a>
+    <WorkbenchReferenceChip
+      reference={reference}
+      title={title === "" || title === href || title === reference.url ? null : title}
+      opener={opener}
+    />
   );
 }
 
 const descriptionComponents: Components = {
-  a: ({ children, href }) => <DescriptionLink href={href}>{children}</DescriptionLink>,
+  a: ({ children, href, node }) => (
+    <DescriptionLink href={href} text={hastText(node?.children ?? [])}>
+      {children}
+    </DescriptionLink>
+  ),
   pre: ({ children }) => (
     <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3">{children}</pre>
   ),
@@ -58,14 +72,17 @@ export function WorkbenchDescription({
   readonly markdown: string;
   readonly jira?: boolean;
 }) {
+  const opener = useWorkbenchReferenceOpener();
   const content = workbenchDescriptionMarkdown(markdown, jira);
   if (!content.trim())
     return <p className="text-sm text-muted-foreground">No description added yet.</p>;
   return (
     <div className="min-w-0 max-w-[75ch] text-sm leading-relaxed [overflow-wrap:anywhere] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_h1]:mb-2 [&_h1]:mt-5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:mt-4 [&_h3]:font-semibold [&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_li>p]:my-0 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:text-left [&_th]:[overflow-wrap:normal] [&_td]:border [&_td]:border-border [&_td]:p-2 [&_td]:align-top">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionComponents}>
-        {content}
-      </ReactMarkdown>
+      <DescriptionOpenerContext value={opener}>
+        <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionComponents}>
+          {content}
+        </ReactMarkdown>
+      </DescriptionOpenerContext>
     </div>
   );
 }

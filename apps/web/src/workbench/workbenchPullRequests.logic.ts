@@ -15,6 +15,8 @@ import {
   visibleThreadPullRequests,
 } from "@t3tools/client-runtime/thread-pull-requests";
 
+import type { WorkbenchDescriptionLink } from "./workbenchReferences.logic";
+
 export type WorkbenchPullRequestThread = Pick<
   EnvironmentThreadShell,
   "id" | "projectId" | "title" | "pullRequests" | "linkedPullRequest" | "branchPullRequest"
@@ -42,6 +44,8 @@ interface TicketPullRequestRow {
   readonly threadTitle: string | null;
   /** The `github_pull_request` Reference that also lists this PR; Unlink removes only it. */
   readonly reference: WorkbenchReference | null;
+  /** Listed only because the description links it; editing the description removes it. */
+  readonly inDescription?: true;
 }
 
 // One PR can arrive as `/pull/12`, `/pull/12/files`, or with different repository casing.
@@ -52,16 +56,43 @@ const pullRequestIdentity = (url: string) => {
     : url.toLowerCase().replace(/\/$/, "");
 };
 
-/** Thread links, prepared checkouts, and PR References, one row per PR. */
+/** A row for a PR known only by its URL, with no Thread and no looked-up status. */
+const linkOnlyRow = ({
+  url,
+  title,
+}: {
+  readonly url: string;
+  readonly title: string | null;
+}): TicketPullRequestRow | null => {
+  const link = sourceControlClients.parseChangeRequestUrl(url)?.link;
+  return link
+    ? {
+        pullRequest: {
+          repository: link.repository,
+          number: link.number,
+          url,
+          ...(title === null ? {} : { title }),
+        },
+        threadId: null,
+        threadTitle: null,
+        reference: null,
+      }
+    : null;
+};
+
+/** Thread links, prepared checkouts, PR References, and description links, one row per PR. */
 export const mergeWorkbenchTicketPullRequests = ({
   threadPullRequests,
   checkoutPullRequests = [],
   references = [],
+  descriptionLinks = [],
 }: {
   readonly threadPullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly checkoutPullRequests?: ReadonlyArray<TicketPullRequestReference>;
   /** `github_pull_request` References, in list order. */
   readonly references?: ReadonlyArray<WorkbenchReference>;
+  /** PR links in the description, in order. */
+  readonly descriptionLinks?: ReadonlyArray<WorkbenchDescriptionLink> | undefined;
 }): ReadonlyArray<TicketPullRequestRow> => {
   const rows = new Map<string, TicketPullRequestRow>();
   for (const { pullRequest, threadId, threadTitle } of threadPullRequests) {
@@ -84,26 +115,14 @@ export const mergeWorkbenchTicketPullRequests = ({
     });
   }
   for (const reference of references) {
-    const link = sourceControlClients.parseChangeRequestUrl(reference.url)?.link;
-    if (!link) continue;
     const key = pullRequestIdentity(reference.url);
-    const existing = rows.get(key);
-    rows.set(
-      key,
-      existing
-        ? { ...existing, reference }
-        : {
-            pullRequest: {
-              repository: link.repository,
-              number: link.number,
-              url: reference.url,
-              ...(reference.title === null ? {} : { title: reference.title }),
-            },
-            threadId: null,
-            threadTitle: null,
-            reference,
-          },
-    );
+    const row = rows.get(key) ?? linkOnlyRow(reference);
+    if (row) rows.set(key, { ...row, reference });
+  }
+  for (const { parsed, title } of descriptionLinks) {
+    const key = pullRequestIdentity(parsed.url);
+    const row = rows.has(key) ? null : linkOnlyRow({ url: parsed.url, title });
+    if (row) rows.set(key, { ...row, inDescription: true });
   }
   return [...rows.values()];
 };

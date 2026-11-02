@@ -17,6 +17,7 @@ import {
   mergeWorkbenchTicketPullRequests,
   type WorkbenchPullRequestThread,
 } from "./workbenchPullRequests.logic";
+import { workbenchDescriptionLinks } from "./workbenchReferences.logic";
 
 describe("Thread, checkout, and Reference pull requests", () => {
   it("keeps checkout PRs and prefers their status over the Thread's stored link", () => {
@@ -69,6 +70,39 @@ describe("Thread, checkout, and Reference pull requests", () => {
         threadId: null,
         threadTitle: null,
         reference: onlyReference,
+      },
+    ]);
+  });
+
+  it("lists a description-only PR without Unlink and leaves a known PR's row alone", () => {
+    const linked = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Work",
+      pullRequest: pullRequest(1),
+    };
+    const rows = mergeWorkbenchTicketPullRequests({
+      threadPullRequests: [linked],
+      descriptionLinks: workbenchDescriptionLinks(
+        `[Same PR](${linked.pullRequest.url}) and https://github.com/acme/app/pull/7`,
+      ),
+    });
+    expect(rows).toEqual([
+      {
+        pullRequest: linked.pullRequest,
+        threadId: linked.threadId,
+        threadTitle: "Work",
+        reference: null,
+      },
+      {
+        pullRequest: {
+          repository: "acme/app",
+          number: 7,
+          url: "https://github.com/acme/app/pull/7",
+        },
+        threadId: null,
+        threadTitle: null,
+        reference: null,
+        inDescription: true,
       },
     ]);
   });

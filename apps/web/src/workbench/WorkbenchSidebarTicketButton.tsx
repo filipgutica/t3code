@@ -19,7 +19,7 @@ import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.lo
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
-import { WorkbenchReferenceKindIcon } from "./WorkbenchReferences";
+import { WorkbenchReferenceKindIcon } from "./WorkbenchReferenceKindIcon";
 
 function TicketPullRequestPreview({
   pullRequests,

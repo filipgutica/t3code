@@ -1,5 +1,6 @@
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { isWorkspaceImagePreviewPath } from "@t3tools/shared/filePreview";
+import { useState, type ReactNode } from "react";
 
 import { useAssetUrlState } from "../assets/assetUrls";
 import { PreviewImage } from "../components/files/PreviewImage";
@@ -15,6 +16,10 @@ import { Skeleton } from "../components/ui/skeleton";
 import { useEnvironmentQuery } from "../state/query";
 import { projectEnvironment } from "../state/projects";
 import { WorkbenchDescription } from "./WorkbenchDescription";
+import {
+  WorkbenchReferenceFileSheetContext,
+  type OpenReferenceFileSheet,
+} from "./WorkbenchReferenceLink";
 
 function FileContents({
   environmentId,
@@ -80,7 +85,7 @@ function ImageContents({
 }
 
 /** Shows a file Reference read from the environment that owns the Ticket. */
-export function WorkbenchReferenceFileSheet({
+function WorkbenchReferenceFileSheet({
   environmentId,
   cwd,
   path,
@@ -123,5 +128,37 @@ export function WorkbenchReferenceFileSheet({
         </div>
       </SheetPopup>
     </Sheet>
+  );
+}
+
+/** Lets References under it open host files in a sheet when no Thread's panel can show them. */
+export function WorkbenchReferenceFileSheetProvider({
+  environmentId,
+  cwd,
+  threadId,
+  children,
+}: {
+  readonly environmentId: EnvironmentId;
+  /** A repository the host can anchor file reads at; without one, files can't open here. */
+  readonly cwd: string | null;
+  /** One of the owner's Threads, for images a person added; host media reads name a Thread. */
+  readonly threadId: ThreadId | null;
+  readonly children: ReactNode;
+}) {
+  const [file, setFile] = useState<Parameters<OpenReferenceFileSheet>[0] | null>(null);
+  return (
+    <WorkbenchReferenceFileSheetContext value={cwd === null ? null : setFile}>
+      {children}
+      {file !== null && cwd !== null ? (
+        <WorkbenchReferenceFileSheet
+          environmentId={environmentId}
+          cwd={cwd}
+          path={file.parsed.url}
+          label={file.parsed.label}
+          threadId={file.threadId ?? threadId}
+          onClose={() => setFile(null)}
+        />
+      ) : null}
+    </WorkbenchReferenceFileSheetContext>
   );
 }
