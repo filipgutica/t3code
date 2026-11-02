@@ -153,6 +153,53 @@ test("W3 W4 X2: direct routes, history and narrow layout retain Ticket ownership
   );
 });
 
+test("Ticket wheel scrolling over either stacked column reaches the page", async ({
+  page,
+  demo,
+}) => {
+  await page.setViewportSize({ width: 1050, height: 800 });
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
+  );
+  const form = page.locator("form:has(#workbench-ticket-reading)");
+  for (const heading of ["Description", "Progress"]) {
+    const target = page.getByRole("heading", { name: heading, exact: true });
+    await target.scrollIntoViewIfNeeded();
+    await target.hover();
+    const before = await form.evaluate((element) => element.scrollTop);
+    await page.mouse.wheel(0, 300);
+    await expect.poll(() => form.evaluate((element) => element.scrollTop)).toBeGreaterThan(before);
+    const after = await form.evaluate((element) => element.scrollTop);
+    await page.mouse.wheel(0, -300);
+    await expect.poll(() => form.evaluate((element) => element.scrollTop)).toBeLessThan(after);
+  }
+});
+
+test("Ticket wheel scrolling keeps side-by-side columns independent", async ({ page, demo }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await openWorkbench(
+    page,
+    demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
+  );
+  const reading = page.locator('#workbench-ticket-reading [data-slot="scroll-area-viewport"]');
+  const work = page.locator('#workbench-ticket-work [data-slot="scroll-area-viewport"]');
+  await page.getByRole("heading", { name: "Description", exact: true }).hover();
+  await page.mouse.wheel(0, 300);
+  await expect.poll(() => reading.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await work.evaluate((element) => element.scrollTop)).toBe(0);
+  const before = await reading.evaluate((element) => element.scrollTop);
+  await page.getByRole("heading", { name: "Progress", exact: true }).hover();
+  await page.mouse.wheel(0, 300);
+  await expect.poll(() => work.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
+  expect(await reading.evaluate((element) => element.scrollTop)).toBe(before);
+  expect(
+    await page
+      .locator("form:has(#workbench-ticket-reading)")
+      .evaluate((element) => element.scrollTop),
+  ).toBe(0);
+});
+
 test("sidebar Threads restores native Thread context and exits a direct board entry", async ({
   page,
   demo,

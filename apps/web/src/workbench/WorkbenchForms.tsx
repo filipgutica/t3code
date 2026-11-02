@@ -1181,6 +1181,7 @@ function WorkbenchTicketDetailController({
               takes no width and shows only while the pointer is over the column or it scrolls. */}
           <ScrollArea
             id="workbench-ticket-reading"
+            chainVerticalScroll
             role="region"
             aria-label="Ticket description and summary"
             viewportTabIndex={0}
@@ -1249,6 +1250,7 @@ function WorkbenchTicketDetailController({
           <ScrollArea
             render={<aside />}
             id="workbench-ticket-work"
+            chainVerticalScroll
             aria-label="Ticket work"
             viewportTabIndex={0}
             className="min-w-0 scroll-mt-4 @min-[64rem]/ticket:col-start-2 @min-[64rem]/ticket:row-start-1"
