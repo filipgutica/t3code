@@ -657,23 +657,23 @@ const isPageClickOutsideChat = (target: EventTarget | null) =>
   target.closest(CHAT_OWNED_SELECTOR) === null;
 
 /**
- * A click on the page minimizes the chat. Portaled popovers, menus, dialogs, and the side panel
- * sit outside the page column. A press that starts in the chat, such as a resize, never counts.
+ * A click on the page collapses the expanded chat. Portaled popovers, menus, dialogs, and the side
+ * panel sit outside the page column. A press that starts in the chat, such as a resize, never counts.
  */
-function useMinimizeOnPageClick(minimized: boolean, releaseComposerFocus: () => void) {
-  const minimizeStable = useStableCallback(() => {
+function useCollapseOnPageClick(expanded: boolean, releaseComposerFocus: () => void) {
+  const collapseStable = useStableCallback(() => {
     releaseComposerFocus();
-    useWorkbenchFloatingChatStore.getState().minimize();
+    useWorkbenchFloatingChatStore.getState().collapse();
   });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a document listener for page clicks outside the chat, held while the chat shows
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- a document listener for page clicks outside the chat, held while the chat is expanded
   useEffect(() => {
-    if (minimized) return;
+    if (!expanded) return;
     let pressedOutside = false;
     const onPointerDown = (event: PointerEvent) => {
       pressedOutside = isPageClickOutsideChat(event.target);
     };
     const onClick = (event: MouseEvent) => {
-      if (pressedOutside && isPageClickOutsideChat(event.target)) minimizeStable();
+      if (pressedOutside && isPageClickOutsideChat(event.target)) collapseStable();
       pressedOutside = false;
     };
     document.addEventListener("pointerdown", onPointerDown, true);
@@ -682,7 +682,7 @@ function useMinimizeOnPageClick(minimized: boolean, releaseComposerFocus: () => 
       document.removeEventListener("pointerdown", onPointerDown, true);
       document.removeEventListener("click", onClick, true);
     };
-  }, [minimized, minimizeStable]);
+  }, [expanded, collapseStable]);
 }
 
 /** The Thread menu and the chat's actions. */
@@ -809,7 +809,7 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
     mode,
     hosts.controlsHost !== null,
   );
-  useMinimizeOnPageClick(launcher, composerFocus.release);
+  useCollapseOnPageClick(expanded, composerFocus.release);
   const [detailsHandle] = useState(PopoverCreateHandle);
   const detailsAnchorRef = useRef<HTMLDivElement>(null);
   const threadDetails = { anchor: detailsAnchorRef, handle: detailsHandle };
