@@ -90,24 +90,23 @@ export function workbenchDescriptionLinks(
     if ("children" in node) for (const child of node.children) collectDefinitions(child);
   };
   collectDefinitions(tree);
+  const linkUrl = (node: Nodes) =>
+    node.type === "link"
+      ? node.url
+      : node.type === "linkReference"
+        ? definitions.get(node.identifier)
+        : undefined;
   const links = new Map<string, WorkbenchDescriptionLink>();
+  const addLink = (url: string, text: string) => {
+    const parsed = parseWorkbenchReferenceUrl(url);
+    if (parsed === null || links.has(parsed.url)) return;
+    const isAutolink = text === "" || text === url || text === parsed.url;
+    links.set(parsed.url, { parsed, title: isAutolink ? null : text });
+  };
   const visit = (node: Nodes) => {
-    const url =
-      node.type === "link"
-        ? node.url
-        : node.type === "linkReference"
-          ? definitions.get(node.identifier)
-          : undefined;
-    if (url !== undefined) {
-      const parsed = parseWorkbenchReferenceUrl(url);
-      const text = plainText(node).trim();
-      if (parsed !== null && !links.has(parsed.url)) {
-        const isAutolink = text === "" || text === url || text === parsed.url;
-        links.set(parsed.url, { parsed, title: isAutolink ? null : text });
-      }
-      return;
-    }
-    if ("children" in node) for (const child of node.children) visit(child);
+    const url = linkUrl(node);
+    if (url !== undefined) addLink(url, plainText(node).trim());
+    else if ("children" in node) for (const child of node.children) visit(child);
   };
   visit(tree);
   return [...links.values()];

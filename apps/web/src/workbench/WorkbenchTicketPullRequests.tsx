@@ -60,6 +60,29 @@ const ticketCheckoutPullRequests = Atom.family((key: string) => {
   });
 });
 
+function usePullRequestUnlink({
+  environmentId,
+  ticketId,
+  readOnly,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
+  readonly readOnly: boolean;
+}) {
+  const referenceCommands = useWorkbenchReferenceCommands(environmentId);
+  const [unlinking, setUnlinking] = useState<string | null>(null);
+  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const unlink = async (reference: WorkbenchReference) => {
+    setUnlinking(reference.url);
+    setUnlinkError(
+      await referenceCommands
+        .remove({ ticketId, url: reference.url })
+        .finally(() => setUnlinking(null)),
+    );
+  };
+  return { canUnlink: !readOnly && referenceCommands.canEdit, unlinking, unlinkError, unlink };
+}
+
 export function WorkbenchTicketPullRequests({
   readOnly = false,
   environmentId,
@@ -67,7 +90,7 @@ export function WorkbenchTicketPullRequests({
   assignments,
   threadsById,
   references,
-  descriptionPullRequests = [],
+  descriptionPullRequests,
   pullRequests,
   checkouts,
   onOpenThread,
@@ -94,27 +117,17 @@ export function WorkbenchTicketPullRequests({
   const checkout = useAtomValue(
     ticketCheckoutPullRequests(JSON.stringify({ environmentId, checkouts })),
   );
-  const referenceCommands = useWorkbenchReferenceCommands(environmentId);
-  const [unlinking, setUnlinking] = useState<string | null>(null);
-  const [unlinkError, setUnlinkError] = useState<string | null>(null);
+  const { canUnlink, unlinking, unlinkError, unlink } = usePullRequestUnlink({
+    environmentId,
+    ticketId,
+    readOnly,
+  });
   const rows = mergeWorkbenchTicketPullRequests({
     threadPullRequests: pullRequests,
     checkoutPullRequests: checkout.pullRequests,
     references,
-    descriptionLinks: descriptionPullRequests.map(({ parsed, title }) => ({
-      url: parsed.url,
-      title,
-    })),
+    descriptionLinks: descriptionPullRequests,
   });
-  const canUnlink = !readOnly && referenceCommands.canEdit;
-  const unlink = async (reference: WorkbenchReference) => {
-    setUnlinking(reference.url);
-    setUnlinkError(
-      await referenceCommands
-        .remove({ ticketId, url: reference.url })
-        .finally(() => setUnlinking(null)),
-    );
-  };
 
   return (
     <section className="flex min-w-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">

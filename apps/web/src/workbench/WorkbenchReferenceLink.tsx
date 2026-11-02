@@ -1,5 +1,6 @@
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type {
+  ScopedThreadRef,
   ThreadId,
   WorkbenchParsedReferenceUrl,
   WorkbenchReferenceKind,
@@ -70,6 +71,42 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
       linksOpenInApp,
       hasFileSheet: openFileSheet !== null,
     });
+  const openInSidePanel = (thread: ScopedThreadRef, path: string) =>
+    useRightPanelStore.getState().openFile(thread, path);
+  const openInBrowserPanel = (
+    thread: ScopedThreadRef,
+    event: MouseEvent<HTMLElement>,
+    reference: WorkbenchParsedReferenceUrl,
+  ) => {
+    if (reference.kind !== "file") {
+      void openLink(reference.url, { event }).catch((error: unknown) =>
+        toastManager.add({
+          type: "error",
+          title: "Unable to open link",
+          description: error instanceof Error ? error.message : "An error occurred.",
+        }),
+      );
+      return;
+    }
+    const connection = readPreparedConnection(thread.environmentId);
+    if (connection === null) {
+      openInSidePanel(thread, reference.url);
+      return;
+    }
+    // The file panel previews HTML and PDF too, so it stands in when the browser can't open one.
+    void openFileInPreview({
+      threadRef: thread,
+      filePath: reference.url,
+      workspaceRoot: undefined,
+      httpBaseUrl: connection.httpBaseUrl,
+      createAssetUrl,
+      openPreview,
+    }).then((result) => {
+      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
+        openInSidePanel(thread, reference.url);
+      }
+    });
+  };
   return {
     targetOf,
     open: (event, reference, addedByThreadId = null) => {
@@ -82,42 +119,11 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
       // The link's own new tab is the system browser.
       if (target === "system_browser") return;
       event.preventDefault();
-      if (target === "file_sheet") {
+      if (target === "file_sheet")
         openFileSheet?.({ parsed: reference, threadId: addedByThreadId });
-        return;
-      }
-      if (target === "none" || shownThread === undefined) return;
-      const openInPanel = () => useRightPanelStore.getState().openFile(shownThread, reference.url);
-      if (target === "file_panel") {
-        openInPanel();
-        return;
-      }
-      if (reference.kind !== "file") {
-        void openLink(reference.url, { event }).catch((error: unknown) =>
-          toastManager.add({
-            type: "error",
-            title: "Unable to open link",
-            description: error instanceof Error ? error.message : "An error occurred.",
-          }),
-        );
-        return;
-      }
-      const connection = readPreparedConnection(shownThread.environmentId);
-      if (connection === null) {
-        openInPanel();
-        return;
-      }
-      // The file panel previews HTML and PDF too, so it stands in when the browser can't open one.
-      void openFileInPreview({
-        threadRef: shownThread,
-        filePath: reference.url,
-        workspaceRoot: undefined,
-        httpBaseUrl: connection.httpBaseUrl,
-        createAssetUrl,
-        openPreview,
-      }).then((result) => {
-        if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) openInPanel();
-      });
+      else if (shownThread === undefined || target === "none") return;
+      else if (target === "file_panel") openInSidePanel(shownThread, reference.url);
+      else openInBrowserPanel(shownThread, event, reference);
     },
   };
 }

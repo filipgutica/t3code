@@ -17,6 +17,7 @@ import {
   mergeWorkbenchTicketPullRequests,
   type WorkbenchPullRequestThread,
 } from "./workbenchPullRequests.logic";
+import { workbenchDescriptionLinks } from "./workbenchReferences.logic";
 
 describe("Thread, checkout, and Reference pull requests", () => {
   it("keeps checkout PRs and prefers their status over the Thread's stored link", () => {
@@ -81,10 +82,9 @@ describe("Thread, checkout, and Reference pull requests", () => {
     };
     const rows = mergeWorkbenchTicketPullRequests({
       threadPullRequests: [linked],
-      descriptionLinks: [
-        { url: linked.pullRequest.url, title: "Same PR" },
-        { url: "https://github.com/acme/app/pull/7", title: null },
-      ],
+      descriptionLinks: workbenchDescriptionLinks(
+        `[Same PR](${linked.pullRequest.url}) and https://github.com/acme/app/pull/7`,
+      ),
     });
     expect(rows).toEqual([
       {
