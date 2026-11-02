@@ -458,14 +458,13 @@
     "scripts/merge-update-manifests.test.ts",
     "scripts/resolve-workbench-daily-release.test.ts",
     "scripts/workbench-published-release.test.ts",
-    "scripts/workbench-verify-stable-release.test.ts"
+    "scripts/workbench-release.test.ts"
   ],
   "packagingPaths": [
     "scripts/workbench-release-notes.ts",
     "scripts/lib/workbench-release-notes.ts",
     ".github/workflows/workbench-release.yml",
     ".github/workflows/workbench-daily-release.yml",
-    ".github/workflows/workbench-publish-stable.yml",
     "apps/desktop/",
     "scripts/build-desktop-artifact.ts",
     "scripts/build-cli-archive.ts",
@@ -473,7 +472,6 @@
     "scripts/update-release-package-versions.ts",
     "scripts/resolve-workbench-daily-release.ts",
     "scripts/workbench-published-release.ts",
-    "scripts/workbench-verify-stable-release.ts",
     "scripts/merge-update-manifests.ts",
     "scripts/release-smoke.ts",
     "package.json",
@@ -499,7 +497,6 @@
     "workbench-pages.yml",
     "workbench-preview-check.yml",
     "workbench-preview.yml",
-    "workbench-publish-stable.yml",
     "workbench-quality.yml",
     "workbench-regression-live.yml",
     "workbench-regression.yml",

@@ -99,4 +99,4 @@ Exit code zero confirms that the recorded upstream commit is an ancestor of the 
 
 Release the fork from its `main` through a separate fork-owned distribution channel. Upstream releases do not contain the Workbench overlay.
 
-The nightly workflow selects the newest first-parent main checkpoint whose integrated upstream baseline matches the latest published upstream nightly, then requires successful feature and quality runs for that exact SHA. If main contains unreleased upstream work, it can select an earlier verified checkpoint without changing main. A missing eligible checkpoint or a latest upstream stable release skips the nightly; stable releases retain their separate release route. Before publishing a nightly, the release workflow rechecks that the selected upstream tag remains published and resolves to the recorded pin.
+Published upstream tags drive matching nightly or stable releases and version bump types; Workbench keeps its own version numbers. Own nightly and stable releases use main HEAD independently of upstream syncs. The release gate is successful Workbench feature CI and Workbench quality on the exact released commit.

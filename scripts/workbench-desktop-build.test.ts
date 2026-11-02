@@ -11,11 +11,7 @@ it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
   it.effect("uses package.json for the Node version in Workbench release workflows", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;
-      for (const filename of [
-        "workbench-release.yml",
-        "workbench-daily-release.yml",
-        "workbench-publish-stable.yml",
-      ]) {
+      for (const filename of ["workbench-release.yml", "workbench-daily-release.yml"]) {
         const workflow = yield* fs.readFileString(
           `${import.meta.dirname}/../.github/workflows/${filename}`,
         );

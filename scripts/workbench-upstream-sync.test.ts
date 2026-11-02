@@ -180,6 +180,29 @@ const runStep = (root: string, name: string, preamble = "", env = {}) =>
     },
   );
 
+it.each(["nightly", "stable"])("requests the matching %s release from main", (channel) =>
+  workflowFixture((root) => {
+    const tag = channel === "nightly" ? "v0.2.0-nightly.20261101.1" : "v0.2.0";
+    const result = runStep(
+      root,
+      "Request the matching Workbench release",
+      'gh() { echo "$*" > "$RUNNER_TEMP/release-request"; }',
+      {
+        UPSTREAM_TAG: tag,
+        UPSTREAM_CHANNEL: channel,
+        UPSTREAM_BUMP: "minor",
+      },
+    );
+    assert.equal(result.status, 0, result.stderr);
+    const request = NodeFS.readFileSync(NodePath.join(root, "release-request"), "utf8");
+    assert.include(
+      request,
+      "workflow run workbench-daily-release.yml --repo filipgutica/t3code --ref main",
+    );
+    assert.include(request, `-f upstream_tag=${tag} -f channel=${channel} -f bump=minor`);
+  }),
+);
+
 it.each([
   {
     advanceBase: false,
@@ -272,7 +295,7 @@ it.each([
     proceed: true,
     summary: null,
   },
-])("previews $name successfully but preserves real failures", (testCase) => {
+])("reports $name without silently skipping conflicts", (testCase) => {
   const fixture = createFixture(testCase.conflicts, testCase.files);
   try {
     // The preview reads the committed policy, so the working tree can run the real scripts.
@@ -285,7 +308,7 @@ it.each([
     ]);
     runGit(fixture.repository, ["switch", "product"]);
     const result = runStep(fixture.repository, "Preview merge");
-    assert.equal(result.status, 0, result.stderr);
+    assert.equal(result.status, testCase.proceed ? 0 : 2, result.stderr);
     assert.include(
       NodeFS.readFileSync(NodePath.join(fixture.repository, "outputs"), "utf8"),
       `proceed=${testCase.proceed}\n`,

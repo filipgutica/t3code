@@ -28,6 +28,9 @@ jobs:
       integrated: ${{ steps.pending.outputs.integrated }}
       product_sha: ${{ steps.pending.outputs.product_sha }}
       verified_sha: ${{ steps.bundle.outputs.verified_sha }}
+      upstream_tag: ${{ steps.upstream.outputs.tag }}
+      upstream_channel: ${{ steps.upstream.outputs.channel }}
+      upstream_bump: ${{ steps.upstream.outputs.bump }}
     steps:
       - name: Checkout product branch
         uses: actions/checkout@v6
@@ -43,13 +46,14 @@ jobs:
         with:
           node-version-file: package.json
 
-      - name: Fetch published T3 Code upstream
+      - id: upstream
+        name: Fetch published T3 Code upstream
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           gh api --paginate --slurp /repos/pingdotgg/t3code/releases?per_page=100 > "$RUNNER_TEMP/upstream-releases.json"
-          tag="$(node scripts/workbench-published-release.ts --releases-file "$RUNNER_TEMP/upstream-releases.json" | jq -er .tag)"
+          tag="$(node scripts/workbench-published-release.ts --releases-file "$RUNNER_TEMP/upstream-releases.json" --github-output "$GITHUB_OUTPUT" | jq -er .tag)"
           git remote add upstream https://github.com/pingdotgg/t3code.git
           git fetch --no-tags upstream "+refs/tags/$tag:refs/remotes/upstream/published"
           echo "Published upstream: $tag ($(git rev-parse 'upstream/published^{commit}'))" >> "$GITHUB_STEP_SUMMARY"
@@ -92,7 +96,9 @@ jobs:
               jq -r '.conflictPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
               echo "Upstream changes to active workflows or actions, which need review:"
               jq -r '.ciReviewPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
+              echo "Resolve the published pin in a PR and list these conflicts. Use sol-loop for low-risk fixes; hand substantial or high-risk conflicts to the maintainer."
             } >> "$GITHUB_STEP_SUMMARY"
+            exit 2
           elif [[ "$status" == 0 ]]; then
             echo "proceed=true" >> "$GITHUB_OUTPUT"
           else
@@ -282,7 +288,7 @@ jobs:
               --base "$PRODUCT_BRANCH" \
               --head "$SYNC_BRANCH" \
               --title "chore: sync T3 Code upstream" \
-              --body "Automated merge of pingdotgg/t3code main into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened. This workflow merges only the exact verified head with a merge commit, never squash or rebase, to preserve upstream ancestry for future syncs." \
+              --body "Automated merge of a published pingdotgg/t3code release into the Workbench product branch. Focused Workbench tests, typechecks, desktop build, and desktop smoke passed before this PR was opened. This workflow merges only the exact verified head with a merge commit, never squash or rebase, to preserve upstream ancestry for future syncs." \
               > /dev/null
             pr_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$PRODUCT_BRANCH" --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')"
           fi
@@ -416,3 +422,12 @@ jobs:
               exit 1
             fi
           done
+
+      - name: Request the matching Workbench release
+        env:
+          UPSTREAM_TAG: ${{ needs.verify.outputs.upstream_tag }}
+          UPSTREAM_CHANNEL: ${{ needs.verify.outputs.upstream_channel }}
+          UPSTREAM_BUMP: ${{ needs.verify.outputs.upstream_bump }}
+        run: |
+          gh workflow run workbench-daily-release.yml --repo "$GITHUB_REPOSITORY" --ref "$PRODUCT_BRANCH" \
+            -f "upstream_tag=$UPSTREAM_TAG" -f "channel=$UPSTREAM_CHANNEL" -f "bump=$UPSTREAM_BUMP"
