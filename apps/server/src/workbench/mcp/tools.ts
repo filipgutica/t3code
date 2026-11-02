@@ -45,7 +45,8 @@ const WorkstreamUpdateInput = Schema.Struct({
   title: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(240))),
   brief: Schema.optional(
     Schema.String.check(Schema.isMaxLength(120_000)).annotate({
-      description: "Goal, open questions, decisions. Replaces the brief.",
+      description:
+        "Goal, open questions, decisions; sources as Markdown links. Replaces the brief.",
     }),
   ),
   progress: Schema.optional(

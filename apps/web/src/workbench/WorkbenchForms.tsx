@@ -166,6 +166,8 @@ import {
   type WorkbenchTicketDraft,
 } from "./workbenchDraftStore";
 import { WorkbenchDescription } from "./WorkbenchDescription";
+import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
 import {
   useWorkbenchCheckoutStatusRefresh,
   WorkbenchCheckoutDirectory,
@@ -188,7 +190,9 @@ import {
   getReferenceFileCwd,
   getTicketIssue,
   hasJiraReference,
+  listWorkbenchTicketReferences,
   splitWorkbenchReferences,
+  workbenchDescriptionLinks,
 } from "./workbenchReferences.logic";
 import { WorkbenchTicketPullRequests } from "./WorkbenchTicketPullRequests";
 import {
@@ -1058,6 +1062,10 @@ function WorkbenchTicketDetailController({
     ],
   });
   const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
+  const jira = hasJiraReference(references);
+  const descriptionLinks = workbenchDescriptionLinks(
+    workbenchDescriptionMarkdown(displayedMarkdown, jira),
+  );
   // Thread links on the Ticket show the Thread in its floating chat, which offers the full page.
   const showThreadInChat = (threadId: ThreadId) => {
     const { pageChat } = useWorkbenchFloatingChatStore.getState();
@@ -1199,42 +1207,47 @@ function WorkbenchTicketDetailController({
               )}
             >
               {error ? <WorkbenchInlineError message={error} onRetry={onRetryError} /> : null}
-              <WorkbenchTicketDescriptionPanel
-                presentation={{
-                  editing: editing,
-                  isArchived: isArchived,
-                  pending: pending,
-                  startEditing: startEditing,
-                  draft: draft,
-                  cancelEditing: cancelEditing,
-                  dirty: dirty,
-                  displayedMarkdown: displayedMarkdown,
-                }}
-                actions={{ setDraft: setDraft }}
-                context={{ environmentId: environmentId }}
-                records={{
-                  ticket: ticket,
-                  jira: hasJiraReference(references),
-                  updatedBy: workbenchThreadTitle(
-                    ticket.updatedByThreadId,
-                    threadsById,
-                    archivedThreadsById,
-                  ),
-                }}
-              />
-              <WorkbenchTicketReferencesPanel
+              <WorkbenchReferenceFileSheetProvider
                 environmentId={environmentId}
-                ticketId={ticket.id}
-                references={references}
-                threadsById={threadsById}
-                archivedThreadsById={archivedThreadsById}
-                readOnly={workspaceReadOnly}
-                fileCwd={getReferenceFileCwd(linkedProjects, [
+                cwd={getReferenceFileCwd(linkedProjects, [
                   ticket.primaryT3ProjectId,
                   ...ticket.repositoryProjectIds,
                 ])}
-                fileThreadId={(assignment ?? activeAssignments[0])?.threadId ?? null}
-              />
+                threadId={(assignment ?? activeAssignments[0])?.threadId ?? null}
+              >
+                <WorkbenchTicketDescriptionPanel
+                  presentation={{
+                    editing: editing,
+                    isArchived: isArchived,
+                    pending: pending,
+                    startEditing: startEditing,
+                    draft: draft,
+                    cancelEditing: cancelEditing,
+                    dirty: dirty,
+                    displayedMarkdown: displayedMarkdown,
+                  }}
+                  actions={{ setDraft: setDraft }}
+                  context={{ environmentId: environmentId }}
+                  records={{
+                    ticket: ticket,
+                    jira,
+                    updatedBy: workbenchThreadTitle(
+                      ticket.updatedByThreadId,
+                      threadsById,
+                      archivedThreadsById,
+                    ),
+                  }}
+                />
+                <WorkbenchTicketReferencesPanel
+                  environmentId={environmentId}
+                  ticketId={ticket.id}
+                  references={references}
+                  descriptionLinks={descriptionLinks}
+                  threadsById={threadsById}
+                  archivedThreadsById={archivedThreadsById}
+                  readOnly={workspaceReadOnly}
+                />
+              </WorkbenchReferenceFileSheetProvider>
               <WorkbenchTicketSummaryPanel
                 key={`${ticket.id}:${summaryFailedEmpty}`}
                 summaryHeaderLabel={summaryHeaderLabel}
@@ -1344,6 +1357,10 @@ function WorkbenchTicketDetailController({
                 references={splitWorkbenchReferences(references).pullRequests.map(
                   (view) => view.reference,
                 )}
+                descriptionPullRequests={
+                  listWorkbenchTicketReferences(references, descriptionLinks)
+                    .descriptionPullRequests
+                }
                 pullRequests={associatedPullRequests}
                 checkouts={getWorkbenchTicketPullRequestCheckouts({
                   workspace: ticketWorkspace,

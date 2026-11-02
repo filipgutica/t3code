@@ -42,6 +42,8 @@ interface TicketPullRequestRow {
   readonly threadTitle: string | null;
   /** The `github_pull_request` Reference that also lists this PR; Unlink removes only it. */
   readonly reference: WorkbenchReference | null;
+  /** Listed only because the description links it; editing the description removes it. */
+  readonly inDescription?: true;
 }
 
 // One PR can arrive as `/pull/12`, `/pull/12/files`, or with different repository casing.
@@ -52,16 +54,22 @@ const pullRequestIdentity = (url: string) => {
     : url.toLowerCase().replace(/\/$/, "");
 };
 
-/** Thread links, prepared checkouts, and PR References, one row per PR. */
+/** Thread links, prepared checkouts, PR References, and description links, one row per PR. */
 export const mergeWorkbenchTicketPullRequests = ({
   threadPullRequests,
   checkoutPullRequests = [],
   references = [],
+  descriptionLinks = [],
 }: {
   readonly threadPullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly checkoutPullRequests?: ReadonlyArray<TicketPullRequestReference>;
   /** `github_pull_request` References, in list order. */
   readonly references?: ReadonlyArray<WorkbenchReference>;
+  /** PR links in the description, in order. */
+  readonly descriptionLinks?: ReadonlyArray<{
+    readonly url: string;
+    readonly title: string | null;
+  }>;
 }): ReadonlyArray<TicketPullRequestRow> => {
   const rows = new Map<string, TicketPullRequestRow>();
   for (const { pullRequest, threadId, threadTitle } of threadPullRequests) {
@@ -104,6 +112,23 @@ export const mergeWorkbenchTicketPullRequests = ({
             reference,
           },
     );
+  }
+  for (const { url, title } of descriptionLinks) {
+    const link = sourceControlClients.parseChangeRequestUrl(url)?.link;
+    const key = pullRequestIdentity(url);
+    if (!link || rows.has(key)) continue;
+    rows.set(key, {
+      pullRequest: {
+        repository: link.repository,
+        number: link.number,
+        url,
+        ...(title === null ? {} : { title }),
+      },
+      threadId: null,
+      threadTitle: null,
+      reference: null,
+      inDescription: true,
+    });
   }
   return [...rows.values()];
 };

@@ -32,6 +32,7 @@ import {
   type TicketPullRequestReference,
   type WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
+import type { WorkbenchDescriptionLink } from "./workbenchReferences.logic";
 
 const CheckoutTargets = Schema.Struct({
   environmentId: EnvironmentId,
@@ -66,6 +67,7 @@ export function WorkbenchTicketPullRequests({
   assignments,
   threadsById,
   references,
+  descriptionPullRequests = [],
   pullRequests,
   checkouts,
   onOpenThread,
@@ -77,6 +79,8 @@ export function WorkbenchTicketPullRequests({
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   /** The Ticket's `github_pull_request` References. */
   readonly references: ReadonlyArray<WorkbenchReference>;
+  /** PR links in the description that no Reference saves. */
+  readonly descriptionPullRequests?: ReadonlyArray<WorkbenchDescriptionLink>;
   readonly pullRequests: ReadonlyArray<WorkbenchTicketPullRequest>;
   readonly onOpenThread: (threadId: ThreadId) => void;
   readonly checkouts: ReadonlyArray<{
@@ -97,6 +101,10 @@ export function WorkbenchTicketPullRequests({
     threadPullRequests: pullRequests,
     checkoutPullRequests: checkout.pullRequests,
     references,
+    descriptionLinks: descriptionPullRequests.map(({ parsed, title }) => ({
+      url: parsed.url,
+      title,
+    })),
   });
   const canUnlink = !readOnly && referenceCommands.canEdit;
   const unlink = async (reference: WorkbenchReference) => {
@@ -205,6 +213,8 @@ function WorkbenchTicketPullRequestRow({
               Linked through thread: {threadTitle}
             </TooltipPopup>
           </Tooltip>
+        ) : row.inDescription ? (
+          <Badge variant="outline">In description</Badge>
         ) : reference === null ? (
           <Badge variant="secondary">Work area</Badge>
         ) : null}

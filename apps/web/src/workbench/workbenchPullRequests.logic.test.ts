@@ -73,6 +73,40 @@ describe("Thread, checkout, and Reference pull requests", () => {
     ]);
   });
 
+  it("lists a description-only PR without Unlink and leaves a known PR's row alone", () => {
+    const linked = {
+      threadId: ThreadId.make("thread"),
+      threadTitle: "Work",
+      pullRequest: pullRequest(1),
+    };
+    const rows = mergeWorkbenchTicketPullRequests({
+      threadPullRequests: [linked],
+      descriptionLinks: [
+        { url: linked.pullRequest.url, title: "Same PR" },
+        { url: "https://github.com/acme/app/pull/7", title: null },
+      ],
+    });
+    expect(rows).toEqual([
+      {
+        pullRequest: linked.pullRequest,
+        threadId: linked.threadId,
+        threadTitle: "Work",
+        reference: null,
+      },
+      {
+        pullRequest: {
+          repository: "acme/app",
+          number: 7,
+          url: "https://github.com/acme/app/pull/7",
+        },
+        threadId: null,
+        threadTitle: null,
+        reference: null,
+        inDescription: true,
+      },
+    ]);
+  });
+
   it("separates the same repository and number on different hosts", () => {
     const enterprise = { ...pullRequest(1), url: "https://git.example.com/acme/repo/pull/1" };
     const linked = {

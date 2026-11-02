@@ -8,35 +8,37 @@ import {
   type WorkbenchParsedReferenceUrl,
   type WorkbenchReference,
   type WorkbenchReferenceDraft,
-  type WorkbenchReferenceKind,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import {
-  BotIcon,
-  CircleDotIcon,
-  ExternalLinkIcon,
-  FileTextIcon,
-  LinkIcon,
-  PlusIcon,
-  XIcon,
-} from "lucide-react";
+import { BotIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
-import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
-import { WorkbenchJiraIcon } from "./WorkbenchJiraIcon";
-import { WorkbenchReferenceFileSheet } from "./WorkbenchReferenceFileSheet";
+import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
+import { WorkbenchReferenceKindIcon } from "./WorkbenchReferenceKindIcon";
+import {
+  WorkbenchReferenceHoverCard,
+  workbenchReferenceOpenNote,
+  workbenchReferenceTarget,
+  useWorkbenchReferenceOpener,
+  type WorkbenchReferenceOpener,
+} from "./WorkbenchReferenceLink";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
 } from "./WorkbenchTicketPanelHeader";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
-import { splitWorkbenchReferences, type WorkbenchReferenceView } from "./workbenchReferences.logic";
+import {
+  listWorkbenchTicketReferences,
+  splitWorkbenchReferences,
+  type WorkbenchDescriptionLink,
+  type WorkbenchReferenceView,
+} from "./workbenchReferences.logic";
 
 type ThreadTitles = ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
 
@@ -57,25 +59,6 @@ export function WorkbenchProvenanceBadge({ text }: { readonly text: string }) {
       <span className="truncate">{text}</span>
     </Badge>
   );
-}
-
-const KIND_ICONS = {
-  jira_issue: WorkbenchJiraIcon,
-  github_issue: CircleDotIcon,
-  github_pull_request: PullRequestGlyph.pullRequest,
-  file: FileTextIcon,
-  link: LinkIcon,
-} satisfies Record<WorkbenchReferenceKind, unknown>;
-
-export function WorkbenchReferenceKindIcon({
-  kind,
-  className,
-}: {
-  readonly kind: WorkbenchReferenceKind;
-  readonly className?: string;
-}) {
-  const Icon = KIND_ICONS[kind];
-  return <Icon aria-hidden className={className} />;
 }
 
 /** An issue Reference's label, opening its URL. */
@@ -279,75 +262,69 @@ function WorkbenchUrlForm({
   );
 }
 
-type ReferenceRowView = {
-  readonly reference: Pick<WorkbenchReference, "url" | "title">;
+interface ReferenceRowView {
+  readonly url: string;
+  readonly title: string | null;
   readonly parsed: WorkbenchParsedReferenceUrl;
-};
-
-function ReferenceRowTarget({
-  parsed,
-  onOpenFile,
-  children,
-}: {
-  readonly parsed: WorkbenchParsedReferenceUrl;
-  readonly onOpenFile: (() => void) | undefined;
-  readonly children: ReactNode;
-}) {
-  const className =
-    "flex min-w-0 max-w-full flex-col items-start gap-1 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
-  // A file path is only meaningful on the host, so it opens through the environment.
-  if (parsed.kind === "file") {
-    return onOpenFile ? (
-      <button type="button" className={className} onClick={onOpenFile}>
-        {children}
-      </button>
-    ) : (
-      <span className={className}>{children}</span>
-    );
-  }
-  return (
-    <a href={parsed.url} target="_blank" rel="noopener noreferrer" className={className}>
-      {children}
-    </a>
-  );
+  readonly addedByThreadId: ThreadId | null;
+  /** Where the Reference comes from, for its hover card, such as "added by Planning". */
+  readonly source: string | undefined;
+  /** A link in the description, removed by editing the description. */
+  readonly fromDescription: boolean;
 }
 
+const descriptionRow = ({ parsed, title }: WorkbenchDescriptionLink): ReferenceRowView => ({
+  url: parsed.url,
+  title,
+  parsed,
+  addedByThreadId: null,
+  source: "from the description",
+  fromDescription: true,
+});
+
 function WorkbenchReferenceRow({
-  view: { reference, parsed },
-  addedBy,
+  view,
+  opener,
   removeDisabled,
   onRemove,
-  onOpenFile,
 }: {
   readonly view: ReferenceRowView;
-  readonly addedBy: string | null;
+  readonly opener: WorkbenchReferenceOpener;
   readonly removeDisabled: boolean | null;
   readonly onRemove: () => void;
-  readonly onOpenFile?: (() => void) | undefined;
 }) {
-  const host = URL.canParse(parsed.url) ? new URL(parsed.url).host : null;
+  const name = view.title ?? view.parsed.label;
+  const opens = workbenchReferenceOpenNote(opener, view.parsed);
   return (
-    <li className="flex min-w-0 items-start gap-2 py-3 first:pt-0 last:pb-0">
-      <div className="flex min-w-0 flex-1 flex-col items-start gap-1.5">
-        <ReferenceRowTarget parsed={parsed} onOpenFile={onOpenFile}>
-          <span className="break-words text-sm font-medium leading-5 [overflow-wrap:anywhere] hover:underline">
-            {reference.title ?? parsed.label}
-          </span>
-          <span className="flex min-w-0 max-w-full items-center gap-1.5 text-xs leading-5 text-muted-foreground">
-            <WorkbenchReferenceKindIcon kind={parsed.kind} className="size-3.5 shrink-0" />
-            {parsed.label !== host ? (
-              <span className="truncate font-mono">
-                {parsed.kind === "file" ? parsed.url : parsed.label}
-              </span>
-            ) : null}
-            {host ? <span className="truncate">{host}</span> : null}
-          </span>
-        </ReferenceRowTarget>
-        {addedBy !== null ? <WorkbenchProvenanceBadge text={`Added by ${addedBy}`} /> : null}
-      </div>
-      {removeDisabled === null ? null : (
+    <li className="flex min-h-8 min-w-0 items-center gap-2">
+      <WorkbenchReferenceHoverCard
+        reference={view.parsed}
+        title={name}
+        source={view.source}
+        note={view.fromDescription ? `${opens}. Remove it by editing the description.` : opens}
+        trigger={workbenchReferenceTarget({
+          reference: view.parsed,
+          opener,
+          addedByThreadId: view.addedByThreadId,
+          className:
+            "flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm outline-none hover:underline focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+          children: (
+            <>
+              <WorkbenchReferenceKindIcon
+                kind={view.parsed.kind}
+                url={view.parsed.url}
+                className="size-4 shrink-0 text-muted-foreground"
+              />
+              <span className="truncate">{name}</span>
+            </>
+          ),
+        })}
+      />
+      {view.fromDescription ? (
+        <span className="shrink-0 text-xs text-muted-foreground">In description</span>
+      ) : removeDisabled === null ? null : (
         <Button
-          aria-label={`Remove reference ${reference.title ?? parsed.label}`}
+          aria-label={`Remove reference ${name}`}
           size="icon-xs"
           type="button"
           variant="ghost"
@@ -367,26 +344,20 @@ type OwnedReferencesInput = {
   readonly threadsById: ThreadTitles;
   readonly archivedThreadsById: ThreadTitles;
   readonly readOnly: boolean;
-  /** A repository the host can anchor file reads at; file References open from it. */
-  readonly fileCwd: string | null;
-  /** One of the owner's Threads, for images a person added; host media reads name a Thread. */
-  readonly fileThreadId: ThreadId | null;
 };
 
-/** Rows, removal, and file previews for a saved Ticket's or draft's References. */
+/** Rows and removal for a saved Ticket's or draft's References. */
 function useOwnedReferences({
   environmentId,
   ownerId,
   threadsById,
   archivedThreadsById,
   readOnly,
-  fileCwd,
-  fileThreadId,
 }: OwnedReferencesInput) {
   const commands = useWorkbenchReferenceCommands(environmentId);
+  const opener = useWorkbenchReferenceOpener();
   const [pendingUrl, setPendingUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [file, setFile] = useState<WorkbenchReferenceView | null>(null);
   const editable = !readOnly && commands.canEdit;
   const remove = async (url: string) => {
     setPendingUrl(url);
@@ -397,34 +368,31 @@ function useOwnedReferences({
     editable,
     pendingUrl,
     error,
-    rows: (views: ReadonlyArray<WorkbenchReferenceView>) =>
+    savedRow: ({ reference, parsed }: WorkbenchReferenceView): ReferenceRowView => {
+      const addedBy = workbenchThreadTitle(
+        reference.addedByThreadId,
+        threadsById,
+        archivedThreadsById,
+      );
+      return {
+        url: reference.url,
+        title: reference.title,
+        parsed,
+        addedByThreadId: reference.addedByThreadId,
+        source: addedBy === null ? undefined : `added by ${addedBy}`,
+        fromDescription: false,
+      };
+    },
+    rows: (views: ReadonlyArray<ReferenceRowView>) =>
       views.map((view) => (
         <WorkbenchReferenceRow
-          key={view.reference.url}
+          key={view.url}
           view={view}
-          addedBy={workbenchThreadTitle(
-            view.reference.addedByThreadId,
-            threadsById,
-            archivedThreadsById,
-          )}
+          opener={opener}
           removeDisabled={editable ? pendingUrl !== null : null}
-          onRemove={() => void remove(view.reference.url)}
-          onOpenFile={
-            fileCwd !== null && view.parsed.kind === "file" ? () => setFile(view) : undefined
-          }
+          onRemove={() => void remove(view.url)}
         />
       )),
-    sheet:
-      file !== null && fileCwd !== null ? (
-        <WorkbenchReferenceFileSheet
-          environmentId={environmentId}
-          cwd={fileCwd}
-          path={file.parsed.url}
-          label={file.parsed.label}
-          threadId={file.reference.addedByThreadId ?? fileThreadId}
-          onClose={() => setFile(null)}
-        />
-      ) : null,
   };
 }
 
@@ -436,22 +404,26 @@ function ReferenceError({ message }: { readonly message: string | null }) {
   ) : null;
 }
 
-/** Links to issues, specs, and designs; pull request References show under Pull requests. */
+/** Saved References and the description's links; pull requests show under Pull requests. */
 export function WorkbenchTicketReferencesPanel({
   ticketId,
   references,
+  descriptionLinks,
   ...owner
 }: Omit<OwnedReferencesInput, "ownerId"> & {
   readonly ticketId: WorkbenchTicketId;
   readonly references: ReadonlyArray<WorkbenchReference>;
+  readonly descriptionLinks: ReadonlyArray<WorkbenchDescriptionLink>;
 }) {
   const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("references");
   const contentId = useId();
-  const { commands, editable, pendingUrl, error, rows, sheet } = useOwnedReferences({
+  const { commands, editable, pendingUrl, error, rows, savedRow } = useOwnedReferences({
     ...owner,
     ownerId: ticketId,
   });
-  const { listed } = splitWorkbenchReferences(references);
+  const listed = listWorkbenchTicketReferences(references, descriptionLinks).listed.map((item) =>
+    item.source === "saved" ? savedRow(item) : descriptionRow(item),
+  );
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <WorkbenchTicketPanelHeader
@@ -489,13 +461,12 @@ export function WorkbenchTicketReferencesPanel({
       />
       <div id={contentId} hidden={collapsed} className="min-w-0 space-y-2 px-4 pb-4">
         {listed.length > 0 ? (
-          <ul className="divide-y divide-border/50">{rows(listed)}</ul>
+          <ul>{rows(listed)}</ul>
         ) : (
           <p className="text-xs leading-5 text-muted-foreground">No references yet.</p>
         )}
         <ReferenceError message={error} />
       </div>
-      {sheet}
     </section>
   );
 }
@@ -581,23 +552,42 @@ function ReferenceSection({
         </p>
       </div>
       {rows.length > 0 ? (
-        <ul className="divide-y divide-border/50 rounded-lg border border-border/60 p-3">{rows}</ul>
+        <ul className="rounded-lg border border-border/60 px-3 py-1">{rows}</ul>
       ) : null}
       {input}
     </section>
   );
 }
 
-/** A draft's References, edited in place; agent additions arrive with the snapshot. */
-export function WorkbenchDraftReferences({
-  draftId,
-  references,
-  ...owner
-}: Omit<OwnedReferencesInput, "ownerId"> & {
+type DraftReferencesProps = Omit<OwnedReferencesInput, "ownerId"> & {
   readonly draftId: WorkbenchTicketId;
   readonly references: ReadonlyArray<WorkbenchReference>;
+};
+
+/** A draft's References, edited in place; agent additions arrive with the snapshot. */
+export function WorkbenchDraftReferences({
+  fileCwd,
+  fileThreadId,
+  ...props
+}: DraftReferencesProps & {
+  /** A repository the host can anchor file reads at; file References open from it. */
+  readonly fileCwd: string | null;
+  /** One of the draft's Threads, for images a person added; host media reads name a Thread. */
+  readonly fileThreadId: ThreadId | null;
 }) {
-  const { commands, editable, pendingUrl, error, rows, sheet } = useOwnedReferences({
+  return (
+    <WorkbenchReferenceFileSheetProvider
+      environmentId={props.environmentId}
+      cwd={fileCwd}
+      threadId={fileThreadId}
+    >
+      <DraftReferences {...props} />
+    </WorkbenchReferenceFileSheetProvider>
+  );
+}
+
+function DraftReferences({ draftId, references, ...owner }: DraftReferencesProps) {
+  const { commands, editable, pendingUrl, error, rows, savedRow } = useOwnedReferences({
     ...owner,
     ownerId: draftId,
   });
@@ -606,7 +596,7 @@ export function WorkbenchDraftReferences({
   return (
     <>
       <ReferenceSection
-        rows={rows([...listed, ...pullRequests])}
+        rows={rows([...listed, ...pullRequests].map(savedRow))}
         input={
           editable ? (
             <WorkbenchReferencePasteInput
@@ -617,7 +607,6 @@ export function WorkbenchDraftReferences({
         }
       />
       <ReferenceError message={error} />
-      {sheet}
     </>
   );
 }
@@ -632,10 +621,20 @@ export function WorkbenchStagedReferences({
   readonly disabled: boolean;
   readonly onChange: (references: ReadonlyArray<WorkbenchReferenceDraft>) => void;
 }) {
-  const views = references.flatMap((reference) => {
+  const opener = useWorkbenchReferenceOpener();
+  const views = references.flatMap((reference): ReadonlyArray<ReferenceRowView> => {
     const parsed = parseWorkbenchReferenceUrl(reference.url);
     return parsed
-      ? [{ reference: { url: parsed.url, title: reference.title ?? null }, parsed }]
+      ? [
+          {
+            url: parsed.url,
+            title: reference.title ?? null,
+            parsed,
+            addedByThreadId: null,
+            source: undefined,
+            fromDescription: false,
+          },
+        ]
       : [];
   });
   return (
@@ -644,7 +643,7 @@ export function WorkbenchStagedReferences({
         <WorkbenchReferenceRow
           key={view.parsed.url}
           view={view}
-          addedBy={null}
+          opener={opener}
           removeDisabled={disabled}
           onRemove={() =>
             onChange(
