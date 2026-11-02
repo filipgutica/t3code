@@ -129,6 +129,25 @@ describe("description editor Markdown", () => {
     expect(doc(reloaded).eq(doc({ type: "doc", content: [edited] }))).toBe(true);
   });
 
+  it.each([
+    [
+      "inside formatting",
+      "See **[spec](https://example.com/a)**.",
+      "See [**spec**](https://example.com/a). More.",
+    ],
+    [
+      "named by its full path",
+      "See [/Users/me/plan.md](/Users/me/plan.md).",
+      "See [/Users/me/plan.md](/Users/me/plan.md). More.",
+    ],
+  ])("keeps a link %s when its paragraph changes", (_name, source, saved) => {
+    expect(
+      save(source, ([first]) => [
+        { ...first, content: [...first!.content!, { type: "text", text: " More." }] },
+      ]),
+    ).toBe(saved);
+  });
+
   it("shows Reference links as chips and keeps other links as link text", () => {
     const [paragraph] = parseDescription(
       "See [plan](/Users/me/plan.md), https://example.com and [mail](mailto:a@example.com).",

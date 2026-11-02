@@ -105,6 +105,36 @@ it("pastes Markdown as rich text", async () => {
   );
 });
 
+it.each([
+  ["keeps the spaces around a pasted phrase", "ab", "{End}{ArrowLeft}", " hello ", "a hello b"],
+  [
+    "keeps a pasted code block whole",
+    "Intro",
+    "{End}",
+    "```ts\na()\n```",
+    "Intro\n\n```ts\na()\n```",
+  ],
+  [
+    "keeps a pasted table as source",
+    "Intro",
+    "{End}",
+    "| a |\n| - |\n| 1 |",
+    "Intro\n\n| a |\n| - |\n| 1 |",
+  ],
+])("%s", async (_name, initial, caret, pasted, saved) => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial={initial} onChange={onChange} />);
+  await page.getByText(initial).click();
+  await userEvent.keyboard(caret);
+  const data = new DataTransfer();
+  data.setData("text/plain", pasted);
+  page
+    .getByRole("textbox", { name: "Description" })
+    .element()
+    .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  expect(onChange).toHaveBeenLastCalledWith(saved);
+});
+
 it("opens a code block on a fence and leaves it after two blank lines", async () => {
   const onChange = vi.fn();
   await using _screen = await render(<Harness initial="Intro" onChange={onChange} />);

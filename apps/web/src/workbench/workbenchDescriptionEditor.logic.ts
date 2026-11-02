@@ -135,15 +135,18 @@ function inlineToJson(nodes: ReadonlyArray<PhrasingContent>, marks: MarkJson[]):
         return inlineToJson(node.children, [...marks, { type: "strike" }]);
       case "link": {
         const [only] = node.children;
-        if (!node.title && node.children.length === 1 && only?.type === "text") {
+        // A chip carries no marks, so a formatted link stays link text.
+        if (
+          marks.length === 0 &&
+          !node.title &&
+          node.children.length === 1 &&
+          only?.type === "text"
+        ) {
           const reference = parseDescriptionHref(node.url);
           if (reference !== null) {
             const text = only.value;
-            // `chipToMdast` names an untitled file link by its file.
-            const untitled =
-              text === node.url ||
-              text === reference.url ||
-              (reference.kind === "file" && text === reference.label);
+            // Untitled only when `chipToMdast` writes the same text back.
+            const untitled = text === (reference.kind === "file" ? reference.label : node.url);
             return [
               { type: "referenceChip", attrs: { href: node.url, title: untitled ? null : text } },
             ];

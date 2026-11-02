@@ -1,7 +1,7 @@
 import "./WorkbenchTicketDescriptionEditor.css";
 
 import { newlineInCode } from "@tiptap/pm/commands";
-import { Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
+import { Fragment, Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
 import type { Transaction } from "@tiptap/pm/state";
 import type { EditorView } from "@tiptap/pm/view";
 import {
@@ -105,7 +105,19 @@ function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
   }
   const doc = ProseMirrorNode.fromJSON(state.schema, descriptionPasteContent(text));
   if (doc.childCount === 0) return false;
-  view.dispatch(state.tr.replaceSelection(new Slice(doc.content, 1, 1)).scrollIntoView());
+  // Only paragraphs merge into the text around the caret; code blocks, tables, and lists stay whole.
+  const opens = (node: ProseMirrorNode | null) => (node?.type.name === "paragraph" ? 1 : 0);
+  let content = doc.content;
+  if (content.childCount === 1 && opens(content.firstChild) === 1) {
+    // Parsing trims the edges, but a pasted phrase keeps the spaces around it.
+    const [, before = "", after = ""] = /^([ \t]*)[\s\S]*?([ \t]*)$/.exec(text) ?? [];
+    const space = (value: string) =>
+      value ? Fragment.from(state.schema.text(value)) : Fragment.empty;
+    const inline = space(before).append(content.firstChild!.content).append(space(after));
+    content = Fragment.from(content.firstChild!.copy(inline));
+  }
+  const slice = new Slice(content, opens(content.firstChild), opens(content.lastChild));
+  view.dispatch(state.tr.replaceSelection(slice).scrollIntoView());
   return true;
 }
 
