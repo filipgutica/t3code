@@ -1,7 +1,6 @@
 import "./WorkbenchTicketDescriptionEditor.css";
 
 import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
-import { BubbleMenu } from "@tiptap/react/menus";
 import { useState } from "react";
 
 import { Label } from "../components/ui/label";
@@ -144,7 +143,10 @@ function DescriptionRichTextSurface({
         role: "textbox",
         "aria-multiline": "true",
         "aria-labelledby": labelId,
-        class: cn(workbenchDescriptionProseClassName, "min-h-72 max-w-none px-3 py-2 outline-none"),
+        class: cn(
+          workbenchDescriptionProseClassName,
+          "min-h-72 max-w-none px-3 py-2 outline-none [&_a]:text-primary [&_a]:underline",
+        ),
       },
     },
     onUpdate: ({ editor: current }) => onChange(serializeDescription(current.state.doc, parsed)),
@@ -161,14 +163,11 @@ function DescriptionRichTextSurface({
       className="min-w-0 rounded-lg border border-input bg-background has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-inset has-focus-visible:ring-ring/24 dark:bg-input/32"
     >
       <EditorContent editor={editor} />
-      {editor ? (
-        <BubbleMenu editor={editor} shouldShow={({ editor: current }) => current.isActive("link")}>
-          {reference ? (
-            <div className="rounded-md border border-border bg-popover p-1 shadow-md">
-              <WorkbenchReferenceChip reference={reference} title={null} opener={opener} />
-            </div>
-          ) : null}
-        </BubbleMenu>
+      {reference ? (
+        <div className="flex min-w-0 items-center gap-2 border-t border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
+          Link
+          <WorkbenchReferenceChip reference={reference} title={null} opener={opener} />
+        </div>
       ) : null}
     </div>
   );
