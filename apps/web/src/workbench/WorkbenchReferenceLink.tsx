@@ -1,3 +1,4 @@
+import { scopeProjectRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type {
   ScopedThreadRef,
@@ -5,6 +6,7 @@ import type {
   WorkbenchParsedReferenceUrl,
   WorkbenchReferenceKind,
 } from "@t3tools/contracts";
+import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { createContext, use, type MouseEvent, type ReactElement, type ReactNode } from "react";
 
 import { canOpenLinksInApp } from "../browser/browserLinkTarget";
@@ -17,6 +19,7 @@ import { useClientSettings } from "../hooks/useSettings";
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { useRightPanelStore } from "../rightPanelStore";
 import { assetEnvironment } from "../state/assets";
+import { useProject, useQuietThreadShell } from "../state/entities";
 import { previewEnvironment } from "../state/preview";
 import { readPreparedConnection } from "../state/session";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -60,6 +63,19 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
     openWorkbenchPullRequest,
   );
   const openLink = useOpenLink(shownThread);
+  const shownThreadShell = useQuietThreadShell(shownThread ?? null);
+  const shownProject = useProject(
+    shownThreadShell
+      ? scopeProjectRef(shownThreadShell.environmentId, shownThreadShell.projectId)
+      : null,
+  );
+  // Like the Thread's own file links, so a workspace HTML page loads its relative assets.
+  const workspaceRoot = shownProject
+    ? projectScriptCwd({
+        project: { cwd: shownProject.workspaceRoot },
+        worktreePath: shownThreadShell?.worktreePath ?? null,
+      })
+    : undefined;
   const linksOpenInApp = useClientSettings((settings) => settings.browserLinkTarget) === "app";
   const openFileSheet = use(WorkbenchReferenceFileSheetContext);
   const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
@@ -97,7 +113,7 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
     void openFileInPreview({
       threadRef: thread,
       filePath: reference.url,
-      workspaceRoot: undefined,
+      workspaceRoot,
       httpBaseUrl: connection.httpBaseUrl,
       createAssetUrl,
       openPreview,
