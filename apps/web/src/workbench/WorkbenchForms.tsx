@@ -163,10 +163,7 @@ import {
   type WorkbenchTicketDraft,
 } from "./workbenchDraftStore";
 import { WorkbenchDescription } from "./WorkbenchDescription";
-import {
-  workbenchDescriptionMarkdown,
-  workbenchSavedDescription,
-} from "./workbenchDescription.logic";
+import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
 import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
 import {
@@ -1159,7 +1156,7 @@ function WorkbenchTicketDetailController({
           event.preventDefault();
           if (!editing || !draft || workspaceReadOnly) return;
           const normalizedTitle = draft.title.trim();
-          const normalizedMarkdown = workbenchSavedDescription(draft.markdown, ticket.markdown);
+          const normalizedMarkdown = draft.markdown.trim();
           const submittedContent = draft;
           void (async () => {
             const savedVersion = await onSave(ticket, normalizedTitle, normalizedMarkdown);

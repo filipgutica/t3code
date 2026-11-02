@@ -198,12 +198,20 @@ function phrasing(text: string, marks: ReadonlyArray<Mark>): PhrasingContent {
 
 function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
   const result: PhrasingContent[] = [];
-  let link: { mark: Mark; children: PhrasingContent[]; text: string } | null = null;
+  let link: { mark: Mark; children: PhrasingContent[] } | null = null;
   const flush = () => {
     if (link === null) return;
     const href = String(link.mark.attrs.href ?? "");
-    // A bare URL stays bare: GFM links it without `<>` or `[url](url)`.
-    if (link.text === href && /^https?:\/\/\S+$/.test(href)) {
+    const [only] = link.children;
+    // A bare URL stays bare when GFM would link it back unchanged: plain text, no title, and
+    // no trailing punctuation for autolinking to drop.
+    if (
+      link.children.length === 1 &&
+      only?.type === "text" &&
+      only.value === href &&
+      link.mark.attrs.title == null &&
+      /^https?:\/\/[^\s<>()]*[^\s<>().,:;!?'"*_~]$/.test(href)
+    ) {
       result.push({ type: "html", value: href });
     } else {
       result.push({
@@ -224,9 +232,8 @@ function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
       result.push(content);
       return;
     }
-    link ??= { mark: linkMark, children: [], text: "" };
+    link ??= { mark: linkMark, children: [] };
     link.children.push(content);
-    link.text += child.text ?? "";
   });
   flush();
   return result;

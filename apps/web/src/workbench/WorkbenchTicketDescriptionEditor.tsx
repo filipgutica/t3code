@@ -26,6 +26,7 @@ export function WorkbenchTicketDescriptionEditor({
   markdown,
   jira,
   updatedBy = null,
+  disabled = false,
   onChange,
 }: {
   id?: string;
@@ -33,6 +34,8 @@ export function WorkbenchTicketDescriptionEditor({
   jira: boolean;
   /** The agent Thread that last wrote the description, if one did. */
   updatedBy?: string | null;
+  /** A contenteditable ignores a disabled `<fieldset>`, so callers pass it. */
+  disabled?: boolean;
   onChange: (markdown: string) => void;
 }) {
   // Jira wiki markup has no rich-text form, so it opens as source.
@@ -81,6 +84,7 @@ export function WorkbenchTicketDescriptionEditor({
           labelId={labelId}
           markdown={markdown}
           jira={jira}
+          disabled={disabled}
           onChange={onChange}
         />
       )}
@@ -92,23 +96,28 @@ function DescriptionRichTextEditor({
   labelId,
   markdown,
   jira,
+  disabled,
   onChange,
 }: {
   labelId: string;
   markdown: string;
   jira: boolean;
+  disabled: boolean;
   onChange: (markdown: string) => void;
 }) {
   const [loaded, setLoaded] = useState(() => ({
     parsed: parseDescription(markdown, jira),
     emitted: markdown,
+    disabled,
     generation: 0,
   }));
-  // Markdown this editor didn't write, such as an agent's edit to a draft, reloads it.
-  if (markdown !== loaded.emitted) {
+  // Markdown this editor didn't write, such as an agent's edit to a draft, reloads it, and
+  // so does a change to `disabled`, which Tiptap reads only on creation.
+  if (markdown !== loaded.emitted || disabled !== loaded.disabled) {
     setLoaded({
       parsed: parseDescription(markdown, jira),
       emitted: markdown,
+      disabled,
       generation: loaded.generation + 1,
     });
   }
@@ -117,6 +126,7 @@ function DescriptionRichTextEditor({
       key={loaded.generation}
       labelId={labelId}
       parsed={loaded.parsed}
+      disabled={disabled}
       onChange={(next) => {
         setLoaded((current) => ({ ...current, emitted: next }));
         onChange(next);
@@ -128,16 +138,19 @@ function DescriptionRichTextEditor({
 function DescriptionRichTextSurface({
   labelId,
   parsed,
+  disabled,
   onChange,
 }: {
   labelId: string;
   parsed: ReturnType<typeof parseDescription>;
+  disabled: boolean;
   onChange: (markdown: string) => void;
 }) {
   const opener = useWorkbenchReferenceOpener();
   const editor = useEditor({
     extensions: descriptionEditorExtensions,
     content: descriptionEditorContent(parsed),
+    editable: !disabled,
     editorProps: {
       attributes: {
         role: "textbox",
@@ -163,10 +176,23 @@ function DescriptionRichTextSurface({
       className="min-w-0 rounded-lg border border-input bg-background has-focus-visible:border-ring has-focus-visible:ring-3 has-focus-visible:ring-inset has-focus-visible:ring-ring/24 dark:bg-input/32"
     >
       <EditorContent editor={editor} />
-      {reference ? (
+      {typeof href === "string" ? (
         <div className="flex min-w-0 items-center gap-2 border-t border-border/60 px-3 py-1.5 text-xs text-muted-foreground">
           Link
-          <WorkbenchReferenceChip reference={reference} title={null} opener={opener} />
+          {reference ? (
+            <WorkbenchReferenceChip reference={reference} title={null} opener={opener} />
+          ) : URL.canParse(href) ? (
+            <a
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="truncate text-primary underline"
+            >
+              {href}
+            </a>
+          ) : (
+            <span className="truncate">{href}</span>
+          )}
         </div>
       ) : null}
     </div>

@@ -138,6 +138,7 @@ export function WorkbenchTicketDraftFieldsForm({
             markdown={fields.markdown}
             jira={false}
             updatedBy={updatedBy}
+            disabled={disabled}
             onChange={(markdown) => onChange({ markdown })}
           />
         )}

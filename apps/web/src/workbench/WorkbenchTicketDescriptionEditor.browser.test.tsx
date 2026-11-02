@@ -56,3 +56,21 @@ it("opens Jira wiki markup as Markdown source", async () => {
     .element(page.getByRole("textbox", { name: "Description" }))
     .toHaveValue("h2. Goal\n");
 });
+
+it("ignores typing while disabled", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(
+    <WorkbenchTicketDescriptionEditor
+      markdown="Draft brief"
+      jira={false}
+      disabled
+      onChange={onChange}
+    />,
+  );
+  await page.getByText("Draft brief").click();
+  await userEvent.keyboard(" more");
+  expect(onChange).not.toHaveBeenCalled();
+  await expect
+    .element(page.getByRole("textbox", { name: "Description" }))
+    .toHaveAttribute("contenteditable", "false");
+});

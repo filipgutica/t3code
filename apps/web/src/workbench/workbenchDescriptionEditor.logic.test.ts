@@ -17,6 +17,8 @@ function save(source: string, edit?: (content: JSONContent[]) => JSONContent[], 
   return serializeDescription(ProseMirrorNode.fromJSON(schema, { type: "doc", content }), parsed);
 }
 
+const doc = (json: JSONContent) => ProseMirrorNode.fromJSON(schema, json);
+
 const blockTypes = (source: string, jira = false) =>
   parseDescription(source, jira).doc.content?.map((block) => block.type);
 
@@ -87,6 +89,27 @@ describe("description editor Markdown", () => {
       "# Goal\n\nSee [the plan](/tmp/plan.md), https://example.com and **1 \\* 2**\n",
     );
   });
+
+  it.each([
+    ["bold", "https://example.com/a", [{ type: "bold" }], null],
+    ["titled", "https://example.com/a", [], "Spec"],
+    ["ending in a period", "https://example.com/a.", [], null],
+  ])(
+    "keeps a %s link whose text is its URL when its paragraph changes",
+    (_name, url, marks, title) => {
+      const link: JSONContent = {
+        type: "text",
+        text: url,
+        marks: [...marks, { type: "link", attrs: { href: url, title } }],
+      };
+      const edited = { type: "paragraph", content: [{ type: "text", text: "See " }, link] };
+      const reloaded = parseDescription(
+        save("Old\n", () => [edited]),
+        false,
+      ).doc;
+      expect(doc(reloaded).eq(doc({ type: "doc", content: [edited] }))).toBe(true);
+    },
+  );
 
   it("writes an edited task list with its checkboxes", () => {
     expect(
