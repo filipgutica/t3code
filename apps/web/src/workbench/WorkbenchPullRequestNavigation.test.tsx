@@ -319,6 +319,37 @@ describe("Workbench pull request navigation", () => {
     }
   });
 
+  it("opens a brief's file link in the side panel of the Thread the floating chat shows", async () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
+    useWorkbenchFloatingChatStore.setState({ shownThread });
+    let renderer: ReactTestRenderer | undefined;
+    try {
+      await act(() => {
+        renderer = create(
+          <WorkbenchPullRequestPreviewProvider>
+            <WorkbenchDescription markdown="Details in [plan.md](/work/artifacts/plan.md)." />
+          </WorkbenchPullRequestPreviewProvider>,
+        );
+      });
+      const click = { preventDefault: vi.fn(), stopPropagation: vi.fn() };
+      await act(() =>
+        renderer?.root
+          .findByType("button")
+          .props.onClick({ ...click, metaKey: false, ctrlKey: false }),
+      );
+      expect(click.preventDefault).toHaveBeenCalled();
+      expect(
+        selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+      ).toMatchObject({ kind: "file", relativePath: "/work/artifacts/plan.md" });
+    } finally {
+      await act(() => renderer?.unmount());
+      useWorkbenchFloatingChatStore.setState({ shownThread: null });
+      useRightPanelStore.setState({ byThreadKey: {} });
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("preserves ticket context until navigation, then dismisses the pull request", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
     let renderer: ReactTestRenderer | undefined;

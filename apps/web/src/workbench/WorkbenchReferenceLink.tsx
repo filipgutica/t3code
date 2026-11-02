@@ -130,8 +130,9 @@ const KIND_LABELS = {
   link: "Link",
 } satisfies Record<WorkbenchReferenceKind, string>;
 
+// Legacy References whose URL no longer parses show as links with no host.
 const kindLabel = (reference: WorkbenchParsedReferenceUrl) =>
-  reference.kind === "file" || reference.kind === "jira_issue"
+  reference.kind === "file" || reference.kind === "jira_issue" || !URL.canParse(reference.url)
     ? KIND_LABELS[reference.kind]
     : `${KIND_LABELS[reference.kind]} · ${new URL(reference.url).host}`;
 

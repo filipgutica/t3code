@@ -75,12 +75,12 @@ function setup() {
   });
 }
 
-const renderDraftReferences = () =>
+const renderDraftReferences = (owned: ReadonlyArray<WorkbenchReference> = references) =>
   render(
     <WorkbenchDraftReferences
       environmentId={environmentId}
       draftId={draftId}
-      references={references}
+      references={owned}
       threadsById={new Map([[planner, { title: "Planning" }]])}
       archivedThreadsById={new Map()}
       readOnly={false}
@@ -88,6 +88,15 @@ const renderDraftReferences = () =>
       fileThreadId={planner}
     />,
   );
+
+it("lists a legacy Reference whose URL no longer parses", async () => {
+  setup();
+  await using screen = await renderDraftReferences([
+    { ...references[0]!, url: "legacy reference", title: "Old link" },
+  ]);
+  await userEvent.hover(screen.getByRole("link", { name: "Old link" }));
+  await expect.element(page.getByText("Link · added by Planning")).toBeVisible();
+});
 
 it("adds a pasted URL to the draft and rejects text that is not a Reference", async () => {
   setup();
