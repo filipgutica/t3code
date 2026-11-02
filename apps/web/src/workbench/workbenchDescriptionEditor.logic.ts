@@ -292,13 +292,23 @@ function serializeBlock(node: ProseMirrorNode): string {
 const isEmptyParagraph = (node: ProseMirrorNode) =>
   node.type.name === "paragraph" && node.childCount === 0;
 
+const originals = new WeakMap<ParsedDescription, ProseMirrorNode>();
+
+/** The loaded document in the editor's schema, since nodes are equal only within one schema. */
+function originalDoc(doc: ProseMirrorNode, parsed: ParsedDescription): ProseMirrorNode {
+  const cached = originals.get(parsed);
+  if (cached?.type.schema === doc.type.schema) return cached;
+  const original = ProseMirrorNode.fromJSON(doc.type.schema, parsed.doc);
+  originals.set(parsed, original);
+  return original;
+}
+
 /**
  * Markdown for `doc`. Blocks equal to one the editor loaded keep their source byte for byte,
  * with their original spacing, so only edited blocks are re-serialized.
  */
 export function serializeDescription(doc: ProseMirrorNode, parsed: ParsedDescription): string {
-  // Nodes are equal only within one schema, so compare in the editor's.
-  const original = ProseMirrorNode.fromJSON(doc.type.schema, parsed.doc);
+  const original = originalDoc(doc, parsed);
   const parts: string[] = [];
   let next = 0;
   let previous: number | null = null;
