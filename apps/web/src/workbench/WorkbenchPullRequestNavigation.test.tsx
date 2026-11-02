@@ -87,6 +87,15 @@ vi.mock("../components/ui/tooltip", () => {
   const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
   return { Tooltip: Passthrough, TooltipPopup: Passthrough, TooltipTrigger: Passthrough };
 });
+// Brief links are chips in a hover card, whose trigger needs a DOM this renderer lacks.
+vi.mock("../components/ui/preview-card", () => {
+  const Passthrough = ({ children }: { children?: ReactNode }) => <>{children}</>;
+  return {
+    PreviewCard: Passthrough,
+    PreviewCardPopup: () => null,
+    PreviewCardTrigger: ({ render }: { render: ReactNode }) => <>{render}</>,
+  };
+});
 
 vi.mock("./WorkbenchPullRequestSheet", () => ({
   WorkbenchPullRequestSheet: ({

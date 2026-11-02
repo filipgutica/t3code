@@ -1,10 +1,10 @@
-import { parseWorkbenchReferenceUrl } from "@t3tools/contracts";
 import type { ElementContent } from "hast";
 import { createContext, use, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { parseDescriptionHref } from "./workbenchReferences.logic";
 import {
   WorkbenchReferenceChip,
   useWorkbenchReferenceOpener,
@@ -31,7 +31,7 @@ function DescriptionLink({
   readonly children: ReactNode;
 }) {
   const opener = use(DescriptionOpenerContext);
-  const reference = href === undefined ? null : parseWorkbenchReferenceUrl(href);
+  const reference = href === undefined ? null : parseDescriptionHref(href);
   if (opener === null || reference === null) {
     return (
       <a href={href} target="_blank" rel="noreferrer" className="text-primary underline">

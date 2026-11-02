@@ -81,21 +81,48 @@ const plainText = (node: Nodes): string =>
 export function workbenchDescriptionLinks(
   markdown: string,
 ): ReadonlyArray<WorkbenchDescriptionLink> {
+  const tree = descriptionParser.parse(markdown);
+  const definitions = new Map<string, string>();
+  const collectDefinitions = (node: Nodes) => {
+    if (node.type === "definition" && !definitions.has(node.identifier)) {
+      definitions.set(node.identifier, node.url);
+    }
+    if ("children" in node) for (const child of node.children) collectDefinitions(child);
+  };
+  collectDefinitions(tree);
   const links = new Map<string, WorkbenchDescriptionLink>();
   const visit = (node: Nodes) => {
-    if (node.type === "link") {
-      const parsed = parseWorkbenchReferenceUrl(node.url);
+    const url =
+      node.type === "link"
+        ? node.url
+        : node.type === "linkReference"
+          ? definitions.get(node.identifier)
+          : undefined;
+    if (url !== undefined) {
+      const parsed = parseWorkbenchReferenceUrl(url);
       const text = plainText(node).trim();
       if (parsed !== null && !links.has(parsed.url)) {
-        const isAutolink = text === "" || text === node.url || text === parsed.url;
+        const isAutolink = text === "" || text === url || text === parsed.url;
         links.set(parsed.url, { parsed, title: isAutolink ? null : text });
       }
       return;
     }
     if ("children" in node) for (const child of node.children) visit(child);
   };
-  visit(descriptionParser.parse(markdown));
+  visit(tree);
   return [...links.values()];
+}
+
+/** Rendered Markdown percent-encodes a link's destination, but a host path needs its own characters. */
+export function parseDescriptionHref(href: string): WorkbenchParsedReferenceUrl | null {
+  const parsed = parseWorkbenchReferenceUrl(href);
+  if (parsed?.kind !== "file") return parsed;
+  try {
+    return parseWorkbenchReferenceUrl(decodeURI(href)) ?? parsed;
+  } catch {
+    // A lone `%` is no escape, so the path is already literal.
+    return parsed;
+  }
 }
 
 export type WorkbenchReferenceOpenTarget =

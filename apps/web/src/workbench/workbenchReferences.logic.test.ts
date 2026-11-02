@@ -3,6 +3,7 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   listWorkbenchTicketReferences,
+  parseDescriptionHref,
   workbenchDescriptionLinks,
   workbenchReferenceOpenTarget,
 } from "./workbenchReferences.logic";
@@ -35,6 +36,25 @@ describe("workbenchDescriptionLinks", () => {
       ["github_issue", "https://github.com/acme/app/issues/12", null],
       ["github_pull_request", "https://github.com/acme/app/pull/17", "acme/app#17"],
     ]);
+  });
+
+  it("resolves reference-style links against their definitions", () => {
+    const links = workbenchDescriptionLinks(
+      "See [the plan][plan] and [PR][pr].\n\n[plan]: /work/plan.md\n[PR]: https://github.com/acme/app/pull/4",
+    );
+    expect(links.map(({ parsed, title }) => [parsed.url, title])).toEqual([
+      ["/work/plan.md", "the plan"],
+      ["https://github.com/acme/app/pull/4", "PR"],
+    ]);
+  });
+});
+
+describe("parseDescriptionHref", () => {
+  it("reads a rendered link's percent-encoded host path as the literal path", () => {
+    expect(parseDescriptionHref("/work/My%20Plan%C3%A9.md")?.url).toBe("/work/My Plané.md");
+    expect(parseDescriptionHref("https://example.com/a%20b")?.url).toBe(
+      "https://example.com/a%20b",
+    );
   });
 });
 
