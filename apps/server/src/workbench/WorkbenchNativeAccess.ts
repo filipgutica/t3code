@@ -15,7 +15,11 @@ import * as SqlSchema from "effect/sql/SqlSchema";
 
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 
-const NativeProjectRow = Schema.Struct({ id: ProjectId, workspaceRoot: Schema.String });
+const NativeProjectRow = Schema.Struct({
+  id: ProjectId,
+  title: Schema.String,
+  workspaceRoot: Schema.String,
+});
 const NativeThreadRow = Schema.Struct({
   id: ThreadId,
   projectId: ProjectId,
@@ -39,6 +43,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     execute: ({ projectId }) => sql`
       SELECT
         project_id AS "id",
+        title,
         workspace_root AS "workspaceRoot"
       FROM projection_projects
       WHERE project_id = ${projectId}

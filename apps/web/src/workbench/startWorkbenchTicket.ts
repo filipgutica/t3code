@@ -4,6 +4,7 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ModelSelection,
+  ProjectId,
   ThreadId,
   WorkbenchAssignment,
   WorkbenchAssignmentId,
@@ -20,6 +21,7 @@ import { DEFAULT_INTERACTION_MODE } from "../types";
 import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 import {
   isWorkbenchRepositoryScopeEqual,
+  resolveWorkbenchThreadRepository,
   type WorkbenchRepositoryScope,
 } from "./workbenchRepositoryScope";
 
@@ -89,6 +91,8 @@ export interface StartWorkbenchTicketOptions {
   readonly modelSelection?: ModelSelection;
   readonly previousThreadId?: ThreadId;
   readonly repositoryScope?: WorkbenchRepositoryScope;
+  /** The repository the new Thread works in; see `resolveWorkbenchThreadRepository`. */
+  readonly repositoryProjectId?: ProjectId;
 }
 
 interface StartWorkbenchTicketDependencies {
@@ -122,8 +126,9 @@ interface StartWorkbenchTicketDependencies {
 export type StartWorkbenchTicketResult =
   | { readonly state: "opened"; readonly threadId: ThreadId }
   | { readonly state: "navigation-failed"; readonly cause: unknown }
-  | { readonly state: "project-unavailable" }
-  | { readonly state: "provider-unavailable" }
+  // These carry the saved Ticket, so the caller can review against its own repository save.
+  | { readonly state: "project-unavailable"; readonly ticket: WorkbenchTicket }
+  | { readonly state: "provider-unavailable"; readonly ticket: WorkbenchTicket }
   | { readonly state: "thread-status-unavailable" }
   | {
       readonly state: "failed";
@@ -142,8 +147,6 @@ const openExistingWorkbenchThread = async ({
 }): Promise<StartWorkbenchTicketResult | null> => {
   dependencies.onStage?.("checking-thread");
   const target = resolveWorkbenchTicketThreadTarget(
-    input.ticket,
-    input.projects,
     input.assignment,
     input.existingThreadIds,
     input.threadLookupReady,
@@ -164,27 +167,26 @@ const openExistingWorkbenchThread = async ({
   return null;
 };
 
-const getPreparedPrimaryRepository = ({
+const getPreparedRepository = ({
   ticket,
   workspace,
+  projectId,
 }: {
   ticket: WorkbenchTicket;
   workspace: WorkbenchTicketWorkspace;
+  projectId: ProjectId;
 }) => {
-  const primary = workspace.repositories.find(
-    (repository) => repository.isPrimary && repository.status === "ready",
-  );
-  const selectedRepositoriesReady = ticket.repositoryProjectIds.every((id) =>
-    workspace.repositories.some(
+  const readyCheckout = (id: ProjectId) =>
+    workspace.repositories.find(
       (repository) => repository.projectId === id && repository.status === "ready",
-    ),
-  );
-  if (!primary || primary.projectId !== ticket.primaryT3ProjectId || !selectedRepositoriesReady) {
+    );
+  const checkout = readyCheckout(projectId);
+  if (!checkout || !ticket.repositoryProjectIds.every(readyCheckout)) {
     throw new Error(
       "The prepared work area does not match the reviewed repositories. Review the work area and try again.",
     );
   }
-  return primary;
+  return checkout;
 };
 
 const saveReviewedRepositoryScope = async ({
@@ -233,12 +235,15 @@ export async function coordinateWorkbenchTicketStart(
   if (saved.state === "failed") return saved;
   const input = { ...originalInput, ticket: saved.ticket };
 
-  const project = input.projects.find(
-    (candidate) => candidate.id === input.ticket.primaryT3ProjectId,
-  );
-  if (!project) return { state: "project-unavailable" };
+  // Resolved against the saved Ticket, which may no longer link the preferred repository.
+  const repositoryProjectId = resolveWorkbenchThreadRepository({
+    ticket: input.ticket,
+    preferred: options.repositoryProjectId,
+  });
+  const project = input.projects.find((candidate) => candidate.id === repositoryProjectId);
+  if (!project) return { state: "project-unavailable", ticket: input.ticket };
   const modelSelection = options.modelSelection ?? dependencies.resolveModelSelection(project);
-  if (modelSelection === null) return { state: "provider-unavailable" };
+  if (modelSelection === null) return { state: "provider-unavailable", ticket: input.ticket };
 
   const threadId = dependencies.makeThreadId();
   const assignmentId = dependencies.makeAssignmentId();
@@ -251,9 +256,10 @@ export async function coordinateWorkbenchTicketStart(
   if (workspaceResult._tag === "Failure") {
     return { state: "failed", stage: "workspace", failure: workspaceResult, ticket: input.ticket };
   }
-  const primaryWorkspace = getPreparedPrimaryRepository({
+  const checkout = getPreparedRepository({
     ticket: input.ticket,
     workspace: workspaceResult.value,
+    projectId: project.id,
   });
   dependencies.onStage?.("creating-thread");
   const threadResult = await dependencies.createThread({
@@ -265,8 +271,8 @@ export async function coordinateWorkbenchTicketStart(
       modelSelection,
       runtimeMode: DEFAULT_RUNTIME_MODE,
       interactionMode: DEFAULT_INTERACTION_MODE,
-      branch: primaryWorkspace.branchName,
-      worktreePath: primaryWorkspace.worktreePath,
+      branch: checkout.branchName,
+      worktreePath: checkout.worktreePath,
       createdAt,
     },
   });

@@ -83,7 +83,6 @@ const snapshot: WorkbenchSnapshot = {
       title: "Ticket",
       markdown: "",
       kind: "story",
-      primaryT3ProjectId: ProjectId.make("repo"),
       repositoryProjectIds: [],
       status: "todo",
       blocked: false,
@@ -204,7 +203,6 @@ it("preserves a draft deep link without requiring a Ticket record and falls back
       kind: "story" as const,
       epicId: null,
       repositoryProjectIds: [],
-      primaryT3ProjectId: null,
     },
   };
   const { router, update } = await mount(

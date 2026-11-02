@@ -21,7 +21,6 @@ export const ticketInstruction = (input: {
     readonly id: string;
     readonly path: string;
     readonly branch: string;
-    readonly primary: boolean;
   }>;
 }) =>
   [

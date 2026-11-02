@@ -176,15 +176,6 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         message: "Choose repositories linked to this Workbench workspace.",
       });
     }
-    if (
-      draft.fields.primaryT3ProjectId !== null &&
-      !selected.includes(draft.fields.primaryT3ProjectId)
-    ) {
-      return yield* new WorkbenchOperationError({
-        code: "primary_repository_not_selected",
-        message: "The primary repository must be in the ticket's repository scope.",
-      });
-    }
     if (draft.fields.epicId !== null) {
       const epics =
         yield* sql`SELECT epic_id FROM workbench_epics WHERE epic_id = ${draft.fields.epicId}
@@ -319,7 +310,6 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             kind: "story",
             epicId: null,
             repositoryProjectIds: [],
-            primaryT3ProjectId: null,
           },
           createdAt,
           updatedAt: createdAt,
@@ -367,6 +357,32 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(operationError));
+  const requirePlanningDraftLinked = Effect.fn("TicketDraftPersistence.requirePlanningDraftLinked")(
+    function* (draft: WorkbenchTicketDraft) {
+      const tickets =
+        yield* sql`SELECT 1 FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
+      const thread = yield* native.findThread(draft.threadId);
+      const linked = Option.isSome(thread)
+        ? yield* sql`SELECT 1 FROM workbench_ticket_repositories
+          WHERE ticket_id = ${draft.id} AND t3_project_id = ${thread.value.projectId}`
+        : [];
+      const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
+        WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
+      if (
+        !tickets[0] ||
+        Option.isNone(thread) ||
+        linked.length === 0 ||
+        thread.value.worktreePath !== null ||
+        assignments.length !== 1
+      ) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_changed",
+          message:
+            "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
+        });
+      }
+    },
+  );
   const transitionTicketDraft = Effect.fn("TicketDraftPersistence.transitionTicketDraft")(
     function* (
       input: WorkbenchTicketDraftActionInput & {
@@ -410,28 +426,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
                 "The planning conversation no longer owns this Ticket. Open its current conversation before starting work.",
             });
           }
-          if (input.phase === "planning") {
-            const tickets = yield* sql<{
-              readonly primary: ProjectId;
-            }>`SELECT primary_t3_project_id AS "primary"
-              FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
-            const thread = yield* native.findThread(draft.threadId);
-            const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
-              WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
-            if (
-              !tickets[0] ||
-              Option.isNone(thread) ||
-              thread.value.projectId !== tickets[0].primary ||
-              thread.value.worktreePath !== null ||
-              assignments.length !== 1
-            ) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_changed",
-                message:
-                  "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
-              });
-            }
-          }
+          if (input.phase === "planning") yield* requirePlanningDraftLinked(draft);
           if (input.phase === "draft" || input.phase === "promoting")
             yield* validateFields(draft, validatedRoots);
           return yield* save(draft, {
@@ -477,37 +472,35 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           const draft = yield* getTicketDraft(input.id);
           if (draft.revision !== input.expectedRevision) return yield* changed();
           if (draft.phase !== "starting") return yield* busy();
-          const tickets = yield* sql<{
-            readonly revision: number;
-            readonly primary: ProjectId;
-          }>`SELECT t.revision,
-      t.primary_t3_project_id AS "primary" FROM workbench_tickets t
+          const tickets = yield* sql<{ readonly revision: number }>`SELECT t.revision
+      FROM workbench_tickets t
       JOIN workbench_projects p ON p.project_id = t.workbench_project_id
       WHERE t.ticket_id = ${draft.id} AND t.deleted_at IS NULL AND t.archived_at IS NULL
         AND p.deleted_at IS NULL AND p.archived_at IS NULL`;
           const ticket = tickets[0];
-          const prepared = yield* sql<{
-            readonly projectId: ProjectId;
-            readonly worktreePath: string;
-            readonly branch: string;
-          }>`
-            SELECT r.t3_project_id AS "projectId", r.worktree_path AS "worktreePath", r.branch_name AS branch
-            FROM workbench_ticket_workspaces w JOIN workbench_ticket_workspace_repositories r ON r.ticket_id = w.ticket_id
+          const thread = yield* native.findThread(draft.threadId);
+          // The Thread was bound to the chosen repository's checkout, which must still be linked.
+          const prepared = Option.isSome(thread)
+            ? yield* sql<{ readonly worktreePath: string; readonly branch: string }>`
+            SELECT r.worktree_path AS "worktreePath", r.branch_name AS branch
+            FROM workbench_ticket_workspaces w
+            JOIN workbench_ticket_workspace_repositories r ON r.ticket_id = w.ticket_id
+            JOIN workbench_ticket_repositories l
+              ON l.ticket_id = r.ticket_id AND l.t3_project_id = r.t3_project_id
             WHERE w.ticket_id = ${draft.id} AND w.attempt_id = ${input.expectedWorkAreaAttemptId}
-              AND w.status = 'ready' AND r.status = 'ready' AND r.is_primary = 1`;
-          const primary = prepared[0];
+              AND w.status = 'ready' AND r.status = 'ready'
+              AND r.t3_project_id = ${thread.value.projectId}`
+            : [];
+          const checkout = prepared[0];
           const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
             WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
-          const thread = yield* native.findThread(draft.threadId);
           if (
             !ticket ||
             ticket.revision !== input.expectedTicketRevision ||
             Option.isNone(thread) ||
-            thread.value.projectId !== ticket.primary ||
-            !primary ||
-            primary.projectId !== ticket.primary ||
-            thread.value.worktreePath !== primary.worktreePath ||
-            thread.value.branch !== primary.branch ||
+            !checkout ||
+            thread.value.worktreePath !== checkout.worktreePath ||
+            thread.value.branch !== checkout.branch ||
             assignments.length !== 1
           ) {
             return yield* new WorkbenchOperationError({
@@ -555,24 +548,23 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         const tickets = yield* sql<{
           readonly title: string;
           readonly markdown: string;
-          readonly primary: ProjectId;
+          readonly anchor: ProjectId;
           readonly epicId: WorkbenchTicketDraft["fields"]["epicId"];
           readonly kind: WorkbenchTicketDraft["fields"]["kind"];
         }>`SELECT title, markdown,
-        primary_t3_project_id AS "primary", epic_id AS "epicId", kind FROM workbench_tickets
+        primary_t3_project_id AS "anchor", epic_id AS "epicId", kind FROM workbench_tickets
         WHERE ticket_id = ${draft.id} AND deleted_at IS NULL`;
         const ticket = tickets[0];
         if (ticket) {
           const repos = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
           FROM workbench_ticket_repositories WHERE ticket_id = ${draft.id} ORDER BY position`;
-          const ids = repos.length > 0 ? repos.map((row) => row.id) : [ticket.primary];
+          const ids = repos.length > 0 ? repos.map((row) => row.id) : [ticket.anchor];
           return {
             ...draft,
             fields: {
               ...draft.fields,
               title: ticket.title,
               markdown: ticket.markdown,
-              primaryT3ProjectId: ticket.primary,
               epicId: ticket.epicId,
               kind: ticket.kind,
               repositoryProjectIds: ids,

@@ -27,7 +27,7 @@ const createdAt = "2026-09-07T10:00:00.000Z";
 const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provide(
     Layer.succeed(WorkbenchNativeAccess, {
-      findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
+      findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: () => Effect.succeedNone,
       hasThreadAtWorktreePath: () => Effect.succeed(false),
@@ -92,7 +92,7 @@ const createTicket = Effect.gen(function* () {
     title: "Validate requests",
     kind: "bug",
     markdown: "Reject invalid dimensions before querying the provider.",
-    primaryT3ProjectId: projectId,
+    repositoryProjectIds: [projectId],
     createdAt,
   });
 });

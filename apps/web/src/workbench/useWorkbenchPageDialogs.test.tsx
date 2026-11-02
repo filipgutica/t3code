@@ -104,7 +104,6 @@ const draft: WorkbenchTicketDraft = {
     kind: "story",
     epicId: null,
     repositoryProjectIds: [ProjectId.make("repo")],
-    primaryT3ProjectId: ProjectId.make("repo"),
   },
   createdAt: time,
   updatedAt: time,

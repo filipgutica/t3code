@@ -28,7 +28,6 @@ const ticket = {
   blocked: true,
   epicId: null,
   repositoryProjectIds: [projectId],
-  primaryT3ProjectId: projectId,
 };
 const thread = {
   id: threadId,

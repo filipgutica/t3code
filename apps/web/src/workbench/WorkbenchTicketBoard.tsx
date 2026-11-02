@@ -97,7 +97,6 @@ import {
   getWorkbenchBoardColumns,
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
-  getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
   groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
@@ -690,8 +689,7 @@ function useWorkbenchBoardData({
   const visibleTickets = tickets.filter(
     (ticket) =>
       matchesWorkbenchAttention(attentionMode, attentionSignalsByTicket.get(ticket.id) ?? []) &&
-      (repositoryId === null ||
-        getWorkbenchTicketRepositoryProjectIds(ticket).includes(repositoryId)) &&
+      (repositoryId === null || ticket.repositoryProjectIds.includes(repositoryId)) &&
       matchesWorkbenchTicketSearch({
         title: ticket.title,
         referenceTerms: getWorkbenchReferenceSearchTerms(
@@ -785,7 +783,7 @@ function getWorkbenchBoardTicketPresentation({
   const threadActionLabel =
     getWorkbenchTicketStartProgressLabel(pendingAction, ticket.id) ??
     (threadActionPending ? thread.pendingActionLabel : null);
-  const repositories = getWorkbenchTicketRepositoryProjectIds(ticket).map((id) => ({
+  const repositories = ticket.repositoryProjectIds.map((id) => ({
     id,
     title: repositoriesById.get(id)?.title ?? "Repository unavailable",
   }));
@@ -858,7 +856,7 @@ function renderWorkbenchBoardTicketMetadata(
             <button
               type="button"
               onClick={() => onSelect(projectId, ticket.id)}
-              aria-label={`Repositories for ${ticket.title}: ${repositories.map(({ id, title }) => `${title}${id === ticket.primaryT3ProjectId ? " (primary)" : ""}`).join(", ")}. Open ticket`}
+              aria-label={`Repositories for ${ticket.title}: ${repositories.map(({ title }) => title).join(", ")}. Open ticket`}
               className="relative z-10 flex min-w-0 max-w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
             />
           }
@@ -881,11 +879,6 @@ function renderWorkbenchBoardTicketMetadata(
                 <div key={id} className="flex items-start gap-2">
                   <FolderGit2Icon className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                   <span className="min-w-0 flex-1">{title}</span>
-                  {id === ticket.primaryT3ProjectId ? (
-                    <Badge size="sm" variant="outline">
-                      Primary
-                    </Badge>
-                  ) : null}
                 </div>
               ))}
             </div>

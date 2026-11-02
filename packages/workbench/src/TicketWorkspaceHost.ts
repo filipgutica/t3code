@@ -24,7 +24,8 @@ export class TicketWorkspaceHost extends Context.Service<
     readonly worktreesDir: string;
     readonly generateBranchName: (input: {
       readonly ticketId: WorkbenchTicketId;
-      readonly primaryT3ProjectId: ProjectId | null;
+      /** The repository whose settings and model name the branch: the Ticket's first. */
+      readonly projectId: ProjectId | null;
       readonly title: string;
       readonly markdown: string;
       readonly issueLabel: string | null;

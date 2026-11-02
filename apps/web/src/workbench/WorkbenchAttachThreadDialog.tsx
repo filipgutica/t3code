@@ -46,7 +46,7 @@ export function WorkbenchAttachThreadDialog({
         <DialogHeader>
           <DialogTitle>Link existing Thread</DialogTitle>
           <DialogDescription>
-            Choose a non-archived Thread from this Ticket’s primary repository in this environment.
+            Choose a non-archived Thread from one of this Ticket’s repositories in this environment.
             Threads already linked to a Ticket, including past assignments, cannot be linked. The
             Thread keeps its existing branch and working directory. No prompt is sent.
           </DialogDescription>
@@ -74,7 +74,7 @@ export function WorkbenchAttachThreadDialog({
               {matching.length === 0 ? (
                 <p className="py-3 text-sm text-muted-foreground">
                   {threads.length === 0
-                    ? "No available Threads in this Ticket’s primary repository. Create a Thread instead."
+                    ? "No available Threads in this Ticket’s repositories. Create a Thread instead."
                     : "No Threads match your search."}
                 </p>
               ) : null}

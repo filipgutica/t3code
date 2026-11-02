@@ -22,7 +22,7 @@ import { buildTicketSummaryPrompt } from "./ticketSummaryText.ts";
 
 const projectId = ProjectId.make("summary-primary");
 const ticket = {
-  primaryT3ProjectId: projectId,
+  repositoryProjectIds: [projectId],
   title: "Validate dimensions",
   markdown: "The complete saved description.",
 };
@@ -91,7 +91,7 @@ describe("TicketSummaryHost", () => {
   );
 
   it.effect(
-    "uses the current text generation selection and the primary repository for each job",
+    "uses the current text generation selection and the first repository for each job",
     () =>
       Effect.gen(function* () {
         const first = createModelSelection(ProviderInstanceId.make("writer-one"), "model-one");
@@ -182,7 +182,7 @@ describe("TicketSummaryHost", () => {
   );
 
   it.effect.each(["project choice", "fallback", "all disabled"] as const)(
-    "honors primary-project provider settings: %s",
+    "honors the first repository's provider settings: %s",
     (scenario) =>
       Effect.gen(function* () {
         const environmentWriter = ProviderInstanceId.make("environment-writer");

@@ -248,7 +248,6 @@ export const WorkbenchTicket = Schema.Struct({
   markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
   // Compact snapshots replace archived content with an empty string; ticket reads stay complete.
   markdownOmitted: Schema.optionalKey(Schema.Boolean),
-  primaryT3ProjectId: ProjectId,
   repositoryProjectIds: Schema.Array(ProjectId).pipe(
     Schema.withDecodingDefault(Effect.succeed([])),
   ),
@@ -301,7 +300,6 @@ const WorkbenchTicketWorkspaceErrorMessage = TrimmedNonEmptyString.check(Schema.
 
 export const WorkbenchTicketWorkspaceRepository = Schema.Struct({
   projectId: ProjectId,
-  isPrimary: Schema.Boolean,
   sourcePath: TrimmedNonEmptyString,
   worktreePath: TrimmedNonEmptyString,
   branchName: TrimmedNonEmptyString.check(Schema.isMaxLength(240)),
@@ -341,7 +339,6 @@ export const WorkbenchTicketDraftFields = Schema.Struct({
   kind: WorkbenchTicketKind,
   epicId: Schema.NullOr(WorkbenchEpicId),
   repositoryProjectIds: Schema.Array(ProjectId),
-  primaryT3ProjectId: Schema.NullOr(ProjectId),
 });
 export type WorkbenchTicketDraftFields = typeof WorkbenchTicketDraftFields.Type;
 export const WorkbenchTicketDraft = Schema.Struct({
@@ -511,8 +508,7 @@ export const WorkbenchCreateTicketInput = Schema.Struct({
   title: WorkbenchTicket.fields.title,
   kind: WorkbenchTicketKind.pipe(Schema.withDecodingDefault(Effect.succeed("story" as const))),
   markdown: WorkbenchTicket.fields.markdown,
-  primaryT3ProjectId: ProjectId,
-  repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
+  repositoryProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
   references: Schema.optionalKey(Schema.Array(WorkbenchReferenceDraft)),
   createdAt: IsoDateTime,
 });
@@ -525,7 +521,6 @@ export const WorkbenchUpdateTicketInput = Schema.Struct({
   title: Schema.optionalKey(WorkbenchTicket.fields.title),
   kind: Schema.optionalKey(WorkbenchTicketKind),
   markdown: Schema.optionalKey(WorkbenchTicket.fields.markdown),
-  primaryT3ProjectId: Schema.optionalKey(ProjectId),
   repositoryProjectIds: Schema.optionalKey(Schema.Array(ProjectId).check(Schema.isMinLength(1))),
   status: Schema.optionalKey(WorkbenchTicketStatus),
   blocked: Schema.optionalKey(Schema.Boolean),
@@ -639,9 +634,7 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "reference_not_found",
   "linked_project_not_found",
   "linked_project_not_repository",
-  "primary_project_not_linked",
   "repository_not_linked",
-  "primary_repository_not_selected",
   "ticket_repository_scope_locked",
   "thread_not_found",
   "thread_not_owner",

@@ -30,6 +30,7 @@ const workspaceId = WorkbenchProjectId.make("agent-workspace");
 const planner = ThreadId.make("agent-planner");
 const worker = ThreadId.make("agent-worker");
 const spawned = ThreadId.make("agent-spawned");
+const spawnedInSecond = ThreadId.make("agent-spawned-second");
 const createdAt = "2026-10-20T10:00:00.000Z";
 
 const makeTestLayer = ({
@@ -73,13 +74,15 @@ const makeTestLayer = ({
           executionSequence: Effect.succeed(0),
           startedExecutionRunIds: Effect.succeed([]),
           hasPendingThreadWork: () => Effect.succeed(false),
-          findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
+          findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
           isRepository: () => Effect.succeed(true),
           findThread: (id) =>
             Effect.succeed(
               id === worker || id === spawned
                 ? Option.some({ id, projectId: first })
-                : Option.none(),
+                : id === spawnedInSecond
+                  ? Option.some({ id, projectId: second })
+                  : Option.none(),
             ),
           hasThreadAtWorktreePath: () => Effect.succeed(false),
           findStartingRun: () => Effect.succeedNone,
@@ -151,7 +154,7 @@ describe("WorkbenchAgentService", () => {
       });
       const saved = yield* store.getTicketDraft(draft.id);
       expect(saved.progress).toBe("- [ ] PR 1. Expire tokens");
-      expect(saved.fields.primaryT3ProjectId).toBe(second);
+      expect(saved.fields.repositoryProjectIds).toEqual([second]);
       expect(saved.updatedByThreadId).toBe(planner);
 
       const refused = yield* Effect.flip(
@@ -182,7 +185,6 @@ describe("WorkbenchAgentService", () => {
         title: "Expire invitations",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: first,
         repositoryProjectIds: [first, second],
         createdAt,
       });
@@ -251,8 +253,8 @@ describe("WorkbenchAgentService", () => {
     }).pipe(Effect.provide(testLayer)),
   );
 
-  // The store checks this under its write lock, so a Thread linked after the agent read the Ticket counts.
-  it.effect("refuses an agent update that drops the repository an assigned Thread works in", () =>
+  // The store checks this under its write lock, so a Thread linked after the caller read the Ticket counts.
+  it.effect("refuses any update that drops the repository an active Thread works in", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       yield* seedWorkspace;
@@ -262,7 +264,6 @@ describe("WorkbenchAgentService", () => {
         title: "Expire invitations",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: first,
         repositoryProjectIds: [first, second],
         createdAt,
       });
@@ -277,15 +278,16 @@ describe("WorkbenchAgentService", () => {
           id: ticket.id,
           expectedRevision: ticket.revision,
           repositoryProjectIds: [second],
-          primaryT3ProjectId: second,
           updatedAt: createdAt,
           ...(updatedByThreadId === undefined ? {} : { updatedByThreadId }),
         });
 
-      expect(yield* Effect.flip(keepSecond(worker))).toMatchObject({
-        code: "ticket_repository_scope_locked",
-      });
-      expect((yield* keepSecond()).repositoryProjectIds).toEqual([second]);
+      for (const updatedByThreadId of [worker, undefined]) {
+        expect(yield* Effect.flip(keepSecond(updatedByThreadId))).toMatchObject({
+          code: "ticket_repository_scope_locked",
+          message: `${first} can't be removed while an active Thread works in it. Archive or delete that Thread first.`,
+        });
+      }
     }).pipe(Effect.provide(testLayer)),
   );
 
@@ -300,7 +302,7 @@ describe("WorkbenchAgentService", () => {
         title: "Expire invitations",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: first,
+        repositoryProjectIds: [first],
         createdAt,
       });
       yield* store.createAssignment({
@@ -360,7 +362,7 @@ describe("WorkbenchAgentService", () => {
           title: "Expire invitations",
           kind: "story",
           markdown: "Goal",
-          primaryT3ProjectId: first,
+          repositoryProjectIds: [first],
           createdAt,
         });
         yield* store.createAssignment({
@@ -415,7 +417,7 @@ describe("WorkbenchAgentService", () => {
   );
 
   it.effect(
-    "starts another Thread on the caller's Ticket and links it before its first message",
+    "starts another Thread in the caller's repository or a chosen one, linked before its first message",
     () =>
       Effect.gen(function* () {
         const events = yield* Ref.make<ReadonlyArray<string>>([]);
@@ -426,26 +428,29 @@ describe("WorkbenchAgentService", () => {
           status: "ready",
           branchName: "t3/expire-invitations",
           errorMessage: null,
-          repositories: [
-            {
-              projectId: first,
-              isPrimary: true,
-              sourcePath: "/repos/agent-first",
-              worktreePath: "/worktrees/agent-first",
-              branchName: "t3/expire-invitations",
-              status: "ready",
-              errorMessage: null,
-              createdAt,
-              updatedAt: createdAt,
-            },
-          ],
+          repositories: [first, second].map((projectId) => ({
+            projectId,
+            sourcePath: `/repos/${projectId}`,
+            worktreePath: `/worktrees/${projectId}`,
+            branchName: "t3/expire-invitations",
+            status: "ready" as const,
+            errorMessage: null,
+            createdAt,
+            updatedAt: createdAt,
+          })),
           createdAt,
           updatedAt: createdAt,
         });
         const host = (store: WorkbenchStore["Service"]) => ({
           createThread: (input: Parameters<WorkbenchAgentHost["Service"]["createThread"]>[0]) =>
-            note(`create ${input.worktreePath} ${input.title}`).pipe(
-              Effect.as(input.title === "Unlinkable" ? ThreadId.make("agent-missing") : spawned),
+            note(`create ${input.projectId} ${input.worktreePath} ${input.title}`).pipe(
+              Effect.as(
+                input.title === "Unlinkable"
+                  ? ThreadId.make("agent-missing")
+                  : input.projectId === second
+                    ? spawnedInSecond
+                    : spawned,
+              ),
             ),
           deleteThread: (threadId: ThreadId) => note(`delete ${threadId}`),
           sendMessage: (input: Parameters<WorkbenchAgentHost["Service"]["sendMessage"]>[0]) =>
@@ -468,7 +473,8 @@ describe("WorkbenchAgentService", () => {
             title: "Expire invitations",
             kind: "story",
             markdown: "",
-            primaryT3ProjectId: first,
+            // The caller works in `first`, which is not the Ticket's first repository.
+            repositoryProjectIds: [second, first],
             createdAt,
           });
           yield* store.createAssignment({
@@ -482,20 +488,39 @@ describe("WorkbenchAgentService", () => {
           expect(
             yield* agent.startThread({ threadId: worker, message: "Implement PR 3", ...modes }),
           ).toEqual({ threadId: spawned, title: "Expire invitations" });
-          for (const threadId of [worker, spawned]) {
+          expect(
+            yield* agent.startThread({
+              threadId: worker,
+              repositoryProjectId: second,
+              message: "Review the API",
+              ...modes,
+            }),
+          ).toEqual({ threadId: spawnedInSecond, title: "Expire invitations" });
+          for (const threadId of [worker, spawned, spawnedInSecond]) {
             expect(yield* store.resolveThreadOwner(threadId)).toEqual(
               Option.some({ kind: "ticket", ticketId: ticket.id }),
             );
           }
+          const unlinkedRepository = yield* Effect.flip(
+            agent.startThread({
+              threadId: worker,
+              repositoryProjectId: ProjectId.make("agent-elsewhere"),
+              message: "Hi",
+              ...modes,
+            }),
+          );
+          expect(unlinkedRepository).toMatchObject({ code: "repository_not_linked" });
 
           const unlinkable = yield* Effect.flip(
             agent.startThread({ threadId: worker, title: "Unlinkable", message: "Hi", ...modes }),
           );
           expect(unlinkable).toMatchObject({ code: "thread_not_found" });
           expect(yield* Ref.get(events)).toEqual([
-            "create /worktrees/agent-first Expire invitations",
+            "create agent-first /worktrees/agent-first Expire invitations",
             `send Implement PR 3 linked=true from=${worker}`,
-            "create /worktrees/agent-first Unlinkable",
+            "create agent-second /worktrees/agent-second Expire invitations",
+            `send Review the API linked=true from=${worker}`,
+            "create agent-first /worktrees/agent-first Unlinkable",
             "delete agent-missing",
           ]);
 

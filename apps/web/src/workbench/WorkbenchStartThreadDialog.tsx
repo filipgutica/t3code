@@ -32,11 +32,15 @@ import {
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import type { Project } from "../types";
-import { WorkbenchRepositoryScopeFields } from "./WorkbenchRepositoryScopeFields";
+import {
+  getWorkbenchRepositoryTitle,
+  WorkbenchThreadRepositoryPicker,
+} from "./WorkbenchThreadRepositoryPicker";
 import {
   getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
   isWorkbenchRepositoryScopeValid,
+  resolveWorkbenchThreadRepository,
   isWorkbenchTicketWorkspaceReady,
   type WorkbenchRepositoryScope,
 } from "./workbenchRepositoryScope";
@@ -106,7 +110,7 @@ const useWorkbenchStartThreadSelection = ({
   defaultModelSelection,
   stickyModelSelection,
 }: {
-  readonly projectId: ProjectId;
+  readonly projectId: ProjectId | null;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: Parameters<typeof getCustomModelOptionsByInstance>[0];
   readonly defaultModelSelection: ModelSelection | null;
@@ -179,40 +183,78 @@ type WorkbenchStartThreadDialogRequest = {
   readonly projects: ReadonlyArray<Project>;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
+  /** Preferred repository for the new Thread; see `resolveWorkbenchThreadRepository`. */
+  readonly repositoryProjectId: ProjectId | undefined;
   readonly additional?: boolean;
   readonly title?: string;
   readonly description?: string;
   readonly startLabel?: string;
 };
 
-const resolveThreadRepositoryScope = ({
+/**
+ * The repository the new Thread works in and the scope Create saves. Prepared repositories stay
+ * on the Ticket even when an unsaved Ticket-page draft dropped them; a picked Workspace repository
+ * the Ticket does not link yet is appended. Draft order is kept so an unchanged scope is not saved.
+ */
+const resolveThreadRepositoryChoice = ({
   ticket,
   workspace,
+  projects,
   draft,
+  picked,
+  preferred,
 }: {
   ticket: WorkbenchTicket;
   workspace: WorkbenchTicketWorkspace | undefined;
+  projects: readonly Project[];
   draft: WorkbenchRepositoryScope;
+  picked: ProjectId | undefined;
+  preferred: ProjectId | undefined;
 }) => {
-  const preparedRepositoryIds = new Set(
-    workspace?.repositories
-      .filter((repository) => repository.status === "ready")
-      .map((repository) => repository.projectId),
-  );
-  if (preparedRepositoryIds.size === 0) return { scope: draft, lockedScope: undefined };
-  const lockedScope = {
-    primaryT3ProjectId: ticket.primaryT3ProjectId,
-    repositoryProjectIds: ticket.repositoryProjectIds.filter(
-      (id) => id === ticket.primaryT3ProjectId || preparedRepositoryIds.has(id),
-    ),
+  const isPrepared = (id: ProjectId) =>
+    workspace?.repositories.some(
+      (repository) => repository.projectId === id && repository.status === "ready",
+    ) ?? false;
+  const ticketRepositoryIds = [
+    ...new Set([...draft.repositoryProjectIds, ...ticket.repositoryProjectIds.filter(isPrepared)]),
+  ];
+  const adding = picked !== undefined && !ticketRepositoryIds.includes(picked);
+  const repositoryScope = {
+    repositoryProjectIds: adding ? [...ticketRepositoryIds, picked] : ticketRepositoryIds,
   };
+  const repositoryProjectId =
+    resolveWorkbenchThreadRepository({ ticket: repositoryScope, preferred: picked ?? preferred }) ??
+    null;
   return {
-    lockedScope,
-    scope: {
-      primaryT3ProjectId: lockedScope.primaryT3ProjectId,
-      repositoryProjectIds: [
-        ...new Set([...lockedScope.repositoryProjectIds, ...draft.repositoryProjectIds]),
-      ],
+    ticketRepositoryIds,
+    repositoryScope,
+    repositoryProjectId,
+    workspaceReady:
+      isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
+      isWorkbenchRepositoryScopeEqual(ticket, repositoryScope),
+    workspaceLocked: workspace?.status === "preparing" || workspace?.status === "releasing",
+    scopeValid: isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects }),
+    note: {
+      title: getWorkbenchRepositoryTitle(projects, repositoryProjectId),
+      adding,
+      prepared: repositoryProjectId !== null && isPrepared(repositoryProjectId),
+      // "Last used" explains a default only when the Ticket offered a choice.
+      lastUsed: ticketRepositoryIds.length > 1 && repositoryProjectId === preferred,
+      ticketScopeChanged: !isWorkbenchRepositoryScopeEqual(ticket, {
+        repositoryProjectIds: ticketRepositoryIds,
+      }),
+      unavailable: repositoryScope.repositoryProjectIds.some(
+        (id) => !projects.some((project) => project.id === id),
+      ),
+      // Create re-prepares every repository, so any failed checkout can block the Thread.
+      preparationErrors: (workspace?.repositories ?? []).flatMap((repository) =>
+        repository.errorMessage &&
+        repositoryScope.repositoryProjectIds.includes(repository.projectId)
+          ? [
+              `${getWorkbenchRepositoryTitle(projects, repository.projectId)}: ${repository.errorMessage}`,
+            ]
+          : [],
+      ),
     },
   };
 };
@@ -236,6 +278,7 @@ export function WorkbenchStartThreadDialog({
   readonly onStart: (input: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
+    repositoryProjectId?: ProjectId;
   }) => void;
   readonly error: string | null;
 }) {
@@ -245,25 +288,29 @@ export function WorkbenchStartThreadDialog({
     projects,
     workspace,
     initialRepositoryScope,
+    repositoryProjectId: preferredRepositoryProjectId,
     additional = false,
     title: dialogTitle = "Create Thread",
     description: customDescription,
     startLabel = "Create Thread",
   } = request;
-  const [repositoryScopeDraft, setRepositoryScope] = useState(
-    initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
-  );
-  const { scope: repositoryScope, lockedScope: lockedRepositoryScope } =
-    resolveThreadRepositoryScope({
-      ticket,
-      workspace,
-      draft: repositoryScopeDraft,
-    });
-  const workspaceReady =
-    isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
-    isWorkbenchRepositoryScopeEqual(ticket, repositoryScope);
-  const workspaceLocked = workspace?.status === "preparing" || workspace?.status === "releasing";
-  const scopeValid = isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects });
+  const [pickedRepositoryProjectId, setPickedRepositoryProjectId] = useState<ProjectId>();
+  const {
+    ticketRepositoryIds,
+    repositoryScope,
+    repositoryProjectId,
+    workspaceReady,
+    workspaceLocked,
+    scopeValid,
+    note,
+  } = resolveThreadRepositoryChoice({
+    ticket,
+    workspace,
+    projects,
+    draft: initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
+    picked: pickedRepositoryProjectId,
+    preferred: preferredRepositoryProjectId,
+  });
   const settings = useEnvironmentSettings(environmentId);
   const stickyModelSelection = useComposerDraftStore((store) =>
     store.stickyActiveProvider === null
@@ -276,13 +323,13 @@ export function WorkbenchStartThreadDialog({
       ? "Start another Thread for this ticket. It can read and update the ticket."
       : "The Thread can read and update this ticket. Add a message and send when you’re ready.");
   const selection = useWorkbenchStartThreadSelection({
-    projectId: repositoryScope.primaryT3ProjectId,
+    projectId: repositoryProjectId,
     providers,
     settings,
     defaultModelSelection: resolveWorkbenchDefaultModelSelection({
       settings,
-      projectId: repositoryScope.primaryT3ProjectId,
-      project: projects.find((project) => project.id === repositoryScope.primaryT3ProjectId),
+      projectId: repositoryProjectId,
+      project: projects.find((project) => project.id === repositoryProjectId),
     }),
     stickyModelSelection,
   });
@@ -293,7 +340,11 @@ export function WorkbenchStartThreadDialog({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (cannotStart || resolvedSelection === null) return;
-    onStart({ modelSelection: resolvedSelection, ...(!workspaceReady ? { repositoryScope } : {}) });
+    onStart({
+      modelSelection: resolvedSelection,
+      ...(!workspaceReady ? { repositoryScope } : {}),
+      ...(repositoryProjectId ? { repositoryProjectId } : {}),
+    });
   };
 
   return (
@@ -309,30 +360,29 @@ export function WorkbenchStartThreadDialog({
           <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
         <DialogPanel>
-          <form id="workbench-start-thread" className="space-y-5" onSubmit={submit}>
-            <WorkbenchStartThreadWorkspaceReview
-              ticket={ticket}
-              workspace={workspace}
-              projects={projects}
-              repositorySelection={{
-                value: repositoryScope,
-                onChange: setRepositoryScope,
-                lockedScope: lockedRepositoryScope,
-              }}
-              ready={workspaceReady}
-              locked={workspaceLocked}
-              pending={pending}
-            />
+          <form id="workbench-start-thread" className="space-y-2" onSubmit={submit}>
+            <div className="flex flex-wrap items-center gap-2">
+              <WorkbenchThreadRepositoryPicker
+                ticketRepositoryIds={ticketRepositoryIds}
+                projects={projects}
+                workspace={workspace}
+                value={repositoryProjectId}
+                disabled={pending || workspaceLocked}
+                onChange={setPickedRepositoryProjectId}
+              />
+              <WorkbenchStartThreadModelPickers
+                environmentId={environmentId}
+                selection={selection}
+                planModeEnabled={settings.planModeEnabled}
+              />
+            </div>
+            <WorkbenchStartThreadRepositoryNote {...note} locked={workspaceLocked} />
+            <WorkbenchStartThreadSelectionStatus selection={selection} />
             {error ? (
               <p role="alert" className="break-words text-sm text-destructive">
                 {error}
               </p>
             ) : null}
-            <WorkbenchStartThreadModelFields
-              environmentId={environmentId}
-              selection={selection}
-              planModeEnabled={settings.planModeEnabled}
-            />
           </form>
         </DialogPanel>
         <WorkbenchStartThreadFooter
@@ -376,118 +426,82 @@ function WorkbenchStartThreadFooter({
   );
 }
 
-const repositoryListFormat = new Intl.ListFormat("en", { type: "conjunction" });
-
-const getWorkAreaStatus = ({
-  ready,
-  workspace,
-}: {
-  ready: boolean;
-  workspace: WorkbenchTicketWorkspace | undefined;
-}): { label: string; variant: "success" | "info" | "warning" | "error" | "secondary" } => {
-  if (ready) return { label: "Ready", variant: "success" };
-  switch (workspace?.status) {
-    case "preparing":
-      return { label: "Preparing", variant: "info" };
-    case "releasing":
-      return { label: "Releasing", variant: "warning" };
-    case "failed":
-      return { label: "Failed", variant: "error" };
-    case "ready":
-      return { label: "Needs preparation", variant: "warning" };
-    default:
-      return { label: "Not prepared", variant: "secondary" };
-  }
-};
-
-const getWorkAreaDescription = ({
-  ready,
-  workspace,
-  projects,
-  savedScope,
-  scope,
-}: {
-  ready: boolean;
-  workspace: WorkbenchTicketWorkspace | undefined;
-  projects: readonly Project[];
-  savedScope: WorkbenchRepositoryScope;
-  scope: WorkbenchRepositoryScope;
-}) => {
-  if (ready) return "This Thread reuses the prepared worktrees.";
-  if (workspace?.status === "ready") {
-    const unprepared = scope.repositoryProjectIds
-      .filter(
-        (id) =>
-          !workspace.repositories.some(
-            (repository) => repository.projectId === id && repository.status === "ready",
-          ),
-      )
-      .map((id) => projects.find((project) => project.id === id)?.title ?? id);
-    if (unprepared.length > 0) {
-      return `Creating the Thread prepares ${unprepared.length === 1 ? "a worktree" : "worktrees"} for ${repositoryListFormat.format(unprepared)}. Prepared worktrees are reused.`;
-    }
-  }
-  return isWorkbenchRepositoryScopeEqual(savedScope, scope)
-    ? null
-    : "Repository changes apply to this ticket’s work area when you create the Thread.";
-};
-
-function WorkbenchStartThreadWorkspaceReview({
-  ticket,
-  workspace,
-  projects,
-  repositorySelection,
-  ready,
+function WorkbenchStartThreadRepositoryNote({
+  title,
+  adding,
+  prepared,
+  lastUsed,
+  ticketScopeChanged,
+  unavailable,
+  preparationErrors,
   locked,
-  pending,
 }: {
-  ticket: WorkbenchTicket;
-  workspace: WorkbenchTicketWorkspace | undefined;
-  projects: readonly Project[];
-  repositorySelection: {
-    value: WorkbenchRepositoryScope;
-    onChange: (scope: WorkbenchRepositoryScope) => void;
-    lockedScope: WorkbenchRepositoryScope | undefined;
-  };
-  ready: boolean;
+  title: string;
+  adding: boolean;
+  prepared: boolean;
+  lastUsed: boolean;
+  ticketScopeChanged: boolean;
+  unavailable: boolean;
+  preparationErrors: readonly string[];
   locked: boolean;
-  pending: boolean;
 }) {
-  const status = getWorkAreaStatus({ ready, workspace });
-  const savedScope = getWorkbenchRepositoryScope(ticket);
-  const description = getWorkAreaDescription({
-    ready,
-    workspace,
-    projects,
-    savedScope,
-    scope: repositorySelection.value,
-  });
   return (
-    <section className="space-y-3">
-      <div className="space-y-1">
-        <div className="flex items-center gap-2">
-          <p className="text-sm font-medium">Work area</p>
-          <Badge variant={status.variant}>{status.label}</Badge>
-        </div>
-        {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-      </div>
-      <WorkbenchRepositoryScopeFields
-        projects={projects}
-        {...repositorySelection}
-        savedScope={savedScope}
-        workspace={workspace}
-        disabled={pending || locked}
-      />
-      {locked ? (
-        <p role="status" className="text-xs text-muted-foreground">
-          Wait for work area preparation or release to finish.
+    <div className="space-y-1 text-xs text-muted-foreground">
+      {adding ? (
+        <p className="flex items-center gap-2">
+          <Badge size="sm" variant="info">
+            Adding
+          </Badge>
+          <span>{title} will be linked to this ticket and prepared on its branch.</span>
+        </p>
+      ) : (
+        <p>
+          {prepared
+            ? `Works in the prepared ${title} worktree.`
+            : `Creating the Thread prepares a worktree for ${title}.`}
+          {lastUsed ? " Last used by this ticket’s Threads." : null}
+        </p>
+      )}
+      {ticketScopeChanged ? (
+        <p>Repository changes apply to this ticket’s work area when you create the Thread.</p>
+      ) : null}
+      {unavailable ? (
+        <p role="alert" className="text-destructive">
+          A ticket repository is no longer linked to this Workspace. Link it again with Edit
+          Workspace.
         </p>
       ) : null}
-    </section>
+      {preparationErrors.map((message) => (
+        <p key={message} role="alert" className="break-words text-destructive">
+          {message}
+        </p>
+      ))}
+      {locked ? <p role="status">Wait for work area preparation or release to finish.</p> : null}
+    </div>
   );
 }
 
-function WorkbenchStartThreadModelFields({
+function WorkbenchStartThreadSelectionStatus({
+  selection,
+}: {
+  selection: ReturnType<typeof useWorkbenchStartThreadSelection>;
+}) {
+  if (!selection.resolvedSelection || !selection.activeEntry)
+    return (
+      <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+        No available Agent providers are connected.
+      </p>
+    );
+  if (!selection.selectionAvailable)
+    return (
+      <p className="text-sm text-warning-foreground" role="status">
+        Choose an available provider and model before starting the Thread.
+      </p>
+    );
+  return null;
+}
+
+function WorkbenchStartThreadModelPickers({
   environmentId,
   selection,
   planModeEnabled,
@@ -503,41 +517,30 @@ function WorkbenchStartThreadModelFields({
     modelOptionsByInstance,
     handleInstanceModelChange,
     handleModelOptionsChange,
-    selectionAvailable,
   } = selection;
-  return resolvedSelection && activeEntry ? (
-    <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
-        <ProviderModelPicker
-          environmentId={environmentId}
-          activeInstanceId={resolvedSelection.instanceId}
-          model={resolvedSelection.model}
-          lockedProvider={null}
-          instanceEntries={instanceEntries}
-          modelOptionsByInstance={modelOptionsByInstance}
-          triggerAriaLabel="Thread provider and model"
-          onInstanceModelChange={handleInstanceModelChange}
-        />
-        <TraitsPicker
-          provider={activeEntry.driverKind}
-          instanceId={resolvedSelection.instanceId}
-          models={activeEntry.models}
-          model={resolvedSelection.model}
-          modelOptions={resolvedSelection.options ?? []}
-          allowPromptInjectedEffort={false}
-          planModeEnabled={planModeEnabled}
-          onModelOptionsChange={handleModelOptionsChange}
-        />
-      </div>
-      {!selectionAvailable ? (
-        <p className="text-sm text-warning-foreground" role="status">
-          Choose an available provider and model before starting the Thread.
-        </p>
-      ) : null}
-    </div>
-  ) : (
-    <p className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-      No available Agent providers are connected.
-    </p>
+  if (!resolvedSelection || !activeEntry) return null;
+  return (
+    <>
+      <ProviderModelPicker
+        environmentId={environmentId}
+        activeInstanceId={resolvedSelection.instanceId}
+        model={resolvedSelection.model}
+        lockedProvider={null}
+        instanceEntries={instanceEntries}
+        modelOptionsByInstance={modelOptionsByInstance}
+        triggerAriaLabel="Thread provider and model"
+        onInstanceModelChange={handleInstanceModelChange}
+      />
+      <TraitsPicker
+        provider={activeEntry.driverKind}
+        instanceId={resolvedSelection.instanceId}
+        models={activeEntry.models}
+        model={resolvedSelection.model}
+        modelOptions={resolvedSelection.options ?? []}
+        allowPromptInjectedEffort={false}
+        planModeEnabled={planModeEnabled}
+        onModelOptionsChange={handleModelOptionsChange}
+      />
+    </>
   );
 }

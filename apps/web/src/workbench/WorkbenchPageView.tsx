@@ -969,6 +969,7 @@ function WorkbenchPageThreadDialogs(
     setAttachThreadTicket,
     attachExistingThread,
     startSelectedThread,
+    getActiveThreadRepository,
   } = threadActions;
   const pending = pendingAction !== null;
   return (
@@ -988,6 +989,7 @@ function WorkbenchPageThreadDialogs(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
             initialRepositoryScope: startThreadRequest.repositoryScope,
+            repositoryProjectId: getActiveThreadRepository(startThreadRequest.ticket.id),
             environmentId,
             additional: startThreadRequest.mode === "additional",
           }}
@@ -1007,7 +1009,7 @@ function WorkbenchPageThreadDialogs(
         <WorkbenchAttachThreadDialog
           threads={[...threadsById.values()].filter(
             (thread) =>
-              thread.projectId === attachThreadTicket.primaryT3ProjectId &&
+              attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
               !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,

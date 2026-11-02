@@ -28,17 +28,22 @@ export const ticketSummaryHostLayer = Layer.effect(
     const textGeneration = yield* TextGeneration;
     return TicketSummaryHost.of({
       generate: Effect.fn("TicketSummaryHost.generate")(function* (ticket) {
-        const project = yield* projections.getShell(ticket.primaryT3ProjectId).pipe(
-          Effect.mapError(
-            () =>
-              new WorkbenchOperationError({
-                code: "ticket_summary_generation_failed",
-                message:
-                  "The ticket's repository could not be loaded. Check its repository scope and try again.",
-              }),
-          ),
-        );
-        if (Option.isNone(project)) {
+        // The first repository's settings and checkout write the summary.
+        const projectId = ticket.repositoryProjectIds[0];
+        const project =
+          projectId === undefined
+            ? Option.none()
+            : yield* projections.getShell(projectId).pipe(
+                Effect.mapError(
+                  () =>
+                    new WorkbenchOperationError({
+                      code: "ticket_summary_generation_failed",
+                      message:
+                        "The ticket's repository could not be loaded. Check its repository scope and try again.",
+                    }),
+                ),
+              );
+        if (projectId === undefined || Option.isNone(project)) {
           return yield* new WorkbenchOperationError({
             code: "ticket_summary_generation_failed",
             message:
@@ -55,19 +60,19 @@ export const ticketSummaryHostLayer = Layer.effect(
               }),
           ),
         );
-        const modelSelection = resolveProjectSettings(currentSettings, ticket.primaryT3ProjectId)
-          .settings.textGenerationModelSelection;
+        const modelSelection = resolveProjectSettings(currentSettings, projectId).settings
+          .textGenerationModelSelection;
         if (
           !resolveProjectProviderInstanceEnabled(
             currentSettings,
-            ticket.primaryT3ProjectId,
+            projectId,
             modelSelection.instanceId,
           )
         ) {
           return yield* new WorkbenchOperationError({
             code: "ticket_summary_generation_failed",
             message:
-              "No text generation provider is enabled for this ticket's primary repository. Enable one in project settings, then regenerate the summary.",
+              "No text generation provider is enabled for this ticket's first repository. Enable one in project settings, then regenerate the summary.",
           });
         }
         const { prompt, outputSchema } = buildTicketSummaryPrompt({

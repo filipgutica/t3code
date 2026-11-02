@@ -3,7 +3,6 @@ import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import {
   EnvironmentId,
-  ProjectId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchTicket,
@@ -17,7 +16,6 @@ import {
 const environmentA = EnvironmentId.make("environment-a");
 const environmentB = EnvironmentId.make("environment-b");
 const projectId = WorkbenchProjectId.make("project-1");
-const repositoryId = ProjectId.make("repository-1");
 const ticketAId = WorkbenchTicketId.make("ticket-a");
 const ticketBId = WorkbenchTicketId.make("ticket-b");
 const initialUpdatedAt = "2026-09-11T12:00:00.000Z";
@@ -33,7 +31,6 @@ const makeTicket = (
   title: id,
   kind: "story",
   markdown: "",
-  primaryT3ProjectId: repositoryId,
   repositoryProjectIds: [],
   status,
   blocked: false,

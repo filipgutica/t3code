@@ -10,7 +10,6 @@ import {
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
 } from "./workbenchRepositoryScope";
-import { WorkbenchRepositorySelectOptions } from "./WorkbenchRepositorySelectOptions";
 import {
   WorkbenchTicketAttentionBadge,
   WorkbenchTicketAttentionPanel,
@@ -148,7 +147,6 @@ import {
   getWorkbenchThreadPresentation,
   getWorkbenchEpicProgress,
   getActiveAssignmentsByTicket,
-  getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketThreadSections,
@@ -567,24 +565,22 @@ export function WorkbenchTicketDialog({
     setMarkdown,
     repositoryProjectIds,
     setRepositoryProjectIds,
-    primaryProjectId,
-    setPrimaryProjectId,
     references,
     setReferences,
     handleOpenChange,
   } = useWorkbenchCreateTicketDraft({ initialEpicId, pending, onOpenChange });
   const selectedEpicId = epics.some((epic) => epic.id === epicId) ? epicId : null;
-  const { selectedRepositoryProjectIds, selectedProjectId } = getWorkbenchCreateTicketRepositories({
+  const { selectedRepositoryProjectIds } = getWorkbenchCreateTicketRepositories({
     linkedProjects,
     repositoryProjectIds,
-    primaryProjectId,
   });
   const createLabel = pending ? "Creating Ticket…" : "Create Ticket";
   const mutationDisabled = disabled || pending;
-  const cannotCreate = mutationDisabled || title.trim().length === 0 || selectedProjectId === null;
+  const cannotCreate =
+    mutationDisabled || title.trim().length === 0 || selectedRepositoryProjectIds.length === 0;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
-    if (cannotCreate || selectedProjectId === null) return;
+    if (cannotCreate) return;
     const created = await onCreate({
       id: requestId,
       title,
@@ -592,7 +588,6 @@ export function WorkbenchTicketDialog({
       kind,
       epicId: selectedEpicId,
       repositoryProjectIds: selectedRepositoryProjectIds,
-      primaryT3ProjectId: selectedProjectId,
       ...(references.length > 0 ? { references } : {}),
     });
     if (created) handleOpenChange(false);
@@ -604,7 +599,7 @@ export function WorkbenchTicketDialog({
         <DialogHeader>
           <DialogTitle>Create Ticket</DialogTitle>
           <DialogDescription>
-            Capture the work and choose the repository where its Agent Thread will run.
+            Capture the work and choose the repositories it needs.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel>
@@ -646,9 +641,7 @@ export function WorkbenchTicketDialog({
             <WorkbenchCreateTicketRepositories
               linkedProjects={linkedProjects}
               selectedRepositoryProjectIds={selectedRepositoryProjectIds}
-              selectedProjectId={selectedProjectId}
               setRepositoryProjectIds={setRepositoryProjectIds}
-              setPrimaryProjectId={setPrimaryProjectId}
             />
             <WorkbenchStagedReferences
               references={references}
@@ -712,14 +705,7 @@ export type WorkbenchTicketDetailProps = {
     patch: Partial<
       Pick<
         WorkbenchTicket,
-        | "title"
-        | "markdown"
-        | "kind"
-        | "epicId"
-        | "repositoryProjectIds"
-        | "primaryT3ProjectId"
-        | "status"
-        | "blocked"
+        "title" | "markdown" | "kind" | "epicId" | "repositoryProjectIds" | "status" | "blocked"
       >
     >,
   ) => void;
@@ -1209,10 +1195,7 @@ function WorkbenchTicketDetailController({
               {error ? <WorkbenchInlineError message={error} onRetry={onRetryError} /> : null}
               <WorkbenchReferenceFileSheetProvider
                 environmentId={environmentId}
-                cwd={getReferenceFileCwd(linkedProjects, [
-                  ticket.primaryT3ProjectId,
-                  ...ticket.repositoryProjectIds,
-                ])}
+                cwd={getReferenceFileCwd(linkedProjects, ticket.repositoryProjectIds)}
                 threadId={(assignment ?? activeAssignments[0])?.threadId ?? null}
               >
                 <WorkbenchTicketDescriptionPanel
@@ -1479,14 +1462,7 @@ function WorkbenchTicketDetailController({
 type WorkbenchTicketUpdatePatch = Partial<
   Pick<
     WorkbenchTicket,
-    | "title"
-    | "markdown"
-    | "kind"
-    | "epicId"
-    | "repositoryProjectIds"
-    | "primaryT3ProjectId"
-    | "status"
-    | "blocked"
+    "title" | "markdown" | "kind" | "epicId" | "repositoryProjectIds" | "status" | "blocked"
   >
 >;
 
@@ -1548,7 +1524,6 @@ function WorkbenchTicketDetailsPanel({
 
 type WorkbenchTicketRepositoryEntry = {
   readonly id: ProjectId;
-  readonly isPrimary: boolean;
   readonly repository: Project | undefined;
   readonly openInCwd: string | null;
   readonly workspaceRepository: WorkbenchTicketWorkspace["repositories"][number] | undefined;
@@ -1560,7 +1535,6 @@ function WorkbenchTicketRepositoryRow({
   keybindings,
   availableEditors,
   isArchived,
-  isRetained,
   canOpen,
 }: {
   readonly environmentId: EnvironmentId;
@@ -1568,13 +1542,12 @@ function WorkbenchTicketRepositoryRow({
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly isArchived: boolean;
-  readonly isRetained: boolean;
   readonly canOpen: boolean;
 }) {
   const { repository, openInCwd } = entry;
   return (
     <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 py-2 text-sm">
-      <WorkbenchTicketRepositoryIdentity entry={entry} isRetained={isRetained} />
+      <WorkbenchTicketRepositoryIdentity entry={entry} />
       {repository && !isArchived && canOpen && openInCwd ? (
         <OpenInPicker
           environmentId={repository.environmentId}
@@ -1606,10 +1579,8 @@ function WorkbenchTicketRepositoryRow({
 
 function WorkbenchTicketRepositoryIdentity({
   entry,
-  isRetained,
 }: {
   readonly entry: WorkbenchTicketRepositoryEntry;
-  readonly isRetained: boolean;
 }) {
   const repositoryTitle = entry.repository?.title ?? "Repository unavailable";
   return (
@@ -1630,11 +1601,6 @@ function WorkbenchTicketRepositoryIdentity({
             </span>
           </span>
         )}
-        {entry.isPrimary && !isRetained ? (
-          <Badge size="default" variant="outline">
-            Primary
-          </Badge>
-        ) : null}
         <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
       </div>
     </div>
@@ -1993,14 +1959,7 @@ type WorkbenchTicketHeaderProps = {
     patch: Partial<
       Pick<
         WorkbenchTicket,
-        | "title"
-        | "markdown"
-        | "kind"
-        | "epicId"
-        | "repositoryProjectIds"
-        | "primaryT3ProjectId"
-        | "status"
-        | "blocked"
+        "title" | "markdown" | "kind" | "epicId" | "repositoryProjectIds" | "status" | "blocked"
       >
     >,
   ) => void;
@@ -3159,20 +3118,17 @@ function WorkbenchTicketWorkspaceRepositories({
 >) {
   return (
     <div className="divide-y divide-border/50">
-      {[...repositories]
-        .sort((a, b) => Number(b.isPrimary) - Number(a.isPrimary))
-        .map((entry) => (
-          <WorkbenchTicketRepositoryRow
-            key={entry.id}
-            environmentId={environmentId}
-            entry={entry}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            isArchived={isArchived}
-            isRetained={false}
-            canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
-          />
-        ))}
+      {repositories.map((entry) => (
+        <WorkbenchTicketRepositoryRow
+          key={entry.id}
+          environmentId={environmentId}
+          entry={entry}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          isArchived={isArchived}
+          canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+        />
+      ))}
       {retainedRepositories.length > 0 ? (
         <details className="pt-2">
           <summary className="cursor-pointer text-xs font-medium text-muted-foreground focus-visible:outline focus-visible:outline-ring">
@@ -3190,7 +3146,6 @@ function WorkbenchTicketWorkspaceRepositories({
                 keybindings={keybindings}
                 availableEditors={availableEditors}
                 isArchived={isArchived}
-                isRetained
                 canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
               />
             ))}
@@ -4156,7 +4111,9 @@ function WorkbenchEpicTickets({
       {tickets.length > 0 ? (
         <div className="divide-y divide-border border-t border-border">
           {tickets.map((ticket) => {
-            const repository = repositoriesById.get(ticket.primaryT3ProjectId);
+            const repositoryTitles = ticket.repositoryProjectIds
+              .map((id) => repositoriesById.get(id)?.title ?? "Repository unavailable")
+              .join(", ");
             const assignment = assignmentsByTicket.get(ticket.id);
             return (
               <div
@@ -4186,7 +4143,7 @@ function WorkbenchEpicTickets({
                     </Tooltip>
                   </span>
                   <span className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
-                    <span>{repository?.title ?? "Repository unavailable"}</span>
+                    <span>{repositoryTitles}</span>
                     <span>{assignment ? "Agent assigned" : "Unassigned"}</span>
                   </span>
                 </span>
@@ -4293,20 +4250,16 @@ export function WorkbenchCreateTicketEpic({
 export function WorkbenchCreateTicketRepositories({
   linkedProjects,
   selectedRepositoryProjectIds,
-  selectedProjectId,
   setRepositoryProjectIds,
-  setPrimaryProjectId,
 }: Pick<Parameters<typeof WorkbenchTicketDialog>[0], "linkedProjects"> & {
   selectedRepositoryProjectIds: ReadonlyArray<ProjectId>;
-  selectedProjectId: ProjectId | null;
   setRepositoryProjectIds: Dispatch<SetStateAction<ReadonlyArray<ProjectId>>>;
-  setPrimaryProjectId: Dispatch<SetStateAction<ProjectId | null>>;
 }) {
   return (
     <fieldset className="min-w-0 space-y-2">
       <legend className="text-sm font-medium">Repository scope</legend>
       <p className="text-xs text-muted-foreground">
-        Select every repository this Ticket may need. Its primary repository hosts the Agent Thread.
+        Select every repository this Ticket may need. Each Thread works in one of them.
       </p>
       {linkedProjects.length > 0 ? (
         <div className="space-y-3">
@@ -4325,15 +4278,13 @@ export function WorkbenchCreateTicketRepositories({
                     className="mt-0.5"
                     checked={checked}
                     disabled={checked && selectedRepositoryProjectIds.length === 1}
-                    onCheckedChange={(nextChecked) => {
-                      const nextIds = nextChecked
-                        ? [...selectedRepositoryProjectIds, project.id]
-                        : selectedRepositoryProjectIds.filter((id) => id !== project.id);
-                      setRepositoryProjectIds(nextIds);
-                      if (selectedProjectId === null || !nextIds.includes(selectedProjectId)) {
-                        setPrimaryProjectId(nextIds[0] ?? null);
-                      }
-                    }}
+                    onCheckedChange={(nextChecked) =>
+                      setRepositoryProjectIds(
+                        nextChecked
+                          ? [...selectedRepositoryProjectIds, project.id]
+                          : selectedRepositoryProjectIds.filter((id) => id !== project.id),
+                      )
+                    }
                   />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-sm font-medium">{project.title}</span>
@@ -4344,26 +4295,6 @@ export function WorkbenchCreateTicketRepositories({
                 </label>
               );
             })}
-          </div>
-          <div className="space-y-1.5">
-            <Label>Primary repository</Label>
-            <Select
-              value={selectedProjectId}
-              onValueChange={(value) => setPrimaryProjectId(value ? ProjectId.make(value) : null)}
-            >
-              <SelectTrigger aria-label="Primary repository">
-                <SelectValue>
-                  {linkedProjects.find((project) => project.id === selectedProjectId)?.title ??
-                    "Select a repository"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectPopup>
-                <WorkbenchRepositorySelectOptions
-                  projects={linkedProjects}
-                  selectedProjectIds={selectedRepositoryProjectIds}
-                />
-              </SelectPopup>
-            </Select>
           </div>
         </div>
       ) : (
@@ -4754,7 +4685,7 @@ function getWorkbenchDetailWorkspace({
     preparationPending ||
     ticketWorkspace?.status === "preparing" ||
     ticketWorkspace?.status === "releasing";
-  const selectedRepositoryProjectIds = getWorkbenchTicketRepositoryProjectIds(ticket);
+  const selectedRepositoryProjectIds = ticket.repositoryProjectIds;
   const workspaceHasSelectedRepositories = selectedRepositoryProjectIds.every((projectId) =>
     ticketWorkspace?.repositories.some(
       (repository) => repository.projectId === projectId && repository.status === "ready",
@@ -4788,7 +4719,6 @@ function getWorkbenchDetailWorkspace({
       id,
       repository,
       openInCwd: preparedRepository?.worktreePath ?? null,
-      isPrimary: id === ticket.primaryT3ProjectId,
       workspaceRepository,
     };
   });
@@ -4801,7 +4731,6 @@ function getWorkbenchDetailWorkspace({
       id: workspaceRepository.projectId,
       repository: linkedProjects.find((project) => project.id === workspaceRepository.projectId),
       openInCwd: workspaceRepository.worktreePath,
-      isPrimary: workspaceRepository.isPrimary,
       workspaceRepository,
     }));
   return {
@@ -5086,7 +5015,6 @@ function useWorkbenchCreateTicketDraft({
   const [epicId, setEpicId] = useState<WorkbenchEpicId | null>(initialEpicId);
   const [markdown, setMarkdown] = useState(() => getWorkbenchTicketTemplate("story"));
   const [repositoryProjectIds, setRepositoryProjectIds] = useState<ReadonlyArray<ProjectId>>([]);
-  const [primaryProjectId, setPrimaryProjectId] = useState<ProjectId | null>(null);
   const [references, setReferences] = useState<ReadonlyArray<WorkbenchReferenceDraft>>([]);
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
@@ -5098,7 +5026,6 @@ function useWorkbenchCreateTicketDraft({
       setEpicId(initialEpicId);
       setMarkdown(getWorkbenchTicketTemplate("story"));
       setRepositoryProjectIds([]);
-      setPrimaryProjectId(null);
     }
     onOpenChange(nextOpen);
   };
@@ -5114,8 +5041,6 @@ function useWorkbenchCreateTicketDraft({
     setMarkdown,
     repositoryProjectIds,
     setRepositoryProjectIds,
-    primaryProjectId,
-    setPrimaryProjectId,
     references,
     setReferences,
     handleOpenChange,
@@ -5125,11 +5050,9 @@ function useWorkbenchCreateTicketDraft({
 export function getWorkbenchCreateTicketRepositories({
   linkedProjects,
   repositoryProjectIds,
-  primaryProjectId,
 }: {
   linkedProjects: ReadonlyArray<Project>;
   repositoryProjectIds: ReadonlyArray<ProjectId>;
-  primaryProjectId: ProjectId | null;
 }) {
   const availableProjectIds = new Set(linkedProjects.map((project) => project.id));
   const selectedRepositoryProjectIds = repositoryProjectIds.filter((id) =>
@@ -5138,11 +5061,7 @@ export function getWorkbenchCreateTicketRepositories({
   if (selectedRepositoryProjectIds.length === 0 && linkedProjects[0]) {
     selectedRepositoryProjectIds.push(linkedProjects[0].id);
   }
-  const selectedProjectId =
-    selectedRepositoryProjectIds.find((id) => id === primaryProjectId) ??
-    selectedRepositoryProjectIds[0] ??
-    null;
-  return { selectedRepositoryProjectIds, selectedProjectId };
+  return { selectedRepositoryProjectIds };
 }
 
 function getWorkbenchTicketDraftPresentation({

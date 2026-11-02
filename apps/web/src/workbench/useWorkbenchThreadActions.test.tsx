@@ -104,7 +104,6 @@ const ticket: WorkbenchTicket = {
   title: "Delivery Ticket",
   markdown: "",
   kind: "story",
-  primaryT3ProjectId: projectId,
   repositoryProjectIds: [projectId],
   status: "todo",
   blocked: false,
@@ -129,7 +128,6 @@ const readyWorkspace: WorkbenchTicketWorkspace = {
   repositories: [
     {
       projectId,
-      isPrimary: true,
       sourcePath: repository.workspaceRoot,
       worktreePath: "/worktrees/ticket/repository",
       branchName: "workbench/ticket",
@@ -613,13 +611,32 @@ describe("Thread repository review", () => {
     },
   );
 
+  // Other Threads write the brief and Progress while the dialog is open; only repositories need review.
+  it("creates a Thread from the latest Ticket when only its brief changed", async () => {
+    const { update } = await mount();
+    await act(async () => actions.requestNewThread(ticket));
+    await update({
+      snapshot: { ...snapshot, tickets: [{ ...ticket, revision: 1, markdown: "Agent progress" }] },
+    });
+    await act(async () =>
+      actions.startSelectedThread({
+        modelSelection,
+        repositoryScope: { repositoryProjectIds: [projectId, otherProjectId] },
+      }),
+    );
+    expect(error).toBeNull();
+    expect(commands.updateTicket).toHaveBeenCalledWith(
+      expect.objectContaining({ input: expect.objectContaining({ expectedRevision: 1 }) }),
+    );
+    expect(commands.createThread).toHaveBeenCalledOnce();
+  });
+
   it("refreshes changed repository choices before allowing a second confirmation", async () => {
     const { update, router } = await mount();
     await act(async () => actions.requestNewThread(ticket));
     const revisedTicket = {
       ...ticket,
       revision: 1,
-      primaryT3ProjectId: otherProjectId,
       repositoryProjectIds: [otherProjectId],
     };
     await update({ snapshot: { ...snapshot, tickets: [revisedTicket] } });
@@ -631,7 +648,6 @@ describe("Thread repository review", () => {
       ticket: revisedTicket,
       reviewVersion: 1,
       repositoryScope: {
-        primaryT3ProjectId: otherProjectId,
         repositoryProjectIds: [otherProjectId],
       },
     });
@@ -687,7 +703,7 @@ describe("Thread repository review", () => {
       environmentId,
       ticket,
       prepare: false,
-      value: { primaryT3ProjectId: otherProjectId, repositoryProjectIds: [otherProjectId] },
+      value: { repositoryProjectIds: [otherProjectId] },
     };
     const { update } = await mount({
       snapshot: { ...snapshot, ticketWorkspaces: [readyWorkspace] },

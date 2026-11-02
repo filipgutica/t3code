@@ -176,9 +176,8 @@ const retained: WorkbenchTicketWorkspace = {
   errorMessage: null,
   createdAt: timestamp,
   updatedAt: timestamp,
-  repositories: ["web", "api"].map((repository, index) => ({
+  repositories: ["web", "api"].map((repository) => ({
     projectId: ProjectId.make(repository),
-    isPrimary: index === 0,
     sourcePath: `/repositories/${repository}`,
     worktreePath: `/retained/${repository}`,
     branchName: "workbench/deleted-ticket",
@@ -199,7 +198,6 @@ const snapshot: WorkbenchSnapshot = {
       title: "Active Ticket",
       kind: "story",
       markdown: "",
-      primaryT3ProjectId: ProjectId.make("web"),
       repositoryProjectIds: [],
       status: "todo",
       blocked: false,

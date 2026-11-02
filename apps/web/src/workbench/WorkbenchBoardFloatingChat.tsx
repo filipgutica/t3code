@@ -463,7 +463,6 @@ function BoardDraftCard({
           archivedThreadsById={card.archivedThreadsById}
           readOnly={!props.canOperate || props.transitions.action !== null}
           fileCwd={getReferenceFileCwd(createContext.linkedProjects, [
-            draft.fields.primaryT3ProjectId,
             ...draft.fields.repositoryProjectIds,
             draft.anchorProjectId,
           ])}

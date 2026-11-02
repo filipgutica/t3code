@@ -50,7 +50,6 @@ const draft = (id: string, revision = 0): WorkbenchConversationDraft => ({
     kind: "story",
     epicId: null,
     repositoryProjectIds: [],
-    primaryT3ProjectId: null,
   },
   createdAt: "2026-10-13T00:00:00.000Z",
   updatedAt: "2026-10-13T00:00:00.000Z",

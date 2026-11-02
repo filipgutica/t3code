@@ -60,7 +60,7 @@ const fixture = (options?: {
       executionSequence: Effect.sync(() => sequence),
       startedExecutionRunIds: Effect.succeed([]),
       hasPendingThreadWork: () => Effect.sync(() => busy),
-      findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
+      findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: (id) =>
         Effect.sync(() => {
@@ -172,7 +172,6 @@ const fixture = (options?: {
               claimedAt: timestamp,
               repositories: ticket.repositoryProjectIds.map((projectId) => ({
                 projectId,
-                isPrimary: projectId === ticket.primaryT3ProjectId,
                 sourcePath: `/repos/${projectId}`,
                 worktreePath: `/work-area/${projectId}`,
               })),
@@ -251,8 +250,8 @@ const seed = Effect.gen(function* () {
       ...draft.fields,
       title: "Improve worktree errors",
       markdown: "## Goal\nExplain failures",
-      repositoryProjectIds: [first, second],
-      primaryT3ProjectId: second,
+      // Promotion moves the planning Thread off its anchor (`first`) to the first repository.
+      repositoryProjectIds: [second, first],
     },
   });
 });
@@ -629,7 +628,7 @@ describe("TicketDraftService", () => {
     },
   );
   it.effect(
-    "planning execution never starts the ticket; Start work uses the live primary and advances the boundary",
+    "planning execution never starts the ticket; Start work uses the first repository and advances the boundary",
     () => {
       const f = fixture();
       return Effect.gen(function* () {
@@ -644,17 +643,12 @@ describe("TicketDraftService", () => {
         });
         let ticket = (yield* store.getSnapshot).tickets[0]!;
         expect(ticket.status).toBe("todo");
-        yield* store.updateTicket({
-          id: ticket.id,
-          expectedRevision: ticket.revision,
-          primaryT3ProjectId: first,
-          updatedAt: timestamp,
-        });
+        expect(f.threads.get(threadId)).toBe(second);
         f.setSequence(20);
         draft = yield* service.startWork({ id: draft.id, expectedRevision: draft.revision });
         expect(draft.phase).toBe("working");
-        expect(f.threads.get(threadId)).toBe(first);
-        expect(f.paths.get(threadId)).toBe("/work-area/first-repo");
+        expect(f.threads.get(threadId)).toBe(second);
+        expect(f.paths.get(threadId)).toBe("/work-area/second-repo");
         yield* store.consumeTicketExecution({
           sequence: 19,
           run: { id: RunId.make("delayed-planning-run"), threadId, startedAt: timestamp },
@@ -705,7 +699,6 @@ describe("TicketDraftService", () => {
         id: ticket.id,
         expectedRevision: ticket.revision,
         repositoryProjectIds: [first],
-        primaryT3ProjectId: first,
         markdown: "Updated plan",
         updatedAt: timestamp,
       });

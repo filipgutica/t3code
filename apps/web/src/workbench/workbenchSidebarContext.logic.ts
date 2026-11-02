@@ -35,14 +35,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   readonly tickets: ReadonlyArray<
     Pick<
       WorkbenchTicket,
-      | "id"
-      | "projectId"
-      | "kind"
-      | "status"
-      | "blocked"
-      | "epicId"
-      | "repositoryProjectIds"
-      | "primaryT3ProjectId"
+      "id" | "projectId" | "kind" | "status" | "blocked" | "epicId" | "repositoryProjectIds"
     >
   >;
   readonly assignments: ReadonlyArray<
@@ -113,10 +106,7 @@ export const getWorkbenchSidebarTicketDetails = ({
           attentionLabel: ticket.blocked ? "Blocked" : null,
           issue: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id)),
           epicTitle: ticket.epicId ? epicsById.get(ticket.epicId) : undefined,
-          repositories: (ticket.repositoryProjectIds.length
-            ? ticket.repositoryProjectIds
-            : [ticket.primaryT3ProjectId]
-          ).flatMap((id) => {
+          repositories: ticket.repositoryProjectIds.flatMap((id) => {
             const title = projectsById.get(id);
             return title ? [title] : [];
           }),

@@ -99,7 +99,6 @@ const ticket: WorkbenchTicket = {
   title: "Ship the release",
   markdown: "Release checklist",
   kind: "story",
-  primaryT3ProjectId: repository.id,
   repositoryProjectIds: [repository.id],
   status: "todo",
   blocked: false,
@@ -138,7 +137,6 @@ const conversationDraft = (
     kind: "story",
     epicId: null,
     repositoryProjectIds: [],
-    primaryT3ProjectId: null,
   },
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -411,6 +409,7 @@ function Harness({
       deleteAssignedThread: idle,
       attachExistingThread: idle,
       startSelectedThread: idle,
+      getActiveThreadRepository: () => undefined,
       unlinkThread: idle,
     },
   };

@@ -125,7 +125,7 @@ export const seed = Effect.gen(function* () {
     title: "Restart",
     kind: "story",
     markdown: "Restart",
-    primaryT3ProjectId: projectId,
+    repositoryProjectIds: [projectId],
     createdAt: now,
   });
   yield* store.createAssignment({

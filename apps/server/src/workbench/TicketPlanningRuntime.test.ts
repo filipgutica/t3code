@@ -79,7 +79,6 @@ const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
     kind: "story" as const,
     epicId: null,
     repositoryProjectIds: [second],
-    primaryT3ProjectId: second,
   },
   createdAt: DateTime.formatIso(now),
   updatedAt: DateTime.formatIso(now),
@@ -94,7 +93,6 @@ const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
           errorMessage: null,
           repositories: [first, second].map((projectId) => ({
             projectId,
-            isPrimary: projectId === second,
             sourcePath: `/repo/${projectId}`,
             worktreePath: `/work-area/${projectId}`,
             branchName: "ticket/approved",
@@ -252,7 +250,6 @@ const policyLayer = (
               title: "Explain failures",
               kind: "story" as const,
               markdown: "## Goal\nExplain worktree failures",
-              primaryT3ProjectId: second,
               repositoryProjectIds: [second],
               status: "in_progress" as const,
               blocked: false,
@@ -343,10 +340,7 @@ it.effect("tells an assigned Thread its Ticket, tools, artifacts folder, and bri
       assert.include(instructions, "Jira or GitHub, when the user asks");
       assert.include(instructions, "## Goal\nExplain worktree failures");
       assert.include(instructions, '"path":"/work-area/repo:first"');
-      assert.include(
-        instructions,
-        '"path":"/work-area/repo:second","branch":"ticket/approved","primary":true',
-      );
+      assert.include(instructions, '"path":"/work-area/repo:second","branch":"ticket/approved"');
     }),
     Effect.provide(policyLayer(null, "codex", false, Effect.succeedNone, "ticket")),
   ),

@@ -109,10 +109,9 @@ type TicketFixture = {
   projectId: string;
   epicId: string | null;
   title: string;
-  primaryProjectId: string;
+  repositoryProjectIds: readonly string[];
   status: TicketStatus;
   kind?: "story" | "bug";
-  repositoryProjectIds?: readonly string[];
   archived?: boolean;
   markdown?: string;
 };
@@ -242,9 +241,8 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-onboarding",
     title: "Create the welcome checklist",
-    primaryProjectId: "orbit-web",
-    status: "in_progress",
     repositoryProjectIds: ["orbit-web", "orbit-api"],
+    status: "in_progress",
     markdown: WELCOME_CHECKLIST_MARKDOWN,
   },
   {
@@ -252,7 +250,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-onboarding",
     title: "Save onboarding progress",
-    primaryProjectId: "orbit-api",
+    repositoryProjectIds: ["orbit-api"],
     status: "todo",
   },
   {
@@ -260,7 +258,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-onboarding",
     title: "Add helpful empty states",
-    primaryProjectId: "orbit-web",
+    repositoryProjectIds: ["orbit-web"],
     status: "done",
   },
   {
@@ -268,7 +266,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: null,
     title: "Fix focus after creating a project",
-    primaryProjectId: "orbit-web",
+    repositoryProjectIds: ["orbit-web"],
     status: "todo",
     kind: "bug",
   },
@@ -277,7 +275,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-teams",
     title: "Invite teammates by email",
-    primaryProjectId: "orbit-web",
+    repositoryProjectIds: ["orbit-web"],
     status: "in_progress",
   },
   {
@@ -285,7 +283,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-teams",
     title: "Expire unused invitation links",
-    primaryProjectId: "orbit-api",
+    repositoryProjectIds: ["orbit-api"],
     status: "todo",
   },
   {
@@ -293,7 +291,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-teams",
     title: "Add a team settings page",
-    primaryProjectId: "orbit-web",
+    repositoryProjectIds: ["orbit-web"],
     status: "todo",
   },
   {
@@ -301,7 +299,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "orbit",
     epicId: "orbit-teams",
     title: "Validate invitation addresses",
-    primaryProjectId: "orbit-api",
+    repositoryProjectIds: ["orbit-api"],
     status: "done",
   },
   {
@@ -309,7 +307,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-first",
     title: "Build an interactive setup command",
-    primaryProjectId: "beacon-cli",
+    repositoryProjectIds: ["beacon-cli"],
     status: "in_progress",
     markdown: SETUP_COMMAND_MARKDOWN,
   },
@@ -318,7 +316,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-first",
     title: "Write the five-minute quickstart",
-    primaryProjectId: "beacon-docs",
+    repositoryProjectIds: ["beacon-docs"],
     status: "todo",
   },
   {
@@ -326,7 +324,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-first",
     title: "Make CLI errors actionable",
-    primaryProjectId: "beacon-cli",
+    repositoryProjectIds: ["beacon-cli"],
     status: "done",
   },
   {
@@ -334,7 +332,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-first",
     title: "Document configuration examples",
-    primaryProjectId: "beacon-docs",
+    repositoryProjectIds: ["beacon-docs"],
     status: "todo",
   },
   {
@@ -342,7 +340,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-reliable",
     title: "Retry temporary connection failures",
-    primaryProjectId: "beacon-cli",
+    repositoryProjectIds: ["beacon-cli"],
     status: "todo",
   },
   {
@@ -350,7 +348,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-reliable",
     title: "Add structured JSON output",
-    primaryProjectId: "beacon-cli",
+    repositoryProjectIds: ["beacon-cli"],
     status: "in_progress",
   },
   {
@@ -358,7 +356,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-reliable",
     title: "Explain exit codes for CI",
-    primaryProjectId: "beacon-docs",
+    repositoryProjectIds: ["beacon-docs"],
     status: "done",
   },
   {
@@ -366,7 +364,7 @@ const TICKETS: readonly TicketFixture[] = [
     projectId: "beacon",
     epicId: "beacon-reliable",
     title: "Retire the old configuration example",
-    primaryProjectId: "beacon-docs",
+    repositoryProjectIds: ["beacon-docs"],
     status: "done",
     archived: true,
   },
@@ -797,10 +795,7 @@ const seedWorkbench = async (
         markdown:
           fixture.markdown ??
           `## Goal\n\n${fixture.title} so the next step is clear and reliable.\n\n## Acceptance criteria\n\n${criteria.map((item) => `- [ ] ${item}`).join("\n")}`,
-        primaryT3ProjectId: ProjectId.make(fixture.primaryProjectId),
-        repositoryProjectIds: (fixture.repositoryProjectIds ?? [fixture.primaryProjectId]).map(
-          (id) => ProjectId.make(id),
-        ),
+        repositoryProjectIds: fixture.repositoryProjectIds.map((id) => ProjectId.make(id)),
         createdAt: timestamp,
       }),
     );

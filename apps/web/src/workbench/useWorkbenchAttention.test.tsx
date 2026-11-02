@@ -93,7 +93,6 @@ const ticket: WorkbenchTicket = {
   kind: "story",
   markdown: "",
   epicId: null,
-  primaryT3ProjectId: ProjectId.make("repo"),
   repositoryProjectIds: [],
   status: "in_progress",
   blocked: false,

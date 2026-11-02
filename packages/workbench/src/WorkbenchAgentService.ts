@@ -25,6 +25,7 @@ import * as Schema from "effect/Schema";
 
 import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
 import { WorkbenchAgentHost } from "./WorkbenchAgentHost.ts";
+import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import {
   WorkbenchStore,
   type WorkbenchThreadContextSnapshot,
@@ -121,6 +122,8 @@ export type AgentThreadResult = typeof AgentThreadResult.Type;
 
 export interface AgentThreadStartInput {
   readonly threadId: ThreadId;
+  /** One of the Ticket's repositories; defaults to the calling Thread's, else the first. */
+  readonly repositoryProjectId?: ProjectId | undefined;
   readonly title?: string | undefined;
   readonly message: string;
   readonly runtimeMode: RuntimeMode;
@@ -174,6 +177,7 @@ const agentReference = (reference: WorkbenchReference): AgentReferenceResult => 
 const make = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
   const host = yield* WorkbenchAgentHost;
+  const native = yield* WorkbenchNativeAccess;
   const workspaces = yield* TicketWorkspaceService;
   const crypto = yield* Crypto.Crypto;
   const currentAt = DateTime.now.pipe(
@@ -379,12 +383,6 @@ const make = Effect.gen(function* () {
   ) {
     const current = yield* requireTicket(ticketId);
     const repositoryProjectIds = input.repositoryProjectIds;
-    // Agents do not choose a primary; keep it, or promote the first repository when it leaves.
-    const primaryT3ProjectId =
-      repositoryProjectIds === undefined ||
-      repositoryProjectIds.includes(current.primaryT3ProjectId)
-        ? undefined
-        : repositoryProjectIds[0];
     const saved = yield* store
       .updateTicket({
         id: ticketId,
@@ -396,7 +394,6 @@ const make = Effect.gen(function* () {
         ...(repositoryProjectIds === undefined
           ? {}
           : { repositoryProjectIds: [...repositoryProjectIds] }),
-        ...(primaryT3ProjectId === undefined ? {} : { primaryT3ProjectId }),
         updatedAt: yield* currentAt,
         updatedByThreadId: input.threadId,
       })
@@ -432,7 +429,6 @@ const make = Effect.gen(function* () {
     }
     const draft = yield* store.getTicketDraft(draftId);
     const repositoryProjectIds = input.repositoryProjectIds ?? draft.fields.repositoryProjectIds;
-    const primary = draft.fields.primaryT3ProjectId;
     yield* store
       .updateTicketDraft({
         id: draftId,
@@ -442,10 +438,6 @@ const make = Effect.gen(function* () {
           title: input.title ?? draft.fields.title,
           markdown: input.brief ?? draft.fields.markdown,
           repositoryProjectIds: [...repositoryProjectIds],
-          primaryT3ProjectId:
-            primary !== null && repositoryProjectIds.includes(primary)
-              ? primary
-              : (repositoryProjectIds[0] ?? null),
         },
         ...(input.progress === undefined ? {} : { progress: input.progress }),
         updatedByThreadId: input.threadId,
@@ -546,6 +538,36 @@ const make = Effect.gen(function* () {
     });
   });
 
+  const threadRepository = Effect.fn("WorkbenchAgentService.threadRepository")(function* ({
+    ticket,
+    callerThreadId,
+    requested,
+  }: {
+    readonly ticket: WorkbenchTicket;
+    readonly callerThreadId: ThreadId;
+    readonly requested: ProjectId | undefined;
+  }) {
+    const linked = ticket.repositoryProjectIds;
+    if (requested !== undefined) {
+      if (linked.includes(requested)) return requested;
+      return yield* new WorkbenchOperationError({
+        code: "repository_not_linked",
+        message:
+          "That repository is not linked to this Ticket. Use a `projectId` from `repositories[]` with `selected: true` in workbench_ticket_read.",
+      });
+    }
+    const caller = yield* native.findThread(callerThreadId);
+    if (Option.isSome(caller) && linked.includes(caller.value.projectId)) {
+      return caller.value.projectId;
+    }
+    const first = linked[0];
+    if (first !== undefined) return first;
+    return yield* new WorkbenchOperationError({
+      code: "repository_not_linked",
+      message: "This Ticket has no repositories. Add one before starting a Thread.",
+    });
+  });
+
   const startThread = Effect.fn("WorkbenchAgentService.startThread")(function* (
     input: AgentThreadStartInput,
   ) {
@@ -557,29 +579,31 @@ const make = Effect.gen(function* () {
       });
     }
     const ticket = yield* requireTicket(owner.ticketId);
+    const projectId = yield* threadRepository({
+      ticket,
+      callerThreadId: input.threadId,
+      requested: input.repositoryProjectId,
+    });
     const workspace = yield* workspaces.prepare({
       ticketId: ticket.id,
       requestedAt: yield* currentAt,
     });
-    const primary = workspace.repositories.find(
-      (repository) =>
-        repository.isPrimary &&
-        repository.status === "ready" &&
-        repository.projectId === ticket.primaryT3ProjectId,
+    const checkout = workspace.repositories.find(
+      (repository) => repository.status === "ready" && repository.projectId === projectId,
     );
-    if (primary === undefined) {
+    if (checkout === undefined) {
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_repository_not_found",
-        message: "The Ticket's primary repository has no ready worktree.",
+        message: "The chosen repository has no ready worktree for this Ticket.",
       });
     }
     const title = input.title ?? ticket.title;
     const threadId = yield* host.createThread({
       callerThreadId: input.threadId,
-      projectId: primary.projectId,
+      projectId,
       title,
-      branch: primary.branchName,
-      worktreePath: primary.worktreePath,
+      branch: checkout.branchName,
+      worktreePath: checkout.worktreePath,
       runtimeMode: input.runtimeMode,
       interactionMode: input.interactionMode,
     });

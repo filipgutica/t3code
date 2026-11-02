@@ -267,7 +267,7 @@ describe("Done Ticket settlement", () => {
             projectId: "workspace",
             title: "Ticket",
             markdown: "",
-            primaryT3ProjectId: thread.projectId,
+            repositoryProjectIds: [thread.projectId],
             status: index === 0 ? "done" : "todo",
             blocked: false,
             archivedAt: null,
