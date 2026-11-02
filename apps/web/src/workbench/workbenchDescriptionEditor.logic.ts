@@ -312,7 +312,7 @@ export const descriptionEditorContent = (parsed: ParsedDescription): JSONContent
   parsed.doc.content?.length ? parsed.doc : { type: "doc", content: [{ type: "paragraph" }] };
 
 /** GFM links a bare URL back unchanged when nothing at its end would be read as punctuation. */
-const isBareUrl = (href: string) => /^https?:\/\/[^\s<>()]*[^\s<>().,:;!?'"*_~]$/.test(href);
+const isBareUrl = (href: string) => /^https?:\/\/[^\s<>()]*[^\s<>().,:;!?'"*_~\]]$/.test(href);
 
 function chipToMdast(href: string, title: string | null): PhrasingContent {
   if (title === null && isBareUrl(href)) return { type: "html", value: href };

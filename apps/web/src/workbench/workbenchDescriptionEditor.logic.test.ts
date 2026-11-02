@@ -179,6 +179,11 @@ describe("description editor Markdown", () => {
       "<https://example.com/a><https://example.com/b>",
     ],
     [
+      "ending in a bracket",
+      [{ type: "text", text: "See " }, chip("https://example.com/[x]")],
+      "See <https://example.com/[x]>",
+    ],
+    [
       "between spaces and punctuation",
       [
         { type: "text", text: "See " },
