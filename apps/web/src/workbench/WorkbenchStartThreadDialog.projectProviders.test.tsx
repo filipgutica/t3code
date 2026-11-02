@@ -13,7 +13,6 @@ import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { Project } from "../types";
-import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
 
 const observed = vi.hoisted(() => ({ settings: null as ServerSettings | null }));
 vi.mock("../hooks/useSettings", () => ({ useEnvironmentSettings: () => observed.settings }));
@@ -32,20 +31,15 @@ vi.mock("../components/ui/dialog", () => {
 vi.mock("../components/ui/button", () => ({ Button: "button" }));
 vi.mock("../components/chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
 vi.mock("../components/chat/TraitsPicker", () => ({ TraitsPicker: () => null }));
-vi.mock("./WorkbenchRepositoryScopeFields", () => ({
-  WorkbenchRepositoryScopeFields: ({
-    value,
+vi.mock("./WorkbenchThreadRepositoryPicker", () => ({
+  getWorkbenchRepositoryTitle: () => "Repository",
+  WorkbenchThreadRepositoryPicker: ({
+    ticketRepositoryIds,
     onChange,
   }: {
-    value: WorkbenchRepositoryScope;
-    onChange: (value: WorkbenchRepositoryScope) => void;
-  }) => (
-    <button
-      onClick={() => onChange({ repositoryProjectIds: value.repositoryProjectIds.toReversed() })}
-    >
-      Move second first
-    </button>
-  ),
+    ticketRepositoryIds: readonly ProjectId[];
+    onChange: (id: ProjectId) => void;
+  }) => <button onClick={() => onChange(ticketRepositoryIds[1]!)}>Pick second</button>,
 }));
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 
@@ -137,12 +131,12 @@ it("blocks a machine-enabled provider for the Thread's repository and rechecks a
   mount();
   submit();
   expect(start).not.toHaveBeenCalled();
-  act(() => renderer.root.findByProps({ children: "Move second first" }).props.onClick());
+  act(() => renderer.root.findByProps({ children: "Pick second" }).props.onClick());
   submit();
   expect(start).toHaveBeenCalledWith({
     modelSelection: { instanceId, model: "gpt-test" },
     repositoryProjectId: second,
-    repositoryScope: { repositoryProjectIds: [second, first] },
+    repositoryScope: { repositoryProjectIds: [first, second] },
   });
 });
 

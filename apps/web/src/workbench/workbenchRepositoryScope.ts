@@ -64,3 +64,21 @@ export const isWorkbenchTicketWorkspaceReady = ({
       (repository) => repository.projectId === id && repository.status === "ready",
     ),
   );
+
+/** A Ticket repository's checkout state, or null when its worktree is prepared. */
+export const getWorkbenchTicketRepositoryStatusLabel = (
+  repository: WorkbenchTicketWorkspace["repositories"][number] | undefined,
+) => {
+  switch (repository?.status) {
+    case "failed":
+      return "Preparation failed";
+    case "pending":
+      return "Pending preparation";
+    case "released":
+      return "Released";
+    case "ready":
+      return null;
+    default:
+      return "Not prepared";
+  }
+};

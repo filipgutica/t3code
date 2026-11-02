@@ -99,14 +99,16 @@ when ready.
 For a manually created Ticket, or an additional conversation:
 
 1. Open a Ticket and choose **Create Thread**.
-2. If the work area is not prepared, review the Ticket's repositories.
-   Select a provider and model, then choose **Create work area and Thread**.
-   Prepared work areas show the repositories that the new Thread will reuse.
-3. Add instructions and send the message.
+2. Choose the repository the Thread works in, then a provider and model. The
+   repository defaults to the one the Ticket's active Thread uses, or else the
+   first. To work in a Workspace repository the Ticket does not include yet, pick
+   it under **Add repository**; it is added to the Ticket when you create the Thread.
+3. Choose **Create Thread**, or **Create work area and Thread** when worktrees
+   still need preparation.
+4. Add instructions and send the message.
 
 Creating a Thread does not start an agent turn. Workbench prepares one Git
-worktree per selected repository and opens the Thread in one repository's worktree: the
-repository of the Ticket's active Thread, or else the first one.
+worktree per Ticket repository and opens the Thread in the chosen repository's worktree.
 
 Each Thread receives the full Ticket on its first turn: the brief, Progress,
 References, prepared worktrees, and other linked Threads. Later turns receive only
@@ -298,8 +300,7 @@ repository** to add one, and a repository's **⋯** menu to remove it. A
 repository cannot be removed while an active Thread works in it. Changes stay marked as Adding or Removing until you choose **Save
 changes**; **Cancel** restores the saved choices. Adding repositories to a
 prepared work area prepares their worktrees together after saving. **Create
-Thread** can change any repository while the Ticket has no prepared worktrees.
-After preparation, it can only add repositories; remove a prepared repository in
+Thread** can only add a repository, for the new Thread; remove repositories in
 **Work area**.
 
 Threads using the same Ticket worktree share its files, branch, and uncommitted

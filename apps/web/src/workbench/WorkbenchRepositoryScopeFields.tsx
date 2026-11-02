@@ -20,25 +20,13 @@ import {
   ComboboxTrigger,
 } from "../components/ui/combobox";
 import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
-import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
+import {
+  getWorkbenchTicketRepositoryStatusLabel,
+  type WorkbenchRepositoryScope,
+} from "./workbenchRepositoryScope";
 
 type WorkspaceRepository = WorkbenchTicketWorkspace["repositories"][number];
 type RepositoryOption = Pick<Project, "id" | "title">;
-
-const getWorkbenchTicketRepositoryStatusLabel = (repository: WorkspaceRepository | undefined) => {
-  switch (repository?.status) {
-    case "failed":
-      return "Preparation failed";
-    case "pending":
-      return "Pending preparation";
-    case "released":
-      return "Released";
-    case "ready":
-      return null;
-    default:
-      return "Not prepared";
-  }
-};
 
 export function WorkbenchTicketRepositoryStatus({
   repository,
@@ -56,23 +44,14 @@ export function WorkbenchTicketRepositoryStatus({
 
 const UNLINKED = "No longer linked to this Workspace.";
 
-const getUnavailableRepositoryMessage = ({
-  isLocked,
-  hasLinkedRepositories,
-}: {
-  readonly isLocked: boolean;
-  readonly hasLinkedRepositories: boolean;
-}) => {
-  if (!hasLinkedRepositories)
-    return "Link a repository to this Workbench Workspace before preparing this ticket.";
-  if (isLocked) return `${UNLINKED} Link it again with Edit Workspace.`;
-  return `${UNLINKED} Remove it, or link it again with Edit Workspace.`;
-};
+const getUnavailableRepositoryMessage = (hasLinkedRepositories: boolean) =>
+  hasLinkedRepositories
+    ? `${UNLINKED} Remove it, or link it again with Edit Workspace.`
+    : "Link a repository to this Workbench Workspace before preparing this ticket.";
 
 /**
  * Edits a ticket's repository scope as a visible list. `savedScope` is the persisted scope, so
- * pending additions and removals stay labelled until the caller saves. With `lockedScope`, its
- * repositories are fixed and only new repositories can be added or removed.
+ * pending additions and removals stay labelled until the caller saves.
  */
 export function WorkbenchRepositoryScopeFields({
   projects,
@@ -81,7 +60,6 @@ export function WorkbenchRepositoryScopeFields({
   workspace,
   onChange,
   disabled = false,
-  lockedScope,
 }: {
   readonly projects: readonly RepositoryOption[];
   readonly value: WorkbenchRepositoryScope;
@@ -89,7 +67,6 @@ export function WorkbenchRepositoryScopeFields({
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly onChange: (value: WorkbenchRepositoryScope) => void;
   readonly disabled?: boolean;
-  readonly lockedScope?: WorkbenchRepositoryScope | undefined;
 }) {
   const selectedIds = value.repositoryProjectIds;
   const removedIds = savedScope.repositoryProjectIds.filter((id) => !selectedIds.includes(id));
@@ -154,7 +131,6 @@ export function WorkbenchRepositoryScopeFields({
         : savedScope.repositoryProjectIds.includes(id)
           ? null
           : "adding",
-      isLocked: lockedScope?.repositoryProjectIds.includes(id) ?? false,
       workspaceRepository: workspace?.repositories.find(
         (repository) => repository.projectId === id,
       ),
@@ -192,7 +168,6 @@ export function WorkbenchRepositoryScopeFields({
             </div>
             <RepositoryRowAction
               row={row}
-              locked={lockedScope !== undefined}
               disabled={disabled}
               onUndo={(id) => include(id, id)}
               getMenuFinalFocus={(id) => {
@@ -218,11 +193,6 @@ export function WorkbenchRepositoryScopeFields({
           onAdd={(id) => include(id)}
         />
       ) : null}
-      {lockedScope ? (
-        <p className="text-xs text-muted-foreground">
-          Add repositories here. To remove a prepared repository, edit the ticket’s Work area.
-        </p>
-      ) : null}
     </fieldset>
   );
 }
@@ -231,7 +201,6 @@ type RepositoryRow = {
   readonly id: ProjectId;
   readonly title: string | undefined;
   readonly change: "adding" | "removing" | null;
-  readonly isLocked: boolean;
   readonly workspaceRepository: WorkspaceRepository | undefined;
 };
 
@@ -257,8 +226,6 @@ function RepositoryRowState({
       </Badge>
     );
   if (!showWorkspaceStatus) return null;
-  if (row.isLocked && row.workspaceRepository?.status === "ready")
-    return <span className="text-xs text-muted-foreground">Prepared</span>;
   return <WorkbenchTicketRepositoryStatus repository={row.workspaceRepository} />;
 }
 
@@ -277,10 +244,7 @@ function RepositoryRowMessages({
         <>
           <p className="ps-5.5 font-mono text-xs break-all text-muted-foreground">{row.id}</p>
           <p className="ps-5.5 text-xs text-destructive" role="alert">
-            {getUnavailableRepositoryMessage({
-              isLocked: row.isLocked,
-              hasLinkedRepositories,
-            })}
+            {getUnavailableRepositoryMessage(hasLinkedRepositories)}
           </p>
         </>
       ) : null}
@@ -295,14 +259,12 @@ function RepositoryRowMessages({
 
 function RepositoryRowAction({
   row,
-  locked,
   disabled,
   onUndo,
   getMenuFinalFocus,
   onRemove,
 }: {
   readonly row: RepositoryRow;
-  readonly locked: boolean;
   readonly disabled: boolean;
   readonly onUndo: (id: ProjectId) => void;
   readonly getMenuFinalFocus: (id: ProjectId) => HTMLElement | boolean;
@@ -319,19 +281,6 @@ function RepositoryRowAction({
         variant="ghost"
       >
         Undo
-      </Button>
-    );
-  if (locked)
-    return row.isLocked ? null : (
-      <Button
-        aria-label={`Remove ${label}`}
-        disabled={disabled}
-        onClick={() => onRemove(row.id)}
-        size="icon-xs"
-        type="button"
-        variant="ghost"
-      >
-        <XIcon />
       </Button>
     );
   return (
