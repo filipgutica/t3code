@@ -7,10 +7,19 @@ import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEd
 
 const source = "Intro with https://example.com\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n* keep\n";
 
-function Harness({ initial, onChange }: { initial: string; onChange: (value: string) => void }) {
+function Harness({
+  initial,
+  autoFocus,
+  onChange,
+}: {
+  initial: string;
+  autoFocus?: boolean;
+  onChange: (value: string) => void;
+}) {
   const [markdown, setMarkdown] = useState(initial);
   return (
     <WorkbenchTicketDescriptionEditor
+      autoFocus={autoFocus ?? false}
       markdown={markdown}
       jira={false}
       onChange={(next) => {
@@ -35,6 +44,16 @@ it("opens and switches modes without changing the description", async () => {
   await page.getByRole("button", { name: "Rich text" }).click();
   await expect.element(editor).toBeVisible();
   expect(onChange).not.toHaveBeenCalled();
+});
+
+it("puts the caret at the start of the description when asked", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(
+    <Harness initial="Draft brief" autoFocus onChange={onChange} />,
+  );
+  await expect.element(page.getByRole("textbox", { name: "Description" })).toHaveFocus();
+  await userEvent.keyboard("New ");
+  expect(onChange).toHaveBeenLastCalledWith("New Draft brief");
 });
 
 it("saves typing into one block and keeps the others' source", async () => {

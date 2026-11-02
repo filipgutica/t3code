@@ -2233,7 +2233,6 @@ function WorkbenchTicketDescriptionPanel({
               <Label htmlFor="edit-workbench-ticket-title">Title</Label>
               <Input
                 id="edit-workbench-ticket-title"
-                autoFocus
                 value={draft.title}
                 onChange={(event) => {
                   setDraft(environmentId, ticket.id, {
@@ -2245,6 +2244,7 @@ function WorkbenchTicketDescriptionPanel({
             </div>
             <WorkbenchTicketDescriptionEditor
               key={`${environmentId}:${ticket.id}`}
+              autoFocus
               markdown={draft.markdown}
               jira={jira}
               onChange={(markdown) => {

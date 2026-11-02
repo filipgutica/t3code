@@ -80,6 +80,9 @@ export const ReferenceChip = Node.create({
   },
 });
 
+// Fences open and close on Enter in the editor's key handler, as in the composer.
+export const DescriptionCodeBlock = ComposerCodeBlockExtension.extend({ addInputRules: () => [] });
+
 export const descriptionEditorExtensions = [
   StarterKit.configure({
     // Reference links are chips; other links (such as `mailto:`) stay link text.
@@ -99,8 +102,7 @@ export const descriptionEditorExtensions = [
   ComposerStrikeExtension,
   ComposerCodeExtension,
   ComposerBoldSelectionOnlyExtension,
-  // Fences open and close on Enter in the editor's key handler, as in the composer.
-  ComposerCodeBlockExtension.extend({ addInputRules: () => [] }),
+  DescriptionCodeBlock,
   TaskList,
   TaskItem.configure({ nested: true }),
   MarkdownSource,

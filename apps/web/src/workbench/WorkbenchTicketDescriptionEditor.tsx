@@ -22,7 +22,10 @@ import {
   indentedNewlineInCodeBlock,
   selectionInOneCodeBlock,
 } from "../composer-code-block";
+import { ComposerCodeBlockNodeView } from "../components/chat/ComposerCodeBlockNodeView";
+import { composerCodeBlockHighlight } from "../components/composerCodeBlockHighlight";
 import { Label } from "../components/ui/label";
+import { resolveDiffThemeName } from "../lib/diffRendering";
 import { cn } from "../lib/utils";
 import { Textarea } from "../components/ui/textarea";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
@@ -34,6 +37,7 @@ import {
   descriptionEditorExtensions,
   descriptionPasteContent,
   descriptionUsesJiraMarkup,
+  DescriptionCodeBlock,
   parseDescription,
   ReferenceChip,
   serializeDescription,
@@ -58,11 +62,27 @@ function ReferenceChipView({ node }: NodeViewProps) {
   );
 }
 
-const editorExtensions = descriptionEditorExtensions.map((extension) =>
-  extension === ReferenceChip
-    ? ReferenceChip.extend({ addNodeView: () => ReactNodeViewRenderer(ReferenceChipView) })
-    : extension,
-);
+const editorExtensions = [
+  ...descriptionEditorExtensions.map((extension) => {
+    if (extension === ReferenceChip) {
+      return ReferenceChip.extend({ addNodeView: () => ReactNodeViewRenderer(ReferenceChipView) });
+    }
+    if (extension !== DescriptionCodeBlock) return extension;
+    // The composer's code block: header with a language picker, highlighted by the plugin below.
+    return DescriptionCodeBlock.extend({
+      addNodeView: () =>
+        ReactNodeViewRenderer(ComposerCodeBlockNodeView, {
+          stopEvent: ({ event }) =>
+            event.target instanceof Element &&
+            event.target.closest(".chat-markdown-codeblock-header") !== null,
+        }),
+    });
+  }),
+  composerCodeBlockHighlight({
+    resolveTheme: () =>
+      resolveDiffThemeName(document.documentElement.classList.contains("dark") ? "dark" : "light"),
+  }),
+];
 
 /** As in the composer: fences open and close on Enter, and Tab indents code. */
 function handleCodeKeys(view: EditorView, event: KeyboardEvent): boolean {
@@ -123,6 +143,7 @@ function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
 
 export function WorkbenchTicketDescriptionEditor({
   id = "edit-workbench-ticket-context",
+  autoFocus = false,
   markdown,
   jira,
   updatedBy = null,
@@ -130,6 +151,8 @@ export function WorkbenchTicketDescriptionEditor({
   onChange,
 }: {
   id?: string;
+  /** Puts the caret at the start of the description when the editor opens. */
+  autoFocus?: boolean;
   markdown: string;
   jira: boolean;
   /** The agent Thread that last wrote the description, if one did. */
@@ -174,6 +197,7 @@ export function WorkbenchTicketDescriptionEditor({
       {mode === "markdown" ? (
         <Textarea
           id={id}
+          autoFocus={autoFocus}
           className="min-h-72"
           placeholder="Goal, constraints, and acceptance criteria…"
           value={markdown}
@@ -182,6 +206,7 @@ export function WorkbenchTicketDescriptionEditor({
       ) : (
         <DescriptionRichTextEditor
           labelId={labelId}
+          autoFocus={autoFocus}
           markdown={markdown}
           jira={jira}
           disabled={disabled}
@@ -194,12 +219,14 @@ export function WorkbenchTicketDescriptionEditor({
 
 function DescriptionRichTextEditor({
   labelId,
+  autoFocus,
   markdown,
   jira,
   disabled,
   onChange,
 }: {
   labelId: string;
+  autoFocus: boolean;
   markdown: string;
   jira: boolean;
   disabled: boolean;
@@ -225,6 +252,8 @@ function DescriptionRichTextEditor({
     <DescriptionRichTextSurface
       key={loaded.generation}
       labelId={labelId}
+      // A reload, such as an agent's edit, shouldn't take focus from where you're typing.
+      autoFocus={autoFocus && loaded.generation === 0}
       parsed={loaded.parsed}
       disabled={disabled}
       onChange={(next) => {
@@ -237,11 +266,13 @@ function DescriptionRichTextEditor({
 
 function DescriptionRichTextSurface({
   labelId,
+  autoFocus,
   parsed,
   disabled,
   onChange,
 }: {
   labelId: string;
+  autoFocus: boolean;
   parsed: ReturnType<typeof parseDescription>;
   disabled: boolean;
   onChange: (markdown: string) => void;
@@ -251,6 +282,7 @@ function DescriptionRichTextSurface({
     extensions: editorExtensions,
     content: descriptionEditorContent(parsed),
     editable: !disabled,
+    autofocus: autoFocus ? "start" : false,
     editorProps: {
       handleKeyDown: handleCodeKeys,
       handlePaste: (view, event) => handlePaste(view, event),

@@ -30,28 +30,17 @@
   margin: 0;
 }
 
-[data-workbench-description-editor] .ProseMirror pre {
+/* Markdown with no rich-text form, such as a table, is edited as its source. */
+[data-workbench-description-editor] pre[data-markdown-source] {
   margin-block: 0.75rem;
   overflow-x: auto;
+  border: 1px dashed var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-muted);
   padding: 0.75rem;
   font-family: var(--font-mono);
   font-size: 0.8125rem;
-  /* ProseMirror wraps all text; code and table rows read best unwrapped, as in the rendered view. */
+  /* ProseMirror wraps all text; table rows read best unwrapped, as in the rendered view. */
   white-space: pre;
-}
-
-/* Inline code styling would indent a code block's first line. */
-[data-workbench-description-editor] .ProseMirror pre code {
-  padding: 0;
-  background: none;
-}
-
-/* Markdown with no rich-text form, such as a table, is edited as its source. */
-[data-workbench-description-editor] pre[data-markdown-source] {
-  border: 1px dashed var(--color-border);
-  background: transparent;
 }
 
 [data-workbench-description-editor] .ProseMirror-selectednode {
