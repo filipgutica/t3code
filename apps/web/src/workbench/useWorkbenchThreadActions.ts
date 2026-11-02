@@ -3,6 +3,7 @@ import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime"
 import {
   WorkbenchAssignmentId,
   type EnvironmentId,
+  type ProjectId,
   type WorkbenchAssignment,
   type WorkbenchTicket,
   type ThreadId,
@@ -44,12 +45,14 @@ const getWorkbenchThreadStartOptions = ({
   request,
   modelSelection,
   repositoryScope,
+  repositoryProjectId,
   assignments,
   existingThreadIds,
 }: {
   request: WorkbenchStartThreadRequest;
   modelSelection: ModelSelection;
   repositoryScope: WorkbenchRepositoryScope | undefined;
+  repositoryProjectId: ProjectId | undefined;
   assignments: readonly WorkbenchAssignment[];
   existingThreadIds: ReadonlySet<ThreadId>;
 }): StartWorkbenchTicketOptions => {
@@ -64,6 +67,7 @@ const getWorkbenchThreadStartOptions = ({
     ...(request.assignment ? { assignment: request.assignment } : {}),
     modelSelection,
     ...(repositoryScope ? { repositoryScope } : {}),
+    ...(repositoryProjectId ? { repositoryProjectId } : {}),
     ...(request.mode === "replace"
       ? { mode: "replace" as const }
       : hasOtherThread
@@ -304,6 +308,7 @@ export function useWorkbenchThreadActions({
     await openAssignedThread(threadId);
   };
 
+  /** The latest Ticket, or null when its repositories changed and the user must review them. */
   const getReviewedStartThreadTicket = (request: WorkbenchStartThreadRequest) => {
     const ticket = snapshot?.tickets.find((candidate) => candidate.id === request.ticket.id);
     if (
@@ -317,7 +322,8 @@ export function useWorkbenchThreadActions({
       setStartThreadRequest(null);
       return null;
     }
-    if (ticket.revision !== request.ticket.revision) {
+    // Brief and Progress writes by other Threads bump the revision; only repositories need review.
+    if (!isWorkbenchRepositoryScopeEqual(ticket, request.ticket)) {
       setError(
         "This Ticket changed. Review its current repository choices before creating a Thread.",
       );
@@ -339,12 +345,21 @@ export function useWorkbenchThreadActions({
     return ticket;
   };
 
+  /** The repository of the Ticket's most active Thread, which a new Thread defaults to. */
+  const getActiveThreadRepository = (ticketId: WorkbenchTicket["id"]): ProjectId | undefined => {
+    const threadId = assignmentsByTicket.get(ticketId)?.threadId;
+    if (threadId === undefined) return undefined;
+    return (threadsById.get(threadId) ?? archivedThreadsById.get(threadId))?.projectId;
+  };
+
   const startSelectedThread = async ({
     modelSelection,
     repositoryScope,
+    repositoryProjectId,
   }: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
+    repositoryProjectId?: ProjectId;
   }) => {
     if (
       startThreadRequest === null ||
@@ -352,14 +367,16 @@ export function useWorkbenchThreadActions({
       startThreadRequest.environmentId !== environmentId
     )
       return;
-    const request = startThreadRequest;
-    if (getReviewedStartThreadTicket(request) === null) return;
+    const latestTicket = getReviewedStartThreadTicket(startThreadRequest);
+    if (latestTicket === null) return;
+    const request = { ...startThreadRequest, ticket: latestTicket };
     const result = await openTicketThread(
       ticketForBoardAction(request.ticket),
       getWorkbenchThreadStartOptions({
         request,
         modelSelection,
         repositoryScope,
+        repositoryProjectId,
         assignments: snapshot?.assignments ?? [],
         existingThreadIds,
       }),
@@ -379,7 +396,7 @@ export function useWorkbenchThreadActions({
     if (result?.state === "opened" || result?.state === "navigation-failed") {
       setStartThreadRequest(null);
       clearRepositoryScope();
-    } else if (result?.state === "failed" && result.ticket) {
+    } else if (result && "ticket" in result && result.ticket) {
       acceptSavedRepositoryScope(result.ticket);
       setStartThreadRequest({
         ...request,
@@ -419,6 +436,7 @@ export function useWorkbenchThreadActions({
     deleteAssignedThread,
     attachExistingThread,
     startSelectedThread,
+    getActiveThreadRepository,
     unlinkThread,
   };
 }

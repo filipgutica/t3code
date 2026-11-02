@@ -3,7 +3,6 @@ import { act, useEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import {
   EnvironmentId,
-  ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchProjectId,
@@ -97,7 +96,6 @@ it("preserves the scroll container while the new Thread's Assignment refresh fin
         title: "Ticket",
         markdown: "",
         kind: "story",
-        primaryT3ProjectId: ProjectId.make("repository"),
         repositoryProjectIds: [],
         status: "todo",
         blocked: false,

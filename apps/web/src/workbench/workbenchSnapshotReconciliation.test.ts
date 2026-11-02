@@ -34,7 +34,6 @@ const ticket = (id: string): WorkbenchTicket => ({
   kind: "story",
   title: "Saved title",
   markdown: "Saved description",
-  primaryT3ProjectId: repositoryId,
   repositoryProjectIds: [repositoryId],
   status: "todo",
   blocked: false,

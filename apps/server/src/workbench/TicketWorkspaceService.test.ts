@@ -99,7 +99,6 @@ const seedTicket = Effect.gen(function* () {
     title: "Prepare repositories",
     kind: "story",
     markdown: "",
-    primaryT3ProjectId: primaryProjectId,
     repositoryProjectIds: [primaryProjectId, secondaryProjectId],
     createdAt,
   });
@@ -126,13 +125,11 @@ const seedReadyTicketWorkspace = Effect.gen(function* () {
     repositories: [
       {
         projectId: primaryProjectId,
-        isPrimary: true,
         sourcePath: "/repos/primary",
         worktreePath: "/worktrees/ready-primary",
       },
       {
         projectId: secondaryProjectId,
-        isPrimary: false,
         sourcePath: "/repos/secondary",
         worktreePath: "/worktrees/ready-secondary",
       },
@@ -892,7 +889,6 @@ describe("TicketWorkspaceService", () => {
         yield* store.updateTicket({
           id: ticketId,
           expectedRevision: 0,
-          primaryT3ProjectId: secondaryProjectId,
           repositoryProjectIds: [secondaryProjectId],
           updatedAt: "2026-09-03T12:00:01.000Z",
         });
@@ -916,7 +912,6 @@ describe("TicketWorkspaceService", () => {
       expect(events.filter((event) => event.startsWith("remove:"))).toEqual([]);
       expect(events.filter((event) => event.startsWith("create:"))).toEqual([]);
       expect(ticket).toMatchObject({
-        primaryT3ProjectId: secondaryProjectId,
         repositoryProjectIds: [secondaryProjectId],
         revision: 1,
       });
@@ -1809,7 +1804,7 @@ describe("TicketWorkspaceService", () => {
   });
 
   it.effect.each(["static", "semantic", "custom"] as const)(
-    "uses the primary repository's %s branch naming settings",
+    "uses the first repository's %s branch naming settings",
     (mode) => {
       const events: Array<string> = [];
       const calls: Array<BranchNameGenerationInput> = [];
@@ -1920,7 +1915,7 @@ describe("TicketWorkspaceService", () => {
     },
   );
 
-  it.effect("uses the primary repository's available source control writer", () => {
+  it.effect("uses the first repository's available source control writer", () => {
     const events: Array<string> = [];
     const calls: Array<BranchNameGenerationInput> = [];
     const instanceId = ProviderInstanceId.make("source-control-writer");
@@ -2082,7 +2077,6 @@ describe("TicketWorkspaceService", () => {
           store.updateTicket({
             id: ticketId,
             expectedRevision: 0,
-            primaryT3ProjectId: secondaryProjectId,
             repositoryProjectIds: [secondaryProjectId],
             updatedAt: createdAt,
           }),
@@ -2360,13 +2354,11 @@ describe("TicketWorkspaceService", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/primary",
             worktreePath: primaryWorktreePath,
           },
           {
             projectId: secondaryProjectId,
-            isPrimary: false,
             sourcePath: "/repos/secondary",
             worktreePath: "/worktrees/interrupted-secondary",
           },
@@ -2405,13 +2397,11 @@ describe("TicketWorkspaceService", () => {
           repositories: [
             {
               projectId: primaryProjectId,
-              isPrimary: true,
               sourcePath: "/repos/primary",
               worktreePath: primaryWorktreePath,
             },
             {
               projectId: secondaryProjectId,
-              isPrimary: false,
               sourcePath: "/repos/secondary",
               worktreePath: "/worktrees/interrupted-secondary",
             },
@@ -2460,13 +2450,11 @@ describe("TicketWorkspaceService", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/primary",
             worktreePath: primaryWorktreePath,
           },
           {
             projectId: secondaryProjectId,
-            isPrimary: false,
             sourcePath: "/repos/secondary",
             worktreePath: "/worktrees/interrupted-secondary",
           },
@@ -2659,7 +2647,6 @@ describe("TicketWorkspaceService", () => {
           store.updateTicket({
             id: ticketId,
             expectedRevision: 0,
-            primaryT3ProjectId: secondaryProjectId,
             repositoryProjectIds: [secondaryProjectId],
             updatedAt: createdAt,
           }),
@@ -2774,13 +2761,11 @@ describe("TicketWorkspaceService", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/primary",
             worktreePath: primaryWorktreePath,
           },
           {
             projectId: secondaryProjectId,
-            isPrimary: false,
             sourcePath: "/repos/secondary",
             worktreePath: "/worktrees/interrupted-secondary",
           },

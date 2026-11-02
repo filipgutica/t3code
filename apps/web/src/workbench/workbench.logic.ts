@@ -2,7 +2,6 @@ import {
   type OrchestrationV2ShellSnapshot,
   type OrchestrationV2ThreadFamily,
   type OrchestrationV2ThreadShell,
-  type ProjectId,
   type ThreadId,
   type WorkbenchAssignment,
   type WorkbenchEpic,
@@ -345,9 +344,7 @@ export function getAssignmentsForTicket(
     .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-export function resolveWorkbenchTicketThreadTarget<Project extends { readonly id: ProjectId }>(
-  ticket: Pick<WorkbenchTicket, "primaryT3ProjectId">,
-  projects: ReadonlyArray<Project>,
+export function resolveWorkbenchTicketThreadTarget(
   assignment: Pick<WorkbenchAssignment, "threadId"> | undefined,
   existingThreadIds: ReadonlySet<ThreadId>,
   threadLookupReady = true,
@@ -356,18 +353,7 @@ export function resolveWorkbenchTicketThreadTarget<Project extends { readonly id
     return { state: "open", threadId: assignment.threadId } as const;
   }
   if (assignment && !threadLookupReady) return { state: "thread-status-unavailable" } as const;
-  const project = projects.find((candidate) => candidate.id === ticket.primaryT3ProjectId);
-  return project
-    ? ({ state: "start", project } as const)
-    : ({ state: "project-unavailable" } as const);
-}
-
-export function getWorkbenchTicketRepositoryProjectIds(
-  ticket: Pick<WorkbenchTicket, "repositoryProjectIds" | "primaryT3ProjectId">,
-): ReadonlyArray<ProjectId> {
-  return ticket.repositoryProjectIds.length > 0
-    ? ticket.repositoryProjectIds
-    : [ticket.primaryT3ProjectId];
+  return { state: "start" } as const;
 }
 
 export function isWorkbenchThreadArchived(

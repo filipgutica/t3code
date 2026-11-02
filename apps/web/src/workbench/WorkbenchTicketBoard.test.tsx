@@ -86,7 +86,6 @@ const ticket = (title: string): WorkbenchTicket => ({
   title,
   kind: "story",
   markdown: "",
-  primaryT3ProjectId: ProjectId.make("repo"),
   repositoryProjectIds: [],
   status: "todo",
   blocked: false,

@@ -70,7 +70,7 @@ const seed = Effect.gen(function* () {
     title: "Linked Ticket",
     kind: "story",
     markdown: "",
-    primaryT3ProjectId: projectId,
+    repositoryProjectIds: [projectId],
     createdAt,
   });
   const handlers = makeWorkbenchRpcHandlers(yield* acquireWorkbenchRpcServices);

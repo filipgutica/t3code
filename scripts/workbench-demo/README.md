@@ -84,7 +84,7 @@ source resolves.
 
 The feedback Ticket (`synthetic-attention-feedback`) has a long Markdown
 description, scopes **Orbit Web and Orbit API**, and has three active native
-Threads, all belonging to the Ticket's primary **Orbit Web** Project. The original
+Threads, all working in the Ticket's **Orbit Web** repository. The original
 links PRs **901 and 902**; the **shared PR assignment** links
 PR **902** again. The **API contract review** Thread links the approved PR **906** in
 `workbench-synthetic/attention-api`. Its three PR identities remain distinct;

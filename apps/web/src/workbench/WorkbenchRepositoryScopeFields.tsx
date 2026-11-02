@@ -3,7 +3,6 @@ import {
   FolderGit2Icon,
   MoreHorizontalIcon,
   PlusIcon,
-  StarIcon,
   TriangleAlertIcon,
   XIcon,
 } from "lucide-react";
@@ -20,7 +19,7 @@ import {
   ComboboxSearchInput,
   ComboboxTrigger,
 } from "../components/ui/combobox";
-import { Menu, MenuItem, MenuPopup, MenuSeparator, MenuTrigger } from "../components/ui/menu";
+import { Menu, MenuItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
 
 type WorkspaceRepository = WorkbenchTicketWorkspace["repositories"][number];
@@ -58,26 +57,22 @@ export function WorkbenchTicketRepositoryStatus({
 const UNLINKED = "No longer linked to this Workspace.";
 
 const getUnavailableRepositoryMessage = ({
-  isPrimary,
   isLocked,
   hasLinkedRepositories,
 }: {
-  readonly isPrimary: boolean;
   readonly isLocked: boolean;
   readonly hasLinkedRepositories: boolean;
 }) => {
   if (!hasLinkedRepositories)
     return "Link a repository to this Workbench Workspace before preparing this ticket.";
   if (isLocked) return `${UNLINKED} Link it again with Edit Workspace.`;
-  if (isPrimary)
-    return `${UNLINKED} Make another repository primary, or link it again with Edit Workspace.`;
   return `${UNLINKED} Remove it, or link it again with Edit Workspace.`;
 };
 
 /**
  * Edits a ticket's repository scope as a visible list. `savedScope` is the persisted scope, so
  * pending additions and removals stay labelled until the caller saves. With `lockedScope`, its
- * repositories and the primary are fixed and only new repositories can be added or removed.
+ * repositories are fixed and only new repositories can be added or removed.
  */
 export function WorkbenchRepositoryScopeFields({
   projects,
@@ -98,11 +93,7 @@ export function WorkbenchRepositoryScopeFields({
 }) {
   const selectedIds = value.repositoryProjectIds;
   const removedIds = savedScope.repositoryProjectIds.filter((id) => !selectedIds.includes(id));
-  const rowIds = [
-    value.primaryT3ProjectId,
-    ...selectedIds.filter((id) => id !== value.primaryT3ProjectId),
-    ...removedIds,
-  ];
+  const rowIds = [...selectedIds, ...removedIds];
   const candidates = projects.filter(
     (project) => !selectedIds.includes(project.id) && !removedIds.includes(project.id),
   );
@@ -153,15 +144,11 @@ export function WorkbenchRepositoryScopeFields({
       { ...value, repositoryProjectIds: selectedIds.filter((selectedId) => selectedId !== id) },
       id,
     );
-  const primaryTitle =
-    projects.find((project) => project.id === value.primaryT3ProjectId)?.title ??
-    "The current primary";
   const rows = rowIds.map((id): RepositoryRow => {
     const isRemoved = removedIds.includes(id);
     return {
       id,
       title: projects.find((project) => project.id === id)?.title,
-      isPrimary: id === value.primaryT3ProjectId,
       change: isRemoved
         ? "removing"
         : savedScope.repositoryProjectIds.includes(id)
@@ -199,7 +186,6 @@ export function WorkbenchRepositoryScopeFields({
                 >
                   {getRepositoryRowLabel(row)}
                 </span>
-                {row.isPrimary ? <Badge variant="outline">Primary</Badge> : null}
                 <RepositoryRowState row={row} showWorkspaceStatus={workspace !== undefined} />
               </div>
               <RepositoryRowMessages row={row} hasLinkedRepositories={projects.length > 0} />
@@ -207,7 +193,6 @@ export function WorkbenchRepositoryScopeFields({
             <RepositoryRowAction
               row={row}
               locked={lockedScope !== undefined}
-              primaryTitle={primaryTitle}
               disabled={disabled}
               onUndo={(id) => include(id, id)}
               getMenuFinalFocus={(id) => {
@@ -222,7 +207,6 @@ export function WorkbenchRepositoryScopeFields({
                 return getRowFocusTarget(id) ?? true;
               }}
               onRemove={remove}
-              onMakePrimary={(id) => change({ ...value, primaryT3ProjectId: id })}
             />
           </li>
         ))}
@@ -236,8 +220,7 @@ export function WorkbenchRepositoryScopeFields({
       ) : null}
       {lockedScope ? (
         <p className="text-xs text-muted-foreground">
-          Add repositories here. To change the primary or remove a prepared repository, edit the
-          ticket’s Work area.
+          Add repositories here. To remove a prepared repository, edit the ticket’s Work area.
         </p>
       ) : null}
     </fieldset>
@@ -247,7 +230,6 @@ export function WorkbenchRepositoryScopeFields({
 type RepositoryRow = {
   readonly id: ProjectId;
   readonly title: string | undefined;
-  readonly isPrimary: boolean;
   readonly change: "adding" | "removing" | null;
   readonly isLocked: boolean;
   readonly workspaceRepository: WorkspaceRepository | undefined;
@@ -296,7 +278,6 @@ function RepositoryRowMessages({
           <p className="ps-5.5 font-mono text-xs break-all text-muted-foreground">{row.id}</p>
           <p className="ps-5.5 text-xs text-destructive" role="alert">
             {getUnavailableRepositoryMessage({
-              isPrimary: row.isPrimary,
               isLocked: row.isLocked,
               hasLinkedRepositories,
             })}
@@ -315,21 +296,17 @@ function RepositoryRowMessages({
 function RepositoryRowAction({
   row,
   locked,
-  primaryTitle,
   disabled,
   onUndo,
   getMenuFinalFocus,
   onRemove,
-  onMakePrimary,
 }: {
   readonly row: RepositoryRow;
   readonly locked: boolean;
-  readonly primaryTitle: string;
   readonly disabled: boolean;
   readonly onUndo: (id: ProjectId) => void;
   readonly getMenuFinalFocus: (id: ProjectId) => HTMLElement | boolean;
   readonly onRemove: (id: ProjectId) => void;
-  readonly onMakePrimary: (id: ProjectId) => void;
 }) {
   const label = getRepositoryRowLabel(row);
   if (row.change === "removing")
@@ -374,33 +351,9 @@ function RepositoryRowAction({
       </MenuTrigger>
       {/* The menu closes while its trigger unmounts, so it defers to the row's pending focus. */}
       <MenuPopup align="end" finalFocus={() => getMenuFinalFocus(row.id)}>
-        {row.isPrimary ? null : (
-          <>
-            <MenuItem
-              disabled={disabled || row.title === undefined}
-              onClick={() => onMakePrimary(row.id)}
-            >
-              <StarIcon />
-              <span className="flex flex-col">
-                Make primary
-                <span className="text-xs text-muted-foreground">
-                  {primaryTitle} stays as an additional repository
-                </span>
-              </span>
-            </MenuItem>
-            <MenuSeparator />
-          </>
-        )}
-        <MenuItem disabled={disabled || row.isPrimary} onClick={() => onRemove(row.id)}>
+        <MenuItem disabled={disabled} onClick={() => onRemove(row.id)}>
           <XIcon />
-          <span className="flex flex-col">
-            Remove from ticket
-            {row.isPrimary ? (
-              <span className="text-xs text-muted-foreground">
-                Make another repository primary first
-              </span>
-            ) : null}
-          </span>
+          Remove from ticket
         </MenuItem>
       </MenuPopup>
     </Menu>

@@ -5,10 +5,7 @@ import type {
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 
-export type WorkbenchRepositoryScope = Pick<
-  WorkbenchTicket,
-  "primaryT3ProjectId" | "repositoryProjectIds"
->;
+export type WorkbenchRepositoryScope = Pick<WorkbenchTicket, "repositoryProjectIds">;
 
 export type WorkbenchRepositoryScopeDraft = {
   readonly environmentId: EnvironmentId;
@@ -18,7 +15,6 @@ export type WorkbenchRepositoryScopeDraft = {
 };
 
 export const getWorkbenchRepositoryScope = (ticket: WorkbenchTicket): WorkbenchRepositoryScope => ({
-  primaryT3ProjectId: ticket.primaryT3ProjectId,
   repositoryProjectIds: ticket.repositoryProjectIds,
 });
 
@@ -26,7 +22,6 @@ export const isWorkbenchRepositoryScopeEqual = (
   left: WorkbenchRepositoryScope,
   right: WorkbenchRepositoryScope,
 ) =>
-  left.primaryT3ProjectId === right.primaryT3ProjectId &&
   left.repositoryProjectIds.length === right.repositoryProjectIds.length &&
   left.repositoryProjectIds.every((id, index) => id === right.repositoryProjectIds[index]);
 
@@ -38,9 +33,23 @@ export const isWorkbenchRepositoryScopeValid = ({
   readonly projects: ReadonlyArray<{ readonly id: ProjectId }>;
 }) =>
   scope.repositoryProjectIds.length > 0 &&
-  scope.repositoryProjectIds.includes(scope.primaryT3ProjectId) &&
   new Set(scope.repositoryProjectIds).size === scope.repositoryProjectIds.length &&
   scope.repositoryProjectIds.every((id) => projects.some((project) => project.id === id));
+
+/**
+ * The repository a new Thread works in: `preferred` while the Ticket still links it, else the
+ * first. Callers prefer the user's pick, or the repository of the Ticket's active Thread.
+ */
+export const resolveWorkbenchThreadRepository = ({
+  ticket,
+  preferred,
+}: {
+  readonly ticket: WorkbenchRepositoryScope;
+  readonly preferred: ProjectId | undefined;
+}): ProjectId | undefined =>
+  preferred !== undefined && ticket.repositoryProjectIds.includes(preferred)
+    ? preferred
+    : ticket.repositoryProjectIds[0];
 
 export const isWorkbenchTicketWorkspaceReady = ({
   ticket,

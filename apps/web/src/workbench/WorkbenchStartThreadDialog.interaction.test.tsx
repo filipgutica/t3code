@@ -60,7 +60,6 @@ const ticket: WorkbenchTicket = {
   title: "Ship a change",
   markdown: "",
   kind: "story",
-  primaryT3ProjectId: projects[0]!.id,
   repositoryProjectIds: [projects[0]!.id],
   status: "todo",
   blocked: false,
@@ -76,8 +75,7 @@ const workspace: WorkbenchTicketWorkspace = {
   errorMessage: null,
   repositories: [
     {
-      projectId: ticket.primaryT3ProjectId,
-      isPrimary: true,
+      projectId: projects[0]!.id,
       sourcePath: "/repos/Primary",
       worktreePath: "/worktrees/Primary",
       branchName: "workbench/ticket",
@@ -134,6 +132,7 @@ const render = async ({
   savedTicket = ticket,
   preparedWorkspace = workspace,
   unprepared = false,
+  repositoryProjectId,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
@@ -141,6 +140,7 @@ const render = async ({
   savedTicket?: WorkbenchTicket;
   preparedWorkspace?: WorkbenchTicketWorkspace;
   unprepared?: boolean;
+  repositoryProjectId?: ProjectId;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -154,6 +154,7 @@ const render = async ({
           projects: availableProjects,
           workspace: unprepared ? undefined : preparedWorkspace,
           initialRepositoryScope: repositoryScope,
+          repositoryProjectId,
           additional: true,
         }}
         pending={pending}
@@ -204,8 +205,8 @@ it("adds a repository to a prepared work area and submits the reviewed choices",
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
       repositoryProjectIds: projects.map((project) => project.id),
     },
   });
@@ -221,13 +222,14 @@ it("removes an added repository to reuse the prepared work area and blocks edits
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
   });
   await render({ pending: true });
   expect(button("Add repository").disabled).toBe(true);
   expect(button("Cancel").disabled).toBe(true);
 });
 
-it("removes one of many added repositories without losing the primary", async () => {
+it("removes one of many added repositories", async () => {
   const extraProjects = Array.from({ length: 12 }, (_, index) => ({
     ...projects[1]!,
     id: ProjectId.make(`extra-${index}`),
@@ -237,7 +239,6 @@ it("removes one of many added repositories without losing the primary", async ()
   await render({
     availableProjects,
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
       repositoryProjectIds: availableProjects.map((project) => project.id),
     },
   });
@@ -246,8 +247,8 @@ it("removes one of many added repositories without losing the primary", async ()
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
       repositoryProjectIds: availableProjects
         .filter((project) => project.id !== ProjectId.make("extra-4"))
         .map((project) => project.id),
@@ -259,8 +260,7 @@ it("lets an unavailable additional repository be removed", async () => {
   const unavailableId = ProjectId.make("unlinked-repository");
   await render({
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
-      repositoryProjectIds: [ticket.primaryT3ProjectId, unavailableId],
+      repositoryProjectIds: [projects[0]!.id, unavailableId],
     },
   });
   expect(button("Create work area and Thread").disabled).toBe(true);
@@ -271,6 +271,7 @@ it("lets an unavailable additional repository be removed", async () => {
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
   });
 });
 
@@ -282,10 +283,9 @@ it.each(["ready", "failed"] as const)(
     const preparedWorkspace = {
       ...workspace,
       status,
-      repositories: projects.map((project, index) => ({
+      repositories: projects.map((project) => ({
         ...workspace.repositories[0]!,
         projectId: project.id,
-        isPrimary: index === 0,
         sourcePath: project.workspaceRoot,
         worktreePath: `/worktrees/${project.id}`,
       })),
@@ -297,15 +297,15 @@ it.each(["ready", "failed"] as const)(
     await act(async () => button("Create work area and Thread").click());
     expect(onStart).toHaveBeenCalledWith({
       modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+      repositoryProjectId: projects[0]!.id,
       repositoryScope: {
-        primaryT3ProjectId: ticket.primaryT3ProjectId,
         repositoryProjectIds: [projects[0]!.id, projects[1]!.id, extra.id],
       },
     });
   },
 );
 
-it("stages a removal with undo and keeps the former primary when changing primary", async () => {
+it("stages a removal with undo", async () => {
   const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
   await render({ savedTicket, unprepared: true });
   await act(async () => labelledButton("Actions for Additional").click());
@@ -313,15 +313,11 @@ it("stages a removal with undo and keeps the former primary when changing primar
   expect(repositoryList()).toContain("Removing");
   await act(async () => button("Undo").click());
   expect(repositoryList()).not.toContain("Removing");
-  await act(async () => labelledButton("Actions for Primary").click());
-  expect(menuAction("Remove from ticket").getAttribute("aria-disabled")).toBe("true");
-  await act(async () => labelledButton("Actions for Additional").click());
-  await act(async () => menuAction("Make primary").click());
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
     repositoryScope: {
-      primaryT3ProjectId: projects[1]!.id,
       repositoryProjectIds: projects.map((project) => project.id),
     },
   });
@@ -330,15 +326,14 @@ it("stages a removal with undo and keeps the former primary when changing primar
 it("restores prepared choices from an unsaved narrowing draft", async () => {
   await render({
     repositoryScope: {
-      primaryT3ProjectId: projects[1]!.id,
       repositoryProjectIds: [projects[1]!.id],
     },
   });
   await act(async () => button("Create work area and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
       repositoryProjectIds: [projects[0]!.id, projects[1]!.id],
     },
   });
@@ -350,7 +345,7 @@ it("keeps a repository removed from the saved ticket excluded despite its retain
       ...workspace,
       repositories: [
         ...workspace.repositories,
-        { ...workspace.repositories[0]!, projectId: projects[1]!.id, isPrimary: false },
+        { ...workspace.repositories[0]!, projectId: projects[1]!.id },
       ],
     },
   });
@@ -358,7 +353,17 @@ it("keeps a repository removed from the saved ticket excluded despite its retain
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection: { instanceId: provider.instanceId, model: "gpt-default" },
+    repositoryProjectId: projects[0]!.id,
   });
+});
+
+it("starts the Thread in the preferred repository while the Ticket links it", async () => {
+  const savedTicket = { ...ticket, repositoryProjectIds: projects.map((project) => project.id) };
+  await render({ savedTicket, unprepared: true, repositoryProjectId: projects[1]!.id });
+  await act(async () => button("Create work area and Thread").click());
+  expect(onStart).toHaveBeenCalledWith(
+    expect.objectContaining({ repositoryProjectId: projects[1]!.id }),
+  );
 });
 
 it("lists every selected repository by name", async () => {
@@ -371,7 +376,6 @@ it("lists every selected repository by name", async () => {
   await render({
     availableProjects,
     repositoryScope: {
-      primaryT3ProjectId: ticket.primaryT3ProjectId,
       repositoryProjectIds: availableProjects.map((project) => project.id),
     },
   });
@@ -382,13 +386,13 @@ it("lists every selected repository by name", async () => {
 it("points a locked unavailable repository to relinking instead of removal", async () => {
   const unavailableId = ProjectId.make("unlinked-repository");
   await render({
-    savedTicket: { ...ticket, repositoryProjectIds: [ticket.primaryT3ProjectId, unavailableId] },
+    savedTicket: { ...ticket, repositoryProjectIds: [projects[0]!.id, unavailableId] },
     preparedWorkspace: {
       ...workspace,
       status: "failed",
       repositories: [
         ...workspace.repositories,
-        { ...workspace.repositories[0]!, projectId: unavailableId, isPrimary: false },
+        { ...workspace.repositories[0]!, projectId: unavailableId },
       ],
     },
   });

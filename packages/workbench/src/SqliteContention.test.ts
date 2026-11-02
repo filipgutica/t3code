@@ -48,8 +48,8 @@ const withStore = <A, E>({
         const sql = yield* SqlClient.SqlClient;
         return WorkbenchNativeAccess.of({
           findProject: (id) =>
-            sql<{ readonly id: ProjectId; readonly workspaceRoot: string }>`
-            SELECT id, workspace_root AS "workspaceRoot" FROM contention_native_projects WHERE id = ${id}
+            sql<{ readonly id: ProjectId; readonly title: string; readonly workspaceRoot: string }>`
+            SELECT id, id AS title, workspace_root AS "workspaceRoot" FROM contention_native_projects WHERE id = ${id}
           `.pipe(
               Effect.map((rows) => Option.fromUndefinedOr(rows[0])),
               Effect.orDie,
@@ -173,7 +173,6 @@ describe("Workbench SQLite contention", () => {
           fields: {
             ...draft.fields,
             repositoryProjectIds: [projectId],
-            primaryT3ProjectId: projectId,
           },
         });
         yield* store.transitionTicketDraft({
@@ -213,7 +212,6 @@ describe("Workbench SQLite contention", () => {
           const fields = {
             ...draft.fields,
             repositoryProjectIds: [projectId],
-            primaryT3ProjectId: projectId,
           };
           onRepositoryCheck = Effect.gen(function* () {
             onRepositoryCheck = Effect.void;
@@ -261,7 +259,6 @@ describe("Workbench SQLite contention", () => {
             fields: {
               ...draft.fields,
               repositoryProjectIds: [projectId],
-              primaryT3ProjectId: projectId,
             },
           });
           const action =

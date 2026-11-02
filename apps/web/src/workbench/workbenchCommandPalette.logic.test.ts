@@ -42,7 +42,6 @@ const snapshot: WorkbenchSnapshot = {
       kind: "story",
       status: "todo",
       blocked: false,
-      primaryT3ProjectId: ProjectId.make("repo"),
       repositoryProjectIds: [],
       revision: 0,
       createdAt: time,

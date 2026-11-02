@@ -4,7 +4,6 @@ import { RegistryContext } from "@effect/atom-react";
 import { AsyncResult, Atom, AtomRegistry } from "effect/reactivity";
 import {
   EnvironmentId,
-  ProjectId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchTicket,
@@ -31,7 +30,6 @@ const ticket: WorkbenchTicket = {
   title: "Archived content",
   kind: "story",
   markdown: "Original markdown",
-  primaryT3ProjectId: ProjectId.make("native"),
   repositoryProjectIds: [],
   status: "done",
   blocked: false,

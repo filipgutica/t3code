@@ -71,7 +71,6 @@ const makeDraft = (overrides: Partial<WorkbenchTicketDraft> = {}): WorkbenchTick
     kind: "story",
     epicId: null,
     repositoryProjectIds: [],
-    primaryT3ProjectId: null,
   },
   createdAt: time,
   updatedAt: time,

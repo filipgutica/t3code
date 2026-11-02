@@ -422,7 +422,6 @@ describe("Ticket-owned PR checkouts", () => {
     repositories: [
       {
         projectId,
-        isPrimary: true,
         sourcePath: "/shared/repo",
         worktreePath: "/worktrees/ticket/repo",
         branchName: "ticket-branch",

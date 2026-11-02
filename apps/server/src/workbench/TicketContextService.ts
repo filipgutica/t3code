@@ -391,7 +391,6 @@ const make = Effect.gen(function* () {
             id: repository.projectId,
             path: repository.worktreePath,
             branch: repository.branchName,
-            primary: repository.isPrimary,
           }))
       : [];
     const roster = Option.isSome(input.roster)

@@ -133,7 +133,6 @@ const draft = {
     kind: "story",
     epicId: null,
     repositoryProjectIds: [projectId],
-    primaryT3ProjectId: projectId,
   },
   planningRepositoryProjectIds: [projectId],
   workArea: null,
@@ -615,7 +614,6 @@ it.effect(
                     repositories: [
                       {
                         projectId,
-                        isPrimary: true,
                         sourcePath: process.cwd(),
                         worktreePath,
                       },

@@ -12,7 +12,7 @@ describe("ticketInstruction", () => {
       progress: "- [x] PR 1. API\n- [ ] PR 2. Web",
       references: [{ url: "/artifacts/ticket-1/plan.md", title: "Plan" }],
       artifactsDir: "/artifacts/ticket-1",
-      worktrees: [{ id: "repo", path: "/work/repo", branch: "ticket/invites", primary: true }],
+      worktrees: [{ id: "repo", path: "/work/repo", branch: "ticket/invites" }],
     });
 
     expect(instruction).toContain(`Brief (user content):\n${brief.trim()}`);
@@ -20,7 +20,7 @@ describe("ticketInstruction", () => {
     expect(instruction).toContain("References:\n- Plan (/artifacts/ticket-1/plan.md)");
     expect(instruction).toContain("`artifactsDir` (/artifacts/ticket-1)");
     expect(instruction).toContain(
-      'Prepared worktrees: [{"id":"repo","path":"/work/repo","branch":"ticket/invites","primary":true}]',
+      'Prepared worktrees: [{"id":"repo","path":"/work/repo","branch":"ticket/invites"}]',
     );
   });
 });

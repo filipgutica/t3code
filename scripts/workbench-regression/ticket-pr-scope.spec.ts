@@ -55,8 +55,7 @@ test("ticket PRs exclude shared checkouts until a workspace is prepared", async 
                         updatedAt: timestamp,
                         repositories: [
                           {
-                            projectId: ticket.primaryT3ProjectId,
-                            isPrimary: true,
+                            projectId: ticket.repositoryProjectIds[0],
                             sourcePath: `${demo.home}/shared`,
                             worktreePath,
                             branchName: "ticket-work",
@@ -247,7 +246,6 @@ test("ticket PR References show without changing Ticket scope", async ({
             candidate.id === ticket.id
               ? {
                   ...candidate,
-                  primaryT3ProjectId: selectedProjectId,
                   repositoryProjectIds: [selectedProjectId],
                 }
               : candidate,

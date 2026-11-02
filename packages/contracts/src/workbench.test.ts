@@ -61,7 +61,7 @@ describe("Workbench contracts", () => {
           projectId: "workspace",
           title: "Archived",
           markdown: "Full archived body",
-          primaryT3ProjectId: "native",
+          repositoryProjectIds: ["native"],
           status: "done",
           blocked: false,
           archivedAt: "2026-10-17T10:00:00.000Z",
@@ -144,7 +144,6 @@ describe("Workbench contracts", () => {
             epicId: "epic-1",
             kind: "story",
             markdown: "Keep the native T3 Thread experience.",
-            primaryT3ProjectId: "t3-project-1",
             repositoryProjectIds: ["t3-project-1", "t3-project-2"],
             status: "in_progress",
             blocked: false,
@@ -171,7 +170,6 @@ describe("Workbench contracts", () => {
             repositories: [
               {
                 projectId: "t3-project-1",
-                isPrimary: true,
                 sourcePath: "/repos/t3-project-1",
                 worktreePath: "/worktrees/ticket-1/t3-project-1",
                 branchName: "workbench/ticket-1-a1b2c3d4",
@@ -202,7 +200,7 @@ describe("Workbench contracts", () => {
       expect(snapshot.ticketWorkspaces[0]).toMatchObject({
         ticketId: "ticket-1",
         status: "ready",
-        repositories: [expect.objectContaining({ projectId: "t3-project-1", isPrimary: true })],
+        repositories: [expect.objectContaining({ projectId: "t3-project-1" })],
       });
     }),
   );
@@ -292,6 +290,7 @@ describe("Workbench contracts", () => {
       });
 
       expect(snapshot.tickets[0]).toMatchObject({ kind: "story", repositoryProjectIds: [] });
+      expect(snapshot.tickets[0]).not.toHaveProperty("primaryT3ProjectId");
       expect(snapshot.epics).toEqual([]);
       expect(snapshot.tickets[0]?.epicId).toBeNull();
       expect(snapshot.tickets[0]?.archivedAt).toBeUndefined();
@@ -307,7 +306,7 @@ describe("Workbench contracts", () => {
         projectId: "workbench-project-1",
         title: "Legacy Ticket",
         markdown: "Legacy body",
-        primaryT3ProjectId: "t3-project-1",
+        repositoryProjectIds: ["t3-project-1"],
         createdAt: "2026-09-03T12:00:00.000Z",
       });
       const updateInput = yield* decodeWorkbenchUpdateTicketInput({
@@ -356,7 +355,7 @@ describe("Workbench contracts", () => {
 
       expect(createInput).toMatchObject({ kind: "story" });
       expect(createInput.epicId).toBeUndefined();
-      expect(createInput.repositoryProjectIds).toBeUndefined();
+      expect(createInput.repositoryProjectIds).toEqual(["t3-project-1"]);
       expect(updateInput.kind).toBeUndefined();
       expect(statusOnlyUpdateInput).toEqual({
         id: "ticket-1",
@@ -364,7 +363,6 @@ describe("Workbench contracts", () => {
         status: "in_progress",
         updatedAt: "2026-09-03T12:01:30.000Z",
       });
-      expect(updateInput.primaryT3ProjectId).toBeUndefined();
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
       expect(unlinkInput).toEqual({ ticketId: "ticket-1", threadId: "thread-1" });
@@ -440,7 +438,7 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it.effect("decodes stored drafts that still carry removed Jira fields", () =>
+  it.effect("decodes stored drafts that still carry removed Jira and primary fields", () =>
     Effect.gen(function* () {
       const draft = yield* decodeWorkbenchTicketDraft({
         id: "draft-1",
@@ -465,6 +463,7 @@ describe("Workbench contracts", () => {
       });
       expect(draft.fields).not.toHaveProperty("localOnly");
       expect(draft.fields).not.toHaveProperty("jiraSprintId");
+      expect(draft.fields).not.toHaveProperty("primaryT3ProjectId");
     }),
   );
 

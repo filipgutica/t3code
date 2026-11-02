@@ -137,10 +137,16 @@ const RemoveReferenceTool = Tool.make("workbench_reference_remove", {
 
 const CreateThreadTool = Tool.make("workbench_thread_create", {
   description:
-    "Start another Thread on your Ticket, in its worktree with your model, and send it `message` as its first prompt. It gets the Ticket context.",
+    "Start another Thread on your Ticket, in one repository's worktree with your model, and send it `message` as its first prompt. It gets the Ticket context.",
   parameters: Schema.Struct({
     message: TrimmedNonEmptyString.check(Schema.isMaxLength(120_000)),
     title: Schema.optional(TrimmedNonEmptyString.check(Schema.isMaxLength(240))),
+    repositoryProjectId: Schema.optional(
+      ProjectId.annotate({
+        description:
+          "Repository to work in: a `projectId` from `repositories[]` with `selected: true`. Defaults to yours.",
+      }),
+    ),
   }),
   success: AgentThreadResult,
   failure: WorkbenchToolError,

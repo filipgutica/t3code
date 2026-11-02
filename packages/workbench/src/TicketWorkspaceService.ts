@@ -140,7 +140,6 @@ export class TicketWorkspaceService extends Context.Service<
 
 interface ValidatedRepository {
   readonly projectId: ProjectId;
-  readonly isPrimary: boolean;
   readonly sourcePath: string;
   readonly worktreePath: string;
   /** The observed branch or the branch selected for a new worktree. */
@@ -639,11 +638,9 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   const validateReadyRepository = Effect.fn("TicketWorkspaceService.validateReadyRepository")(
     function* ({
       projectId,
-      isPrimary,
       repository,
     }: {
       readonly projectId: ProjectId;
-      readonly isPrimary: boolean;
       readonly repository: WorkbenchTicketWorkspace["repositories"][number];
     }) {
       const observedBranch = yield* findRegisteredWorktree(repository);
@@ -654,7 +651,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       }
       return {
         projectId,
-        isPrimary,
         sourcePath: repository.sourcePath,
         worktreePath: repository.worktreePath,
         branchName: observedBranch.value,
@@ -708,7 +704,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   const validateNewRepository = Effect.fn("TicketWorkspaceService.validateNewRepository")(
     function* ({
       projectId,
-      isPrimary,
       branchName,
       assignedThreadIds,
       workspaceDirectory,
@@ -716,7 +711,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       usedRepositoryDirectoryNames,
     }: {
       readonly projectId: ProjectId;
-      readonly isPrimary: boolean;
       readonly branchName: Effect.Effect<string, WorkbenchOperationError>;
       readonly assignedThreadIds: ReadonlyArray<ThreadId>;
       readonly workspaceDirectory: string;
@@ -817,7 +811,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       const baseRef = "origin/main";
       return {
         projectId,
-        isPrimary,
         sourcePath: project.value.workspaceRoot,
         worktreePath,
         branchName: targetBranchName,
@@ -860,7 +853,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         validatedRepositories.push(
           yield* validateReadyRepository({
             projectId,
-            isPrimary: projectId === ticket.primaryT3ProjectId,
             repository: existingRepository,
           }),
         );
@@ -869,7 +861,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       validatedRepositories.push(
         yield* validateNewRepository({
           projectId,
-          isPrimary: projectId === ticket.primaryT3ProjectId,
           branchName,
           assignedThreadIds,
           workspaceDirectory,
@@ -1129,7 +1120,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       if (generatedBranchName !== undefined) return generatedBranchName;
       generatedBranchName = yield* generateBranchName({
         ticketId: ticket.id,
-        primaryT3ProjectId: ticket.primaryT3ProjectId,
+        projectId: ticket.repositoryProjectIds[0] ?? null,
         issueLabel,
         title: ticket.title,
         markdown: ticket.markdown,
@@ -1197,7 +1188,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       generatedBranchName: generatedBranchName ?? null,
       repositories: validatedRepositories.map((repository) => ({
         projectId: repository.projectId,
-        isPrimary: repository.isPrimary,
         sourcePath: repository.sourcePath,
         worktreePath: repository.worktreePath,
         ...(repository.branchName !== undefined ? { branchName: repository.branchName } : {}),

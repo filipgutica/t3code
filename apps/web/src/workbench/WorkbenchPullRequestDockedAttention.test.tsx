@@ -58,7 +58,6 @@ const snapshot: WorkbenchSnapshot = {
       kind: "story",
       markdown: "",
       epicId: null,
-      primaryT3ProjectId: projectId,
       repositoryProjectIds: [],
       status: "in_progress",
       blocked: false,

@@ -112,7 +112,6 @@ describe("Workbench Ticket creation", () => {
       expect.objectContaining({
         title: "Fix this",
         epicId: localEpic.id,
-        primaryT3ProjectId: project.id,
         repositoryProjectIds: [project.id],
       }),
     );

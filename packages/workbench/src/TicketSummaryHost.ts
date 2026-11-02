@@ -7,7 +7,7 @@ export class TicketSummaryHost extends Context.Service<
   TicketSummaryHost,
   {
     readonly generate: (
-      ticket: Pick<WorkbenchTicket, "title" | "markdown" | "primaryT3ProjectId">,
+      ticket: Pick<WorkbenchTicket, "title" | "markdown" | "repositoryProjectIds">,
     ) => Effect.Effect<string, WorkbenchOperationError>;
   }
 >()("@t3tools/workbench/TicketSummaryHost") {}

@@ -69,7 +69,6 @@ describe("WorkbenchStore", () => {
           fields: {
             ...draft.fields,
             title: "Plan work",
-            primaryT3ProjectId: projectId,
             repositoryProjectIds: [projectId],
           },
         });
@@ -85,7 +84,7 @@ describe("WorkbenchStore", () => {
           title: "Plan work",
           kind: "story",
           markdown: "Plan",
-          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
           createdAt,
         });
         yield* store.createAssignment({
@@ -208,7 +207,7 @@ describe("WorkbenchStore", () => {
         title: "Original title",
         kind: "story",
         markdown: "Original description",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
 
@@ -289,7 +288,7 @@ describe("WorkbenchStore", () => {
         title: "Assignment guard",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
       for (const threadId of ["guard-thread-1", "guard-thread-2", "guard-thread-3"]) {
@@ -403,7 +402,6 @@ describe("WorkbenchStore", () => {
           title: "Unlink assignment",
           kind: "story",
           markdown: "Keep the native Thread available for relinking.",
-          primaryT3ProjectId: projectId,
           repositoryProjectIds: [projectId],
           createdAt,
         });
@@ -632,7 +630,6 @@ describe("WorkbenchStore", () => {
         title: "Prepare all repositories",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: primaryProjectId,
         repositoryProjectIds: [primaryProjectId, secondaryProjectId],
         createdAt,
       });
@@ -644,13 +641,11 @@ describe("WorkbenchStore", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/primary",
             worktreePath: "/worktrees/ticket-workspace/primary",
           },
           {
             projectId: secondaryProjectId,
-            isPrimary: false,
             sourcePath: "/repos/secondary",
             worktreePath: "/worktrees/ticket-workspace/secondary",
           },
@@ -665,13 +660,11 @@ describe("WorkbenchStore", () => {
           repositories: [
             {
               projectId: primaryProjectId,
-              isPrimary: true,
               sourcePath: "/repos/primary",
               worktreePath: "/worktrees/ticket-workspace/primary",
             },
             {
               projectId: secondaryProjectId,
-              isPrimary: false,
               sourcePath: "/repos/secondary",
               worktreePath: "/worktrees/ticket-workspace/secondary",
             },
@@ -685,7 +678,6 @@ describe("WorkbenchStore", () => {
           expectedRevision: 0,
           title: "Prepare all repositories",
           markdown: "",
-          primaryT3ProjectId: primaryProjectId,
           repositoryProjectIds: [primaryProjectId],
           status: "todo",
           blocked: false,
@@ -724,12 +716,10 @@ describe("WorkbenchStore", () => {
         repositories: [
           expect.objectContaining({
             projectId: primaryProjectId,
-            isPrimary: true,
             status: "ready",
           }),
           expect.objectContaining({
             projectId: secondaryProjectId,
-            isPrimary: false,
             status: "ready",
           }),
         ],
@@ -781,7 +771,6 @@ describe("WorkbenchStore", () => {
         title: "Create Epic swimlanes",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: linkedProjectId,
         repositoryProjectIds: [linkedProjectId],
         createdAt,
       });
@@ -793,7 +782,6 @@ describe("WorkbenchStore", () => {
           title: "Invalid Epic link",
           kind: "story",
           markdown: "",
-          primaryT3ProjectId: linkedProjectId,
           repositoryProjectIds: [linkedProjectId],
           createdAt,
         }),
@@ -835,7 +823,6 @@ describe("WorkbenchStore", () => {
           title: "Cannot join archived Epic",
           kind: "bug",
           markdown: "",
-          primaryT3ProjectId: linkedProjectId,
           repositoryProjectIds: [linkedProjectId],
           createdAt: "2026-09-03T12:03:00.000Z",
         }),
@@ -889,7 +876,6 @@ describe("WorkbenchStore", () => {
         title: "Retain repository worktrees",
         kind: "story",
         markdown: "Existing worktrees remain available after scope edits.",
-        primaryT3ProjectId: primaryProjectId,
         repositoryProjectIds: [primaryProjectId],
         createdAt,
       });
@@ -901,7 +887,6 @@ describe("WorkbenchStore", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/scope-primary",
             worktreePath: "/worktrees/ticket-scope/primary",
           },
@@ -938,7 +923,6 @@ describe("WorkbenchStore", () => {
       yield* store.updateTicket({
         id: ticketId,
         expectedRevision: 0,
-        primaryT3ProjectId: primaryProjectId,
         repositoryProjectIds: [primaryProjectId, secondaryProjectId],
         updatedAt: "2026-09-03T12:01:00.000Z",
       });
@@ -950,13 +934,11 @@ describe("WorkbenchStore", () => {
         repositories: [
           {
             projectId: primaryProjectId,
-            isPrimary: true,
             sourcePath: "/repos/scope-primary",
             worktreePath: "/worktrees/ticket-scope/primary",
           },
           {
             projectId: secondaryProjectId,
-            isPrimary: false,
             sourcePath: "/repos/scope-secondary",
             worktreePath: "/worktrees/ticket-scope/secondary",
           },
@@ -977,10 +959,15 @@ describe("WorkbenchStore", () => {
         completedAt: "2026-09-03T12:01:03.000Z",
       });
 
+      // An archived Thread no longer holds its repository.
+      yield* sql`
+        UPDATE orchestration_v2_projection_threads
+        SET archived_at = '2026-09-03T12:01:30.000Z'
+        WHERE thread_id = 'scope-thread'
+      `;
       const changed = yield* store.updateTicket({
         id: ticketId,
         expectedRevision: 1,
-        primaryT3ProjectId: secondaryProjectId,
         repositoryProjectIds: [secondaryProjectId],
         updatedAt: "2026-09-03T12:02:00.000Z",
       });
@@ -988,7 +975,6 @@ describe("WorkbenchStore", () => {
       const snapshot = yield* store.getSnapshot;
 
       expect(changed).toMatchObject({
-        primaryT3ProjectId: secondaryProjectId,
         repositoryProjectIds: [secondaryProjectId],
         revision: 2,
       });
@@ -996,13 +982,11 @@ describe("WorkbenchStore", () => {
         expect.arrayContaining([
           expect.objectContaining({
             projectId: primaryProjectId,
-            isPrimary: false,
             status: "ready",
             worktreePath: "/worktrees/ticket-scope/primary",
           }),
           expect.objectContaining({
             projectId: secondaryProjectId,
-            isPrimary: true,
             status: "ready",
             worktreePath: "/worktrees/ticket-scope/secondary",
           }),
@@ -1079,7 +1063,6 @@ describe("WorkbenchStore", () => {
         title: "Create the first Ticket flow",
         kind: "story",
         markdown: "Keep the native T3 Thread experience.",
-        primaryT3ProjectId: linkedProjectId,
         repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         createdAt,
       });
@@ -1089,7 +1072,6 @@ describe("WorkbenchStore", () => {
         title: "Create the first Ticket flow",
         kind: "bug",
         markdown: "Keep the native T3 Thread experience.",
-        primaryT3ProjectId: secondaryProjectId,
         repositoryProjectIds: [secondaryProjectId, linkedProjectId],
         status: "todo",
         blocked: false,
@@ -1173,7 +1155,7 @@ describe("WorkbenchStore", () => {
         title: "Another Ticket",
         markdown: "",
         kind: "story",
-        primaryT3ProjectId: secondaryProjectId,
+        repositoryProjectIds: [secondaryProjectId],
         createdAt,
       });
       for (const threadId of ["thread-1", "thread-2"]) {
@@ -1203,8 +1185,7 @@ describe("WorkbenchStore", () => {
         title: "Create the first Ticket flow",
         kind: "bug",
         markdown: "Keep the native T3 Thread experience.",
-        primaryT3ProjectId: linkedProjectId,
-        repositoryProjectIds: [linkedProjectId],
+        repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         status: "in_progress",
         blocked: false,
         updatedAt: "2026-09-03T12:02:30.000Z",
@@ -1217,8 +1198,7 @@ describe("WorkbenchStore", () => {
       expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)).toMatchObject({
         id: ticketId,
         kind: "bug",
-        primaryT3ProjectId: linkedProjectId,
-        repositoryProjectIds: [linkedProjectId],
+        repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         status: "in_progress",
         blocked: false,
       });
@@ -1280,7 +1260,6 @@ describe("WorkbenchStore", () => {
         title: "Keep Assignment repository context stable",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: primaryProjectId,
         repositoryProjectIds: [primaryProjectId],
         createdAt,
       });
@@ -1301,7 +1280,6 @@ describe("WorkbenchStore", () => {
               title: "Keep Assignment repository context stable",
               kind: "story",
               markdown: "",
-              primaryT3ProjectId: nextPrimaryProjectId,
               repositoryProjectIds: [nextPrimaryProjectId],
               status: "todo",
               blocked: false,
@@ -1337,16 +1315,16 @@ describe("WorkbenchStore", () => {
 
       expect([updateResult.ok, assignmentResult.ok].filter(Boolean)).toHaveLength(1);
       if (assignment) {
-        expect(ticket?.primaryT3ProjectId).toBe(primaryProjectId);
+        expect(ticket?.repositoryProjectIds).toEqual([primaryProjectId]);
         expect(updateResult).toEqual({ ok: false, code: "ticket_repository_scope_locked" });
       } else {
-        expect(ticket?.primaryT3ProjectId).toBe(nextPrimaryProjectId);
+        expect(ticket?.repositoryProjectIds).toEqual([nextPrimaryProjectId]);
         expect(assignmentResult).toEqual({ ok: false, code: "thread_project_mismatch" });
       }
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("rejects a Ticket primary repository outside its Workbench Workspace", () =>
+  it.effect("rejects a Ticket repository outside its Workbench Workspace", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
       const store = yield* WorkbenchStore;
@@ -1380,19 +1358,6 @@ describe("WorkbenchStore", () => {
         createdAt,
       });
 
-      const missingPrimaryError = yield* Effect.flip(
-        store.createTicket({
-          id: WorkbenchTicketId.make("ticket-without-primary"),
-          projectId,
-          title: "Invalid Ticket scope",
-          kind: "story",
-          markdown: "",
-          primaryT3ProjectId: linkedProjectId,
-          repositoryProjectIds: [ProjectId.make("another-project")],
-          createdAt,
-        }),
-      );
-
       const error = yield* Effect.flip(
         store.createTicket({
           id: WorkbenchTicketId.make("ticket-1"),
@@ -1400,14 +1365,12 @@ describe("WorkbenchStore", () => {
           title: "Invalid Ticket",
           kind: "story",
           markdown: "",
-          primaryT3ProjectId: ProjectId.make("unlinked-project"),
           repositoryProjectIds: [ProjectId.make("unlinked-project")],
           createdAt,
         }),
       );
 
-      expect(missingPrimaryError.code).toBe("primary_repository_not_selected");
-      expect(error.code).toBe("primary_project_not_linked");
+      expect(error.code).toBe("repository_not_linked");
     }).pipe(Effect.provide(TestLayer)),
   );
 
@@ -1439,7 +1402,6 @@ describe("WorkbenchStore", () => {
         title: "Ticket",
         kind: "bug",
         markdown: "",
-        primaryT3ProjectId: linkedProjectId,
         repositoryProjectIds: [linkedProjectId],
         createdAt,
       });
@@ -1534,7 +1496,6 @@ describe("WorkbenchStore", () => {
         title: "Race release",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
         repositoryProjectIds: [projectId],
         createdAt,
       });
@@ -1552,7 +1513,6 @@ describe("WorkbenchStore", () => {
         repositories: [
           {
             projectId,
-            isPrimary: true,
             sourcePath: "/repos/release",
             worktreePath: "/worktrees/release",
           },
@@ -1648,7 +1608,7 @@ describe("WorkbenchStore", () => {
               title: "Outer transaction ticket",
               kind: "story",
               markdown: "",
-              primaryT3ProjectId: projectId,
+              repositoryProjectIds: [projectId],
               createdAt,
             });
             yield* store.createAssignment({
@@ -1733,7 +1693,7 @@ describe("WorkbenchStore", () => {
         title: "Release live assignment",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
       yield* seedNativeThread({
@@ -1764,7 +1724,6 @@ describe("WorkbenchStore", () => {
         repositories: [
           {
             projectId,
-            isPrimary: true,
             sourcePath: "/repos/release-live",
             worktreePath: "/worktrees/release-live",
           },
@@ -1824,7 +1783,7 @@ describe("WorkbenchStore", () => {
         title: "Local lifecycle Ticket",
         kind: "story",
         markdown: "Keep this local.",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
       yield* store.createTicket({
@@ -1833,7 +1792,7 @@ describe("WorkbenchStore", () => {
         title: "Other Ticket",
         kind: "bug",
         markdown: "Keep this too.",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
 
@@ -2163,7 +2122,6 @@ describe("WorkbenchStore", () => {
           id: "ticket-v1",
           epicId: null,
           kind: "story",
-          primaryT3ProjectId: "repository-v1",
           repositoryProjectIds: ["repository-v1"],
           status: "in_progress",
         }),

@@ -133,7 +133,6 @@ const WorkbenchTicketWorkspaceRepositoryRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
   attemptId: WorkbenchTicketWorkspaceAttemptId,
   projectId: ProjectId,
-  isPrimary: Schema.Number,
   sourcePath: WorkbenchTicketWorkspaceRepository.fields.sourcePath,
   worktreePath: WorkbenchTicketWorkspaceRepository.fields.worktreePath,
   branchName: WorkbenchTicketWorkspaceRepository.fields.branchName,
@@ -155,7 +154,8 @@ const WorkbenchTicketRow = Schema.Struct({
   title: WorkbenchTicket.fields.title,
   kind: WorkbenchTicket.fields.kind,
   markdown: WorkbenchTicket.fields.markdown,
-  primaryT3ProjectId: ProjectId,
+  // The retired primary column: internal only, it orders checkouts. See workbench-data-model.md.
+  anchorProjectId: ProjectId,
   status: WorkbenchTicket.fields.status,
   blocked: Schema.Number,
   revision: Schema.Number,
@@ -255,7 +255,6 @@ const ticketFromRow = (
     title: row.title,
     kind: row.kind,
     markdown: row.markdown,
-    primaryT3ProjectId: row.primaryT3ProjectId,
     repositoryProjectIds,
     status: row.status,
     blocked: row.blocked === 1,
@@ -337,7 +336,6 @@ export interface WorkbenchClaimTicketWorkspaceInput {
   readonly generatedBranchName?: string | null;
   readonly repositories: ReadonlyArray<{
     readonly projectId: ProjectId;
-    readonly isPrimary: boolean;
     readonly sourcePath: string;
     readonly worktreePath: string;
     /** Current branch observed at an existing registered worktree. */
@@ -852,7 +850,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         title,
         kind,
         CASE WHEN ${compact ? 1 : 0} AND archived_at IS NOT NULL THEN '' ELSE markdown END AS markdown,
-        primary_t3_project_id AS "primaryT3ProjectId",
+        primary_t3_project_id AS "anchorProjectId",
         status,
         blocked,
         revision,
@@ -966,7 +964,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         repository.ticket_id AS "ticketId",
         COALESCE(repository.attempt_id, workspace.attempt_id) AS "attemptId",
         repository.t3_project_id AS "projectId",
-        repository.is_primary AS "isPrimary",
         repository.source_path AS "sourcePath",
         repository.worktree_path AS "worktreePath",
         repository.branch_name AS "branchName",
@@ -1364,7 +1361,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         repository.ticket_id AS "ticketId",
         COALESCE(repository.attempt_id, workspace.attempt_id) AS "attemptId",
         repository.t3_project_id AS "projectId",
-        repository.is_primary AS "isPrimary",
         repository.source_path AS "sourcePath",
         repository.worktree_path AS "worktreePath",
         repository.branch_name AS "branchName",
@@ -1530,7 +1526,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         title,
         kind,
         markdown,
-        primary_t3_project_id AS "primaryT3ProjectId",
+        primary_t3_project_id AS "anchorProjectId",
         status,
         blocked,
         revision,
@@ -1783,7 +1779,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         errorMessage: repository.errorMessage,
         createdAt: repository.createdAt,
         updatedAt: repository.updatedAt,
-        isPrimary: repository.isPrimary === 1,
       })),
     });
 
@@ -1912,7 +1907,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             // The Board needs only the counts; the Ticket read carries the list.
             const { progress: _progress, ...snapshotTicket } = ticketFromRow(
               ticket,
-              repositoriesByTicket.get(ticket.id) ?? [ticket.primaryT3ProjectId],
+              repositoriesByTicket.get(ticket.id) ?? [ticket.anchorProjectId],
             );
             return {
               ...snapshotTicket,
@@ -1968,7 +1963,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 ticket.value,
                 repositories.length > 0
                   ? repositories.map((repository) => repository.repositoryProjectId)
-                  : [ticket.value.primaryT3ProjectId],
+                  : [ticket.value.anchorProjectId],
               ),
             );
           }),
@@ -2005,7 +2000,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
   const validateTicketWorkspaceClaim = Effect.fn("WorkbenchStore.validateTicketWorkspaceClaim")(
     function* (input: WorkbenchClaimTicketWorkspaceInput) {
-      const ticket = yield* requireActiveTicket({
+      yield* requireActiveTicket({
         ticketId: input.ticketId,
         archivedMessage: "Archived Workbench Tickets cannot receive a Workspace.",
       });
@@ -2020,12 +2015,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         new Set(suppliedProjectIds).size === suppliedProjectIds.length &&
         suppliedProjectIds.length === expectedProjectIds.length &&
         suppliedProjectIds.every((projectId) => expectedProjectIds.includes(projectId));
-      const primaryRepositories = input.repositories.filter((repository) => repository.isPrimary);
-      if (
-        !repositoryScopeMatches ||
-        primaryRepositories.length !== 1 ||
-        primaryRepositories[0]?.projectId !== ticket.primaryT3ProjectId
-      ) {
+      if (!repositoryScopeMatches) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_preparation_changed",
           message: "The Ticket repository scope changed before its Workspace could be prepared.",
@@ -2034,25 +2024,32 @@ const makeWorkbenchStore = Effect.gen(function* () {
     },
   );
 
+  // Clear before set: a partial unique index allows one anchor checkout per Ticket.
+  const markAnchorCheckout = Effect.fn("WorkbenchStore.markAnchorCheckout")(function* (input: {
+    readonly ticketId: WorkbenchTicketId;
+    readonly updatedAt: string;
+  }) {
+    yield* sql`
+      UPDATE workbench_ticket_workspace_repositories
+      SET is_primary = 0, updated_at = ${input.updatedAt}
+      WHERE ticket_id = ${input.ticketId}
+    `;
+    yield* sql`
+      UPDATE workbench_ticket_workspace_repositories
+      SET is_primary = 1, updated_at = ${input.updatedAt}
+      WHERE ticket_id = ${input.ticketId}
+        AND t3_project_id = (
+          SELECT primary_t3_project_id FROM workbench_tickets WHERE ticket_id = ${input.ticketId}
+        )
+    `;
+  });
+
   const selectedGeneratedBranchName = (input: WorkbenchClaimTicketWorkspaceInput) =>
     input.generatedBranchName === undefined ? input.branchName : input.generatedBranchName;
 
   const reconcileReadyTicketWorkspace = Effect.fn("WorkbenchStore.reconcileReadyTicketWorkspace")(
     function* (input: WorkbenchClaimTicketWorkspaceInput) {
-      yield* sql`
-      UPDATE workbench_ticket_workspace_repositories
-      SET is_primary = 0, updated_at = ${input.claimedAt}
-      WHERE ticket_id = ${input.ticketId}
-    `;
-      const primary = input.repositories.find((repository) => repository.isPrimary);
-      if (primary !== undefined) {
-        yield* sql`
-        UPDATE workbench_ticket_workspace_repositories
-        SET is_primary = 1, updated_at = ${input.claimedAt}
-        WHERE ticket_id = ${input.ticketId}
-          AND t3_project_id = ${primary.projectId}
-      `;
-      }
+      yield* markAnchorCheckout({ ticketId: input.ticketId, updatedAt: input.claimedAt });
       for (const repository of input.repositories) {
         if (repository.branchName === undefined) continue;
         yield* sql`
@@ -2139,19 +2136,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
     readonly input: WorkbenchClaimTicketWorkspaceInput;
     readonly readyProjectIds: ReadonlySet<ProjectId>;
   }) {
-    yield* sql`
-      UPDATE workbench_ticket_workspace_repositories
-      SET is_primary = 0, updated_at = ${input.claimedAt}
-      WHERE ticket_id = ${input.ticketId}
-    `;
     for (const repository of input.repositories) {
       if (readyProjectIds.has(repository.projectId)) {
-        if (repository.branchName !== undefined || repository.isPrimary) {
+        if (repository.branchName !== undefined) {
           yield* sql`
             UPDATE workbench_ticket_workspace_repositories
             SET
-              is_primary = CASE WHEN ${repository.isPrimary ? 1 : 0} = 1 THEN 1 ELSE is_primary END,
-              branch_name = COALESCE(${repository.branchName ?? null}, branch_name),
+              branch_name = ${repository.branchName},
               updated_at = ${input.claimedAt}
             WHERE ticket_id = ${input.ticketId}
               AND t3_project_id = ${repository.projectId}
@@ -2176,7 +2167,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ${input.ticketId},
           ${repository.projectId},
           ${input.attemptId},
-          ${repository.isPrimary ? 1 : 0},
+          0,
           ${repository.sourcePath},
           ${repository.worktreePath},
           ${repository.branchName ?? input.branchName},
@@ -2187,6 +2178,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         )
       `;
     }
+    yield* markAnchorCheckout({ ticketId: input.ticketId, updatedAt: input.claimedAt });
   });
 
   const claimTicketWorkspaceRecovery: WorkbenchStoreShape["claimTicketWorkspaceRecovery"] =
@@ -2925,30 +2917,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const validateTicketRepositoryScope = Effect.fn("WorkbenchStore.validateTicketRepositoryScope")(
     function* ({
       projectId,
-      primaryT3ProjectId,
       repositoryProjectIds,
     }: {
       projectId: WorkbenchProjectId;
-      primaryT3ProjectId: ProjectId;
       repositoryProjectIds: ReadonlyArray<ProjectId>;
     }) {
       const normalizedRepositoryProjectIds = [...new Set(repositoryProjectIds)];
-      if (!normalizedRepositoryProjectIds.includes(primaryT3ProjectId)) {
-        return yield* new WorkbenchOperationError({
-          code: "primary_repository_not_selected",
-          message: "The primary Ticket repository must be included in its repository scope.",
-        });
-      }
       for (const linkedProjectId of normalizedRepositoryProjectIds) {
         const link = yield* findProjectLink({ projectId, linkedProjectId }).pipe(
           Effect.mapError(persistenceError),
         );
         if (Option.isNone(link)) {
           return yield* new WorkbenchOperationError({
-            code:
-              linkedProjectId === primaryT3ProjectId
-                ? "primary_project_not_linked"
-                : "repository_not_linked",
+            code: "repository_not_linked",
             message: "A Ticket repository is not linked to its Workbench Workspace.",
           });
         }
@@ -3011,8 +2992,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           });
           const repositoryProjectIds = yield* validateTicketRepositoryScope({
             projectId: input.projectId,
-            primaryT3ProjectId: input.primaryT3ProjectId,
-            repositoryProjectIds: input.repositoryProjectIds ?? [input.primaryT3ProjectId],
+            repositoryProjectIds: input.repositoryProjectIds,
           });
           yield* sql`
             INSERT INTO workbench_tickets (
@@ -3044,7 +3024,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ${input.title},
               ${input.kind},
               ${input.markdown},
-              ${input.primaryT3ProjectId},
+              ${repositoryProjectIds[0]},
               'todo',
               0,
               0,
@@ -3146,31 +3126,34 @@ const makeWorkbenchStore = Effect.gen(function* () {
     const projectIds = new Set<ProjectId>();
     for (const { threadId } of assignments) {
       const thread = yield* native.findThread(threadId);
-      if (Option.isSome(thread)) projectIds.add(thread.value.projectId);
+      if (Option.isSome(thread) && thread.value.archivedAt == null) {
+        projectIds.add(thread.value.projectId);
+      }
     }
     return [...projectIds];
   }, Effect.mapError(workbenchStoreError));
 
-  // Users may still remove such a repository; an agent must not pull one out from under a sibling.
-  // Runs inside the Ticket write, so a Thread linked after the agent read the Ticket still counts.
-  const requireAgentKeepsRepositoriesInUse = Effect.fn(
-    "WorkbenchStore.requireAgentKeepsRepositoriesInUse",
-  )(function* (input: {
-    readonly agentThreadId: ThreadId | undefined;
-    readonly ticketId: WorkbenchTicketId;
-    readonly current: ReadonlyArray<ProjectId>;
-    readonly requested: ReadonlyArray<ProjectId> | undefined;
-  }) {
-    const { requested } = input;
-    if (input.agentThreadId === undefined || requested === undefined) return;
-    const inUse = yield* listActiveThreadProjectIds(input.ticketId);
-    if (inUse.some((id) => input.current.includes(id) && !requested.includes(id))) {
+  // Runs inside the Ticket write, so a Thread linked after the caller read the Ticket still counts.
+  const requireRemovedRepositoriesIdle = Effect.fn("WorkbenchStore.requireRemovedRepositoriesIdle")(
+    function* (input: {
+      readonly ticketId: WorkbenchTicketId;
+      readonly current: ReadonlyArray<ProjectId>;
+      readonly requested: ReadonlyArray<ProjectId> | undefined;
+    }) {
+      const { requested } = input;
+      if (requested === undefined) return;
+      const inUse = (yield* listActiveThreadProjectIds(input.ticketId)).find(
+        (id) => input.current.includes(id) && !requested.includes(id),
+      );
+      if (inUse === undefined) return;
+      const project = yield* native.findProject(inUse);
+      const name = Option.isSome(project) ? project.value.title : inUse;
       return yield* new WorkbenchOperationError({
         code: "ticket_repository_scope_locked",
-        message: "A repository that an active Thread works in cannot be removed.",
+        message: `${name} can't be removed while an active Thread works in it. Archive or delete that Thread first.`,
       });
-    }
-  });
+    },
+  );
 
   const updateTicket: WorkbenchStoreShape["updateTicket"] = Effect.fn(
     "WorkbenchStore.updateTicket",
@@ -3210,25 +3193,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const currentRepositoryProjectIds = currentRepositories.map(
             (repository) => repository.repositoryProjectId,
           );
-          yield* requireAgentKeepsRepositoriesInUse({
-            agentThreadId: input.updatedByThreadId,
-            ticketId: input.id,
-            current: currentRepositoryProjectIds,
-            requested: input.repositoryProjectIds,
-          });
-          const primaryT3ProjectId = input.primaryT3ProjectId ?? current.primaryT3ProjectId;
           const repositoryProjectIds = yield* validateTicketRepositoryScope({
             projectId: current.projectId,
-            primaryT3ProjectId,
             repositoryProjectIds:
               input.repositoryProjectIds ??
               (currentRepositoryProjectIds.length > 0
                 ? currentRepositoryProjectIds
-                : [current.primaryT3ProjectId]),
+                : [current.anchorProjectId]),
           });
+          // A reorder keeps the anchor, so existing checkouts keep their root.
+          const anchorProjectId = repositoryProjectIds.includes(current.anchorProjectId)
+            ? current.anchorProjectId
+            : (repositoryProjectIds[0] ?? current.anchorProjectId);
           const existingTicketWorkspace = yield* loadTicketWorkspace(input.id);
           const repositoryScopeChanged =
-            primaryT3ProjectId !== current.primaryT3ProjectId ||
             repositoryProjectIds.length !== currentRepositoryProjectIds.length ||
             repositoryProjectIds.some(
               (repositoryProjectId) => !currentRepositoryProjectIds.includes(repositoryProjectId),
@@ -3244,6 +3222,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "Ticket repository scope cannot change while its Workspace is changing.",
             });
           }
+          yield* requireRemovedRepositoriesIdle({
+            ticketId: input.id,
+            current: currentRepositoryProjectIds,
+            requested: input.repositoryProjectIds,
+          });
           yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
           const contentChanged = title !== current.title || markdown !== current.markdown;
           const updatedByThreadId = ticketProvenance({ input, current, contentChanged });
@@ -3256,7 +3239,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               epic_id = ${epicId},
               kind = ${kind},
               markdown = ${markdown},
-              primary_t3_project_id = ${primaryT3ProjectId},
+              primary_t3_project_id = ${anchorProjectId},
               status = ${status},
               blocked = ${blocked ? 1 : 0},
               updated_by_thread_id = ${updatedByThreadId},
@@ -3286,18 +3269,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 ) VALUES (${input.id}, ${repositoryProjectId}, ${position})
               `;
             }
-            if (Option.isSome(existingTicketWorkspace)) {
-              yield* sql`
-                UPDATE workbench_ticket_workspace_repositories
-                SET is_primary = 0, updated_at = ${input.updatedAt}
-                WHERE ticket_id = ${input.id}
-              `;
-              yield* sql`
-                UPDATE workbench_ticket_workspace_repositories
-                SET is_primary = 1, updated_at = ${input.updatedAt}
-                WHERE ticket_id = ${input.id}
-                  AND t3_project_id = ${primaryT3ProjectId}
-              `;
+            if (anchorProjectId !== current.anchorProjectId) {
+              yield* markAnchorCheckout({ ticketId: input.id, updatedAt: input.updatedAt });
             }
           }
           return {
@@ -3308,7 +3281,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
               title,
               kind,
               markdown,
-              primaryT3ProjectId,
               repositoryProjectIds,
               status,
               blocked,
@@ -3632,7 +3604,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             },
             repositories.length > 0
               ? repositories.map((repository) => repository.repositoryProjectId)
-              : [current.value.primaryT3ProjectId],
+              : [current.value.anchorProjectId],
           );
         }),
       )
@@ -3698,7 +3670,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               },
               repositories.length > 0
                 ? repositories.map((repository) => repository.repositoryProjectId)
-                : [current.value.primaryT3ProjectId],
+                : [current.value.anchorProjectId],
             ),
           );
         }),
@@ -3759,7 +3731,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               },
               repositories.length > 0
                 ? repositories.map((repository) => repository.repositoryProjectId)
-                : [current.primaryT3ProjectId],
+                : [current.anchorProjectId],
             ),
             shouldPublishChange: input.archivedAt === null,
           };
@@ -3842,10 +3814,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
         message: "The native T3 Thread does not exist.",
       });
     }
-    if (nativeThread.value.projectId !== ticket.primaryT3ProjectId) {
+    const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+    const repositoryProjectIds =
+      repositories.length > 0
+        ? repositories.map((repository) => repository.repositoryProjectId)
+        : [ticket.anchorProjectId];
+    if (!repositoryProjectIds.includes(nativeThread.value.projectId)) {
       return yield* new WorkbenchOperationError({
         code: "thread_project_mismatch",
-        message: "The native T3 Thread belongs to a different T3 Project.",
+        message: "The native T3 Thread works in a repository this Ticket does not link.",
       });
     }
     return ticket;
@@ -4036,7 +4013,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticket.value,
             repositories.length > 0
               ? repositories.map((repository) => repository.repositoryProjectId)
-              : [ticket.value.primaryT3ProjectId],
+              : [ticket.value.anchorProjectId],
           ),
         );
       },

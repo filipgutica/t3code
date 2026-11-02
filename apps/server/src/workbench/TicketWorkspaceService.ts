@@ -46,26 +46,26 @@ export const ticketWorkspaceHostLayer = Layer.effect(
               }),
           ),
         );
-        const settings = resolveProjectSettings(currentSettings, input.primaryT3ProjectId).settings;
+        const settings = resolveProjectSettings(currentSettings, input.projectId).settings;
         if (settings.branchNamingMode === "static") {
           return ticketWorkspaceBranchName({ ...input, prefix: settings.branchNamePrefix });
         }
         const project =
-          input.primaryT3ProjectId === null
+          input.projectId === null
             ? Option.none()
-            : yield* projects.getShell(input.primaryT3ProjectId).pipe(
+            : yield* projects.getShell(input.projectId).pipe(
                 Effect.mapError(
                   () =>
                     new WorkbenchOperationError({
                       code: "ticket_workspace_preparation_failed",
-                      message: "The Ticket's primary repository could not be loaded.",
+                      message: "The Ticket's first repository could not be loaded.",
                     }),
                 ),
               );
         if (Option.isNone(project)) {
           return yield* new WorkbenchOperationError({
             code: "ticket_workspace_preparation_failed",
-            message: "The Ticket's primary repository is unavailable.",
+            message: "The Ticket's first repository is unavailable.",
           });
         }
         const modelSelection =
@@ -74,7 +74,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
             : ServerSettings.resolveSourceControlWriterModelSelection(
                 settings,
                 yield* providerRegistry.getProviders,
-                input.primaryT3ProjectId,
+                input.projectId,
               );
         const title = input.issueLabel ? `${input.issueLabel}: ${input.title}` : input.title;
         const result = yield* textGeneration

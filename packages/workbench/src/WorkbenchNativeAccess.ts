@@ -16,10 +16,12 @@ export class WorkbenchNativeAccess extends Context.Service<
     /** Read through the caller's SQL transaction to establish a durable execution boundary. */
     readonly executionSequence: Effect.Effect<number, WorkbenchOperationError>;
     readonly startedExecutionRunIds: Effect.Effect<ReadonlyArray<RunId>, WorkbenchOperationError>;
-    readonly findProject: (
-      projectId: ProjectId,
-    ) => Effect.Effect<
-      Option.Option<{ readonly id: ProjectId; readonly workspaceRoot: string }>,
+    readonly findProject: (projectId: ProjectId) => Effect.Effect<
+      Option.Option<{
+        readonly id: ProjectId;
+        readonly title: string;
+        readonly workspaceRoot: string;
+      }>,
       WorkbenchOperationError
     >;
     /** Validate the captured native root without re-reading the Project during Git I/O. */

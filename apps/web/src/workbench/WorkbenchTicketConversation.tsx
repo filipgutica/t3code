@@ -310,12 +310,10 @@ function WorkbenchConversationPane({
 function WorkbenchRepositoryBadges({
   label,
   ids,
-  primaryId,
   projects,
 }: {
   readonly label: string;
   readonly ids: ReadonlyArray<string>;
-  readonly primaryId: string | null;
   readonly projects: ReadonlyArray<Project>;
 }) {
   return (
@@ -330,7 +328,6 @@ function WorkbenchRepositoryBadges({
           <span className="max-w-48 truncate">
             {projects.find((project) => project.id === id)?.title ?? "Repository"}
           </span>
-          {id === primaryId ? <span className="text-muted-foreground">· Primary</span> : null}
         </Badge>
       ))}
     </ul>
@@ -347,7 +344,6 @@ function WorkbenchPlanningSummary({
     readonly title: string;
     readonly markdown: string;
     readonly repositoryProjectIds: ReadonlyArray<string>;
-    readonly primaryT3ProjectId: string | null;
   };
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly updatedBy: string | null;
@@ -362,7 +358,6 @@ function WorkbenchPlanningSummary({
       <WorkbenchRepositoryBadges
         label="Ticket repositories"
         ids={summary.repositoryProjectIds}
-        primaryId={summary.primaryT3ProjectId}
         projects={linkedProjects}
       />
       <WorkbenchDescription markdown={summary.markdown} />
@@ -484,7 +479,6 @@ function WorkbenchDraftAside({
       archivedThreadsById={props.archivedThreadsById}
       readOnly={!canOperate || transitions.action !== null}
       fileCwd={getReferenceFileCwd(linkedProjects, [
-        draft.fields.primaryT3ProjectId,
         ...draft.fields.repositoryProjectIds,
         draft.anchorProjectId,
       ])}

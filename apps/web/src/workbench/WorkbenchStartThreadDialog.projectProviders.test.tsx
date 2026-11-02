@@ -41,9 +41,9 @@ vi.mock("./WorkbenchRepositoryScopeFields", () => ({
     onChange: (value: WorkbenchRepositoryScope) => void;
   }) => (
     <button
-      onClick={() => onChange({ ...value, primaryT3ProjectId: value.repositoryProjectIds[1]! })}
+      onClick={() => onChange({ repositoryProjectIds: value.repositoryProjectIds.toReversed() })}
     >
-      Use second primary
+      Move second first
     </button>
   ),
 }));
@@ -85,7 +85,6 @@ const ticket: WorkbenchTicket = {
   markdown: "",
   kind: "story",
   epicId: null,
-  primaryT3ProjectId: first,
   repositoryProjectIds: [first, second],
   status: "todo",
   blocked: false,
@@ -120,6 +119,7 @@ const mount = () =>
           projects,
           workspace: undefined,
           initialRepositoryScope: undefined,
+          repositoryProjectId: undefined,
         }}
       />,
     );
@@ -127,7 +127,7 @@ const mount = () =>
 const submit = () =>
   act(() => renderer.root.findByType("form").props.onSubmit({ preventDefault() {} }));
 
-it("blocks a machine-enabled provider for the selected primary project and rechecks a changed primary", () => {
+it("blocks a machine-enabled provider for the Thread's repository and rechecks a changed one", () => {
   observed.settings = {
     ...DEFAULT_SERVER_SETTINGS,
     projectSettingsOverrides: {
@@ -137,11 +137,12 @@ it("blocks a machine-enabled provider for the selected primary project and reche
   mount();
   submit();
   expect(start).not.toHaveBeenCalled();
-  act(() => renderer.root.findByProps({ children: "Use second primary" }).props.onClick());
+  act(() => renderer.root.findByProps({ children: "Move second first" }).props.onClick());
   submit();
   expect(start).toHaveBeenCalledWith({
     modelSelection: { instanceId, model: "gpt-test" },
-    repositoryScope: { primaryT3ProjectId: second, repositoryProjectIds: [first, second] },
+    repositoryProjectId: second,
+    repositoryScope: { repositoryProjectIds: [second, first] },
   });
 });
 
@@ -157,6 +158,7 @@ it("allows a project override to enable a machine-disabled provider", () => {
   submit();
   expect(start).toHaveBeenCalledWith({
     modelSelection: { instanceId, model: "gpt-test" },
-    repositoryScope: { primaryT3ProjectId: first, repositoryProjectIds: [first, second] },
+    repositoryProjectId: first,
+    repositoryScope: { repositoryProjectIds: [first, second] },
   });
 });

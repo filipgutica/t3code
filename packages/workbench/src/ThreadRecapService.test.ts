@@ -35,7 +35,7 @@ const run = (ordinal: number) => ({
 const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provide(
     Layer.succeed(WorkbenchNativeAccess, {
-      findProject: (id) => Effect.succeedSome({ id, workspaceRoot: `/repos/${id}` }),
+      findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: (id) => Effect.succeedSome({ id, projectId }),
       hasThreadAtWorktreePath: () => Effect.succeed(false),
@@ -78,7 +78,7 @@ const seedTicket = (threads: ReadonlyArray<ThreadId>) =>
       title: "Share progress",
       kind: "story",
       markdown: "",
-      primaryT3ProjectId: projectId,
+      repositoryProjectIds: [projectId],
       createdAt,
     });
     for (const id of threads) {

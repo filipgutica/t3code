@@ -52,17 +52,15 @@ export const getTicketDraftCreateState = ({
   const repositories = getWorkbenchCreateTicketRepositories({
     linkedProjects,
     repositoryProjectIds: fields.repositoryProjectIds,
-    primaryProjectId: fields.primaryT3ProjectId,
   });
   const blocker = getCreateBlocker({
     title: fields.title,
-    hasRepository: repositories.selectedProjectId !== null,
+    hasRepository: repositories.selectedRepositoryProjectIds.length > 0,
   });
   const effectiveFields: WorkbenchTicketDraftFields = {
     ...fields,
     epicId: selectedEpicId,
     repositoryProjectIds: repositories.selectedRepositoryProjectIds,
-    primaryT3ProjectId: repositories.selectedProjectId,
   };
   return { selectedEpicId, repositories, blocker, effectiveFields };
 };
@@ -162,13 +160,9 @@ export function WorkbenchTicketDraftFieldsForm({
         <WorkbenchCreateTicketRepositories
           linkedProjects={context.linkedProjects}
           selectedRepositoryProjectIds={repositories.selectedRepositoryProjectIds}
-          selectedProjectId={repositories.selectedProjectId}
           setRepositoryProjectIds={asSetter<ReadonlyArray<ProjectId>>(
             repositories.selectedRepositoryProjectIds,
             (ids) => onChange({ repositoryProjectIds: ids }),
-          )}
-          setPrimaryProjectId={asSetter(repositories.selectedProjectId, (id) =>
-            onChange({ primaryT3ProjectId: id }),
           )}
         />
       </fieldset>

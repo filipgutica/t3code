@@ -13,7 +13,6 @@ import {
   getWorkbenchEpicProgress,
   getWorkbenchContextForThread,
   groupWorkbenchTicketsByEpic,
-  getWorkbenchTicketRepositoryProjectIds,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketTemplate,
@@ -135,17 +134,6 @@ describe("Workbench ticket helpers", () => {
     ]);
   });
 
-  it("falls back to the primary Repository for snapshots decoded without a scope", () => {
-    const primaryT3ProjectId = ProjectId.make("repository-one");
-
-    expect(
-      getWorkbenchTicketRepositoryProjectIds({
-        primaryT3ProjectId,
-        repositoryProjectIds: [],
-      }),
-    ).toEqual([primaryT3ProjectId]);
-  });
-
   it("prefers a live Thread when live and archived snapshots transiently overlap", () => {
     const threadId = ThreadId.make("thread-one");
 
@@ -231,7 +219,6 @@ describe("Workbench ticket helpers", () => {
       title: "Keep Ticket context visible",
       markdown: "",
       kind: "story",
-      primaryT3ProjectId: repositoryId,
       repositoryProjectIds: [repositoryId],
       status: "in_progress",
       blocked: false,

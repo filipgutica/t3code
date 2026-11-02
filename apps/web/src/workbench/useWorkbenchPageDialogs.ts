@@ -124,10 +124,9 @@ export function useWorkbenchPageDialogs({
       return false;
     setPendingAction("create-ticket");
     setError(null);
-    const primaryProject = projects.find((project) => project.id === draft.primaryT3ProjectId);
-    if (!primaryProject) {
+    if (!draft.repositoryProjectIds.every((id) => projects.some((project) => project.id === id))) {
       setPendingAction(null);
-      setError("The selected T3 Project is no longer available.");
+      setError("A selected T3 Project is no longer available.");
       return false;
     }
     const result = await createTicket({

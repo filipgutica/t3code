@@ -25,14 +25,7 @@ import {
 type WorkbenchTicketPatch = Partial<
   Pick<
     WorkbenchTicket,
-    | "title"
-    | "markdown"
-    | "kind"
-    | "epicId"
-    | "repositoryProjectIds"
-    | "primaryT3ProjectId"
-    | "status"
-    | "blocked"
+    "title" | "markdown" | "kind" | "epicId" | "repositoryProjectIds" | "status" | "blocked"
   >
 >;
 
@@ -272,10 +265,7 @@ export function useWorkbenchTicketActions({
     const workspace = snapshot?.ticketWorkspaces.find(
       (candidate) => candidate.ticketId === ticket.id,
     );
-    if (
-      (patch.repositoryProjectIds !== undefined || patch.primaryT3ProjectId !== undefined) &&
-      workspace?.status === "ready"
-    ) {
+    if (patch.repositoryProjectIds !== undefined && workspace?.status === "ready") {
       setWorkspacePreparationFailure(null);
       setPendingAction(`prepare-workspace:${ticket.id}`);
       const preparation = await prepareTicketWorkspace({

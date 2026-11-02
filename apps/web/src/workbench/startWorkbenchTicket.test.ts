@@ -48,7 +48,6 @@ const ticket = {
   title: "Streamline Ticket Threads",
   kind: "story",
   markdown: "## Goal\n\nStart the first turn.",
-  primaryT3ProjectId: projectId,
   repositoryProjectIds: [projectId],
   status: "todo",
   blocked: false,
@@ -71,7 +70,6 @@ const preparedWorkspace = {
   repositories: [
     {
       projectId,
-      isPrimary: true,
       sourcePath: "/repos/t3code",
       worktreePath: "/worktrees/ticket-one/t3code",
       branchName: "workbench/ticket-one",
@@ -131,11 +129,11 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
-  it("recovers an unavailable saved primary through the reviewed repository scope", async () => {
+  // The Thread's repository resolves against the saved Ticket, so a preference the save unlinked yields.
+  it("recovers an unavailable preferred repository through the reviewed scope", async () => {
     const replacementId = ProjectId.make("replacement-repository");
     const replacementProject = { ...project, id: replacementId };
     const reviewedScope = {
-      primaryT3ProjectId: replacementId,
       repositoryProjectIds: [replacementId],
     };
     const events: string[] = [];
@@ -160,13 +158,13 @@ describe("coordinateWorkbenchTicketStart", () => {
           return success;
         },
       },
-      { modelSelection, repositoryScope: reviewedScope },
+      { modelSelection, repositoryScope: reviewedScope, repositoryProjectId: projectId },
     );
     expect(result).toEqual({ state: "opened", threadId });
     expect(events.slice(0, 3)).toEqual(["save-repositories", "prepare-workspace", "create-thread"]);
   });
 
-  it("saves reviewed repositories before preparing and uses the selected primary for the Thread", async () => {
+  it("saves reviewed repositories before preparing and starts the Thread in the chosen one", async () => {
     const secondaryId = ProjectId.make("repository-two");
     const secondaryProject = {
       ...project,
@@ -175,18 +173,16 @@ describe("coordinateWorkbenchTicketStart", () => {
       workspaceRoot: "/repos/api",
     };
     const reviewedScope = {
-      primaryT3ProjectId: secondaryId,
       repositoryProjectIds: [projectId, secondaryId],
     };
     const savedTicket = { ...ticket, ...reviewedScope, revision: 1 };
     const workspace: WorkbenchTicketWorkspace = {
       ...preparedWorkspace,
       repositories: [
-        { ...preparedWorkspace.repositories[0]!, isPrimary: false },
+        preparedWorkspace.repositories[0]!,
         {
           ...preparedWorkspace.repositories[0]!,
           projectId: secondaryId,
-          isPrimary: true,
           sourcePath: "/repos/api",
           worktreePath: "/worktrees/ticket-one/api",
         },
@@ -216,13 +212,24 @@ describe("coordinateWorkbenchTicketStart", () => {
           return success;
         },
       },
-      { modelSelection, repositoryScope: reviewedScope },
+      { modelSelection, repositoryScope: reviewedScope, repositoryProjectId: secondaryId },
     );
     expect(events.slice(0, 2)).toEqual(["save-repositories", "prepare-workspace"]);
     expect(createdThreadInput).toMatchObject({
       projectId: secondaryId,
       worktreePath: "/worktrees/ticket-one/api",
     });
+  });
+
+  it("returns the saved Ticket when its repository cannot start a Thread", async () => {
+    const unavailableId = ProjectId.make("repository-unavailable");
+    const savedTicket = { ...ticket, repositoryProjectIds: [unavailableId], revision: 1 };
+    const result = await coordinateWorkbenchTicketStart(
+      startInput(),
+      { ...makeDependencies([]), updateTicket: async () => AsyncResult.success(savedTicket) },
+      { modelSelection, repositoryScope: { repositoryProjectIds: [unavailableId] } },
+    );
+    expect(result).toEqual({ state: "project-unavailable", ticket: savedTicket });
   });
 
   it("does not prepare repositories or create a Thread when the reviewed scope cannot be saved", async () => {
@@ -239,7 +246,6 @@ describe("coordinateWorkbenchTicketStart", () => {
       {
         modelSelection,
         repositoryScope: {
-          primaryT3ProjectId: projectId,
           repositoryProjectIds: [projectId, ProjectId.make("repository-two")],
         },
       },

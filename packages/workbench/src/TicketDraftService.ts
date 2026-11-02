@@ -3,6 +3,7 @@ import {
   WorkbenchOperationError,
   type WorkbenchTicketDraft,
   type WorkbenchTicketDraftActionInput,
+  type WorkbenchStartTicketDraftWorkInput,
   type WorkbenchBeginTicketDraftInput,
   type WorkbenchUpdateTicketDraftInput,
 } from "@t3tools/contracts";
@@ -32,7 +33,7 @@ export class TicketDraftService extends Context.Service<
       input: WorkbenchTicketDraftActionInput,
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly startWork: (
-      input: WorkbenchTicketDraftActionInput,
+      input: WorkbenchStartTicketDraftWorkInput,
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly discard: (
       input: WorkbenchTicketDraftActionInput,
@@ -92,18 +93,12 @@ const make = Effect.gen(function* () {
     let draft = yield* store.getTicketDraft(input.id);
     if (draft.phase === "planning" || draft.phase === "working") return draft;
     yield* requireRevision(draft, input.expectedRevision);
-    if (
-      !draft.fields.title.trim() ||
-      draft.fields.primaryT3ProjectId === null ||
-      draft.fields.repositoryProjectIds.length === 0
-    ) {
+    if (!draft.fields.title.trim() || draft.fields.repositoryProjectIds.length === 0) {
       return yield* new WorkbenchOperationError({
         code: "ticket_draft_invalid",
-        message:
-          "Add a title and select the ticket's repositories and primary repository before creating it.",
+        message: "Add a title and select the ticket's repositories before creating it.",
       });
     }
-    const primary = draft.fields.primaryT3ProjectId;
     yield* host.requireIdle(draft.threadId);
     if (draft.phase !== "promoting") {
       draft = yield* store.transitionTicketDraft({ ...input, from: ["draft"], phase: "promoting" });
@@ -116,7 +111,6 @@ const make = Effect.gen(function* () {
           id: draft.id,
           projectId: draft.projectId,
           ...draft.fields,
-          primaryT3ProjectId: primary,
           updatedByThreadId: draft.updatedByThreadId ?? null,
           // Only the draft's planning Thread writes its Progress.
           progress: draft.progress ?? "",
@@ -135,9 +129,16 @@ const make = Effect.gen(function* () {
         code: "ticket_not_found",
         message: "The saved ticket is no longer available.",
       });
+    // Planning continues in the first repository until Start work picks one.
+    const planningProjectId = savedTicket.repositoryProjectIds[0];
+    if (planningProjectId === undefined)
+      return yield* new WorkbenchOperationError({
+        code: "ticket_draft_invalid",
+        message: "The saved ticket has no repositories.",
+      });
     yield* host.bindThread({
       draft: { ...draft, fields: { ...draft.fields, title: savedTicket.title } },
-      projectId: savedTicket.primaryT3ProjectId,
+      projectId: planningProjectId,
       branch: null,
       worktreePath: null,
     });
@@ -164,9 +165,10 @@ const make = Effect.gen(function* () {
       phase: "planning",
     });
   });
-  const startWork = Effect.fn("TicketDraftService.startWork")(function* (
-    input: WorkbenchTicketDraftActionInput,
-  ) {
+  const startWork = Effect.fn("TicketDraftService.startWork")(function* ({
+    repositoryProjectId,
+    ...input
+  }: WorkbenchStartTicketDraftWorkInput) {
     let draft = yield* store.getTicketDraft(input.id);
     if (draft.phase === "working") return draft;
     yield* requireRevision(draft, input.expectedRevision);
@@ -198,19 +200,24 @@ const make = Effect.gen(function* () {
         code: "assignment_changed",
         message: "The ticket's planning Thread is no longer linked.",
       });
+    const projectId = repositoryProjectId ?? ticket.repositoryProjectIds[0];
+    if (projectId === undefined || !ticket.repositoryProjectIds.includes(projectId))
+      return yield* new WorkbenchOperationError({
+        code: "repository_not_linked",
+        message: "Choose one of the ticket's repositories to start work in.",
+      });
     const workspace = yield* workspaces.prepare({
       ticketId: draft.id,
       requestedAt: yield* currentAt,
     });
-    const primary = workspace.repositories.find(
-      (repository) =>
-        repository.projectId === ticket.primaryT3ProjectId && repository.status === "ready",
+    const checkout = workspace.repositories.find(
+      (repository) => repository.projectId === projectId && repository.status === "ready",
     );
-    if (workspace.status !== "ready" || !primary) {
+    if (workspace.status !== "ready" || !checkout) {
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_preparation_failed",
         message:
-          "The work area's primary worktree is not ready. Retry preparation before continuing.",
+          "The chosen repository's worktree is not ready. Retry preparation before continuing.",
       });
     }
     const latestTicket = (yield* store.getSnapshot).tickets.find(
@@ -223,9 +230,9 @@ const make = Effect.gen(function* () {
       });
     yield* host.bindThread({
       draft,
-      projectId: ticket.primaryT3ProjectId,
-      branch: primary.branchName,
-      worktreePath: primary.worktreePath,
+      projectId,
+      branch: checkout.branchName,
+      worktreePath: checkout.worktreePath,
     });
     yield* host.startExecutionMode(draft);
     return yield* store.completeTicketDraftWork({

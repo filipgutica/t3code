@@ -42,6 +42,7 @@ const nativeLayer = (options?: {
   readonly projects?: ReadonlySet<string>;
   readonly repositoryProjects?: ReadonlySet<string>;
   readonly threads?: ReadonlyMap<string, string>;
+  readonly archivedThreads?: ReadonlySet<string>;
   readonly executionSequence?: Effect.Effect<number>;
 }) => {
   const projects = options?.projects ?? new Set<string>();
@@ -53,7 +54,7 @@ const nativeLayer = (options?: {
       findProject: (projectId) =>
         Effect.succeed(
           projects.has(projectId)
-            ? Option.some({ id: projectId, workspaceRoot: `/repos/${projectId}` })
+            ? Option.some({ id: projectId, title: projectId, workspaceRoot: `/repos/${projectId}` })
             : Option.none(),
         ),
       isRepository: (root) => Effect.succeed(repositoryProjects.has(root.slice("/repos/".length))),
@@ -62,7 +63,13 @@ const nativeLayer = (options?: {
         return Effect.succeed(
           projectId === undefined
             ? Option.none()
-            : Option.some({ id: threadId, projectId: ProjectId.make(projectId) }),
+            : Option.some({
+                id: threadId,
+                projectId: ProjectId.make(projectId),
+                archivedAt: options?.archivedThreads?.has(threadId)
+                  ? "2026-09-05T13:00:00.000Z"
+                  : null,
+              }),
         );
       },
       hasThreadAtWorktreePath: () => Effect.succeed(false),
@@ -113,7 +120,7 @@ const seedTicket = (input: {
       title: input.title ?? "Validate requests",
       kind: "bug",
       markdown: input.markdown ?? "Reject invalid dimensions before querying the provider.",
-      primaryT3ProjectId: input.projectId,
+      repositoryProjectIds: [input.projectId],
       createdAt,
     });
   });
@@ -172,7 +179,7 @@ describe("WorkbenchStore package boundary", () => {
         title: "Already done",
         kind: "story",
         markdown: "Keep the terminal status.",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt: "2026-09-07T10:00:00.000Z",
       });
       yield* store.updateTicket({
@@ -538,7 +545,6 @@ describe("WorkbenchStore package boundary", () => {
           repositories: [
             {
               projectId,
-              isPrimary: true,
               sourcePath: "/repo",
               worktreePath: "/worktree",
               branchName: "pr/head",
@@ -606,7 +612,7 @@ describe("WorkbenchStore package boundary", () => {
         title: "Original title",
         kind: "story",
         markdown: "Original markdown",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
 
@@ -787,6 +793,89 @@ describe("WorkbenchStore package boundary", () => {
     ),
   );
 
+  it.effect(
+    "accepts a Thread in any linked repository and refuses to unlink one an active Thread uses",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const sql = yield* SqlClient.SqlClient;
+        const web = ProjectId.make("scope-web");
+        const api = ProjectId.make("scope-api");
+        const docs = ProjectId.make("scope-docs");
+        const workspaceId = WorkbenchProjectId.make("scope-workspace");
+        const ticketId = WorkbenchTicketId.make("scope-ticket");
+        const at = "2026-09-05T12:00:00.000Z";
+        const anchor = () =>
+          sql<{ readonly anchor: string }>`
+            SELECT primary_t3_project_id AS anchor FROM workbench_tickets WHERE ticket_id = ${ticketId}
+          `.pipe(Effect.map((rows) => rows[0]?.anchor));
+        const setRepositories = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
+          Effect.flatMap(store.getTicket(ticketId), (ticket) =>
+            store.updateTicket({
+              id: ticketId,
+              expectedRevision: Option.getOrThrow(ticket).revision,
+              repositoryProjectIds,
+              updatedAt: at,
+            }),
+          );
+        yield* store.createProject({
+          id: workspaceId,
+          title: "Scope Workspace",
+          linkedProjectIds: [web, api, docs],
+          createdAt: at,
+        });
+        yield* store.createTicket({
+          id: ticketId,
+          projectId: workspaceId,
+          title: "Scope ticket",
+          kind: "story",
+          markdown: "",
+          repositoryProjectIds: [web, api, docs],
+          createdAt: at,
+        });
+        for (const [threadId, id] of [
+          ["web-thread", "web-assignment"],
+          ["api-thread", "api-assignment"],
+          ["archived-docs-thread", "docs-assignment"],
+        ] as const) {
+          yield* store.createAssignment({
+            id: WorkbenchAssignmentId.make(id),
+            ticketId,
+            threadId: ThreadId.make(threadId),
+            createdAt: at,
+          });
+        }
+
+        // Reordering keeps the retired anchor; only removing it moves it to the new first.
+        expect(yield* anchor()).toBe(web);
+        yield* setRepositories([api, web, docs]);
+        expect(yield* anchor()).toBe(web);
+        const locked = yield* Effect.flip(setRepositories([web, docs]));
+        expect(locked).toMatchObject({
+          code: "ticket_repository_scope_locked",
+          message:
+            "scope-api can't be removed while an active Thread works in it. Archive or delete that Thread first.",
+        });
+        // An archived Thread does not hold its repository.
+        expect((yield* setRepositories([api, web])).repositoryProjectIds).toEqual([api, web]);
+        yield* store.unlinkAssignment({ ticketId, threadId: ThreadId.make("web-thread") });
+        expect((yield* setRepositories([api])).repositoryProjectIds).toEqual([api]);
+        expect(yield* anchor()).toBe(api);
+      }).pipe(
+        Effect.provide(
+          testLayer({
+            projects: new Set(["scope-web", "scope-api", "scope-docs"]),
+            threads: new Map([
+              ["web-thread", "scope-web"],
+              ["api-thread", "scope-api"],
+              ["archived-docs-thread", "scope-docs"],
+            ]),
+            archivedThreads: new Set(["archived-docs-thread"]),
+          }),
+        ),
+      ),
+  );
+
   it.effect("checks native thread existence and project ownership for assignments", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
@@ -807,7 +896,7 @@ describe("WorkbenchStore package boundary", () => {
         title: "Assignment ticket",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt,
       });
 
@@ -877,7 +966,7 @@ describe("Workbench Thread roster", () => {
         title: "Alone",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt: "2026-10-20T10:00:00.000Z",
       });
       yield* assign(store, { ticketId, name: "first", minute: 1 });
@@ -1064,7 +1153,7 @@ describe("Workbench Workspace lifecycle", () => {
           title: "Blocked child",
           kind: "story",
           markdown: "",
-          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
           createdAt: now,
         }),
       );
@@ -1084,7 +1173,7 @@ describe("Workbench Workspace lifecycle", () => {
           title: "Child",
           kind: "story" as const,
           markdown: "",
-          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
           createdAt: now,
         };
         yield* store.createTicket(child);
@@ -1217,7 +1306,7 @@ describe("Workbench Workspace lifecycle", () => {
           title: "Blocked",
           kind: "story",
           markdown: "",
-          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
           createdAt: now,
         }),
         store.updateTicket({
@@ -1256,9 +1345,7 @@ describe("Workbench Workspace lifecycle", () => {
           ticketId,
           attemptId: WorkbenchTicketWorkspaceAttemptId.make("blocked-attempt"),
           branchName: "workbench/blocked",
-          repositories: [
-            { projectId, isPrimary: true, sourcePath: "/repo", worktreePath: "/worktree" },
-          ],
+          repositories: [{ projectId, sourcePath: "/repo", worktreePath: "/worktree" }],
           claimedAt: now,
         }),
       ];
@@ -1396,9 +1483,7 @@ describe("Workbench Workspace lifecycle", () => {
           ticketId,
           attemptId,
           branchName: "workbench/retained",
-          repositories: [
-            { projectId, isPrimary: true, sourcePath: "/repo", worktreePath: "/worktree" },
-          ],
+          repositories: [{ projectId, sourcePath: "/repo", worktreePath: "/worktree" }],
           claimedAt: now,
         });
         expect(yield* store.getTicketWorkspaceGeneratedBranchName(ticketId)).toEqual(
@@ -1445,7 +1530,7 @@ describe("Workbench Workspace lifecycle", () => {
               title: "Blocked",
               kind: "story",
               markdown: "",
-              primaryT3ProjectId: projectId,
+              repositoryProjectIds: [projectId],
               createdAt: now,
             }),
           )).code,
@@ -1560,7 +1645,7 @@ describe("Workbench Workspace lifecycle", () => {
           title: id,
           kind: "story",
           markdown: "",
-          primaryT3ProjectId: projectId,
+          repositoryProjectIds: [projectId],
           references: urls.map((url) => ({ url, title: `Title ${url}` })),
           createdAt: now,
         });
@@ -1607,7 +1692,7 @@ describe("Workbench Workspace lifecycle", () => {
         title: "Imported",
         kind: "story",
         markdown: "",
-        primaryT3ProjectId: projectId,
+        repositoryProjectIds: [projectId],
         createdAt: now,
       });
       const reference = yield* store.addReference({
@@ -1659,7 +1744,7 @@ describe("Workbench Workspace lifecycle", () => {
             title: id,
             kind: "story",
             markdown: "",
-            primaryT3ProjectId: projectId,
+            repositoryProjectIds: [projectId],
             createdAt: now,
           });
           const assignment = yield* store.createAssignment({

@@ -12,7 +12,6 @@ const fieldsWith = (
   kind: "story",
   epicId: null,
   repositoryProjectIds: [],
-  primaryT3ProjectId: null,
   ...patch,
 });
 const draftAt = (

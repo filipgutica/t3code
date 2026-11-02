@@ -68,7 +68,6 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
       ?.worktreePath,
   ).toBe(original.worktreePath);
   await page.getByRole("button", { name: "Edit repositories", exact: true }).click();
-  await chooseRowAction("Orbit API", "Make primary");
   await chooseRowAction("Orbit Web", "Remove from ticket");
   await expect(repositories.getByText("Removing", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();

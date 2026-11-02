@@ -37,6 +37,7 @@ import {
   getWorkbenchRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
   isWorkbenchRepositoryScopeValid,
+  resolveWorkbenchThreadRepository,
   isWorkbenchTicketWorkspaceReady,
   type WorkbenchRepositoryScope,
 } from "./workbenchRepositoryScope";
@@ -106,7 +107,7 @@ const useWorkbenchStartThreadSelection = ({
   defaultModelSelection,
   stickyModelSelection,
 }: {
-  readonly projectId: ProjectId;
+  readonly projectId: ProjectId | null;
   readonly providers: ReadonlyArray<ServerProvider>;
   readonly settings: Parameters<typeof getCustomModelOptionsByInstance>[0];
   readonly defaultModelSelection: ModelSelection | null;
@@ -179,6 +180,8 @@ type WorkbenchStartThreadDialogRequest = {
   readonly projects: ReadonlyArray<Project>;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
+  /** Preferred repository for the new Thread; see `resolveWorkbenchThreadRepository`. */
+  readonly repositoryProjectId: ProjectId | undefined;
   readonly additional?: boolean;
   readonly title?: string;
   readonly description?: string;
@@ -201,15 +204,11 @@ const resolveThreadRepositoryScope = ({
   );
   if (preparedRepositoryIds.size === 0) return { scope: draft, lockedScope: undefined };
   const lockedScope = {
-    primaryT3ProjectId: ticket.primaryT3ProjectId,
-    repositoryProjectIds: ticket.repositoryProjectIds.filter(
-      (id) => id === ticket.primaryT3ProjectId || preparedRepositoryIds.has(id),
-    ),
+    repositoryProjectIds: ticket.repositoryProjectIds.filter((id) => preparedRepositoryIds.has(id)),
   };
   return {
     lockedScope,
     scope: {
-      primaryT3ProjectId: lockedScope.primaryT3ProjectId,
       repositoryProjectIds: [
         ...new Set([...lockedScope.repositoryProjectIds, ...draft.repositoryProjectIds]),
       ],
@@ -236,6 +235,7 @@ export function WorkbenchStartThreadDialog({
   readonly onStart: (input: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
+    repositoryProjectId?: ProjectId;
   }) => void;
   readonly error: string | null;
 }) {
@@ -245,6 +245,7 @@ export function WorkbenchStartThreadDialog({
     projects,
     workspace,
     initialRepositoryScope,
+    repositoryProjectId: preferredRepositoryProjectId,
     additional = false,
     title: dialogTitle = "Create Thread",
     description: customDescription,
@@ -275,14 +276,19 @@ export function WorkbenchStartThreadDialog({
     (additional
       ? "Start another Thread for this ticket. It can read and update the ticket."
       : "The Thread can read and update this ticket. Add a message and send when you’re ready.");
+  const repositoryProjectId =
+    resolveWorkbenchThreadRepository({
+      ticket: repositoryScope,
+      preferred: preferredRepositoryProjectId,
+    }) ?? null;
   const selection = useWorkbenchStartThreadSelection({
-    projectId: repositoryScope.primaryT3ProjectId,
+    projectId: repositoryProjectId,
     providers,
     settings,
     defaultModelSelection: resolveWorkbenchDefaultModelSelection({
       settings,
-      projectId: repositoryScope.primaryT3ProjectId,
-      project: projects.find((project) => project.id === repositoryScope.primaryT3ProjectId),
+      projectId: repositoryProjectId,
+      project: projects.find((project) => project.id === repositoryProjectId),
     }),
     stickyModelSelection,
   });
@@ -293,7 +299,11 @@ export function WorkbenchStartThreadDialog({
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (cannotStart || resolvedSelection === null) return;
-    onStart({ modelSelection: resolvedSelection, ...(!workspaceReady ? { repositoryScope } : {}) });
+    onStart({
+      modelSelection: resolvedSelection,
+      ...(!workspaceReady ? { repositoryScope } : {}),
+      ...(repositoryProjectId ? { repositoryProjectId } : {}),
+    });
   };
 
   return (
