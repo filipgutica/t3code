@@ -65,6 +65,10 @@ const descriptionComponents: Components = {
   ),
 };
 
+/** Typography for a rendered description, shared by the rich-text editor. */
+export const workbenchDescriptionProseClassName =
+  "min-w-0 max-w-[75ch] text-sm leading-relaxed [overflow-wrap:anywhere] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_h1]:mb-2 [&_h1]:mt-5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:mt-4 [&_h3]:font-semibold [&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_li>p]:my-0 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_:not(pre)>code]:rounded [&_:not(pre)>code]:bg-foreground/10 [&_:not(pre)>code]:px-1 [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:text-left [&_th]:[overflow-wrap:normal] [&_td]:border [&_td]:border-border [&_td]:p-2 [&_td]:align-top";
+
 export function WorkbenchDescription({
   markdown,
   jira = false,
@@ -77,7 +81,7 @@ export function WorkbenchDescription({
   if (!content.trim())
     return <p className="text-sm text-muted-foreground">No description added yet.</p>;
   return (
-    <div className="min-w-0 max-w-[75ch] text-sm leading-relaxed [overflow-wrap:anywhere] [&>:first-child]:mt-0 [&>:last-child]:mb-0 [&_h1]:mb-2 [&_h1]:mt-5 [&_h1]:text-lg [&_h1]:font-semibold [&_h2]:mb-2 [&_h2]:mt-5 [&_h2]:text-base [&_h2]:font-semibold [&_h3]:mb-1.5 [&_h3]:mt-4 [&_h3]:font-semibold [&_p]:my-3 [&_ul]:my-3 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:my-3 [&_ol]:list-decimal [&_ol]:pl-5 [&_li]:my-1 [&_li>p]:my-0 [&_blockquote]:border-l-2 [&_blockquote]:border-border [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_th]:border [&_th]:border-border [&_th]:p-2 [&_th]:text-left [&_th]:[overflow-wrap:normal] [&_td]:border [&_td]:border-border [&_td]:p-2 [&_td]:align-top">
+    <div className={workbenchDescriptionProseClassName}>
       <DescriptionOpenerContext value={opener}>
         <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionComponents}>
           {content}

@@ -1227,6 +1227,9 @@ importers:
       remark-rehype:
         specifier: 'catalog:'
         version: 11.1.2
+      remark-stringify:
+        specifier: 11.0.0
+        version: 11.0.0
       saxes:
         specifier: 6.0.0
         version: 6.0.0

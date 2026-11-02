@@ -135,7 +135,6 @@ import {
   SelectValue,
 } from "../components/ui/select";
 import { Textarea } from "../components/ui/textarea";
-import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { toastManager } from "../components/ui/toast";
 import { useWorkbenchThreadSettlement } from "./useWorkbenchThreadSettlement";
@@ -165,6 +164,7 @@ import {
 } from "./workbenchDraftStore";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
 import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
 import {
   useWorkbenchCheckoutStatusRefresh,
@@ -2233,7 +2233,6 @@ function WorkbenchTicketDescriptionPanel({
               <Label htmlFor="edit-workbench-ticket-title">Title</Label>
               <Input
                 id="edit-workbench-ticket-title"
-                autoFocus
                 value={draft.title}
                 onChange={(event) => {
                   setDraft(environmentId, ticket.id, {
@@ -2245,6 +2244,7 @@ function WorkbenchTicketDescriptionPanel({
             </div>
             <WorkbenchTicketDescriptionEditor
               key={`${environmentId}:${ticket.id}`}
+              autoFocus
               markdown={draft.markdown}
               jira={jira}
               onChange={(markdown) => {
@@ -2270,73 +2270,6 @@ function WorkbenchTicketDescriptionPanel({
         </div>
       )}
     </section>
-  );
-}
-
-export function WorkbenchTicketDescriptionEditor({
-  id = "edit-workbench-ticket-context",
-  markdown,
-  jira,
-  updatedBy = null,
-  onChange,
-}: {
-  id?: string;
-  markdown: string;
-  jira: boolean;
-  /** The agent Thread that last wrote the description, if one did. */
-  updatedBy?: string | null;
-  onChange: (markdown: string) => void;
-}) {
-  const [preview, setPreview] = useState(false);
-  return (
-    <div className="min-w-0 space-y-2">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Label htmlFor={id}>Description</Label>
-          {updatedBy !== null ? (
-            <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
-          ) : null}
-        </div>
-        <ToggleGroup
-          aria-label="Ticket description editor mode"
-          variant="segmented"
-          value={[preview ? "preview" : "write"]}
-          onValueChange={(next) => {
-            const mode = next[0];
-            if (mode === "write" || mode === "preview") setPreview(mode === "preview");
-          }}
-        >
-          <Toggle value="write" type="button">
-            Write
-          </Toggle>
-          <Toggle value="preview" type="button">
-            Preview
-          </Toggle>
-        </ToggleGroup>
-      </div>
-      <div hidden={preview}>
-        <Textarea
-          id={id}
-          className="min-h-72"
-          placeholder="Goal, constraints, and acceptance criteria…"
-          value={markdown}
-          onChange={(event) => onChange(event.currentTarget.value)}
-        />
-      </div>
-      {preview ? (
-        <div
-          role="region"
-          aria-label="Description preview"
-          className="min-h-72 min-w-0 rounded-lg border border-border/60 p-3"
-        >
-          {markdown.trim() ? (
-            <WorkbenchDescription markdown={markdown} jira={jira} />
-          ) : (
-            <p className="text-xs text-muted-foreground">Nothing to preview.</p>
-          )}
-        </div>
-      ) : null}
-    </div>
   );
 }
 
