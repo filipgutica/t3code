@@ -84,6 +84,10 @@ vi.mock("../components/ChatView", () => ({
     />
   ),
 }));
+// The description editor's code block view pulls in chat modules that also need a connected environment.
+vi.mock("../components/chat/ComposerCodeBlockNodeView", () => ({
+  ComposerCodeBlockNodeView: () => null,
+}));
 const environmentId = EnvironmentId.make("local");
 const projectId = WorkbenchProjectId.make("workspace");
 const repositoryId = ProjectId.make("repository");
