@@ -1,6 +1,6 @@
 ---
 name: workbench-demo
-description: Run disposable T3 Code Workbench demos for screenshots, videos, PR evidence, or checks requiring seeded Tickets, native Threads, GitHub PRs, and Jira issue links.
+description: Run disposable T3 Code Workbench demos for screenshots, videos, PR evidence, or checks requiring seeded Tickets, native Threads, synthetic linked PRs, and Jira issue links.
 ---
 
 # Workbench demo
@@ -19,9 +19,9 @@ another profile. Keep it separate from the developer's live `~/.t3/userdata`.
    checkout, so do not run tests or builds there until you stop the demo.
 3. Stop with Ctrl-C when finished. Confirm cleanup succeeds: the run is removed.
 
-If setup or authorization is missing, use `bash scripts/workbench-demo/setup.sh`
-and let the human complete browser consent. Follow the quickstart rather than
-manually assembling start, seed, and sync commands.
+If the saved profile is missing, use `bash scripts/workbench-demo/setup.sh`. If
+the GitHub CLI is signed out, let the human run `gh auth login`. Follow the
+quickstart rather than manually assembling start and seed commands.
 
 On failure, report the command, profile, and failing check. Use the reported
 recovery command before another run; retain locks and credentials until recovery
