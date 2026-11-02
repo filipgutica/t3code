@@ -1,4 +1,4 @@
-import { Node, type JSONContent } from "@tiptap/core";
+import { InputRule, Node, type JSONContent } from "@tiptap/core";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
 import { Node as ProseMirrorNode, type Mark } from "@tiptap/pm/model";
@@ -16,7 +16,17 @@ import remarkParse from "remark-parse";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
 
+import {
+  ComposerBoldExtension,
+  ComposerBoldSelectionOnlyExtension,
+  ComposerCodeBlockExtension,
+  ComposerCodeExtension,
+  ComposerItalicExtension,
+  ComposerStrikeExtension,
+} from "~/composer-rich-text-doc";
+
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { parseDescriptionHref } from "./workbenchReferences.logic";
 
 /** Markdown the editor can't show as rich text without losing it, kept as editable source. */
 const MarkdownSource = Node.create({
@@ -30,16 +40,70 @@ const MarkdownSource = Node.create({
   renderHTML: () => ["pre", { "data-markdown-source": "" }, 0],
 });
 
+/** A link to a Reference with its plain-text title, shown as the chip the saved description uses. */
+export const ReferenceChip = Node.create({
+  name: "referenceChip",
+  group: "inline",
+  inline: true,
+  atom: true,
+  selectable: true,
+  addAttributes: () => ({ href: { default: "" }, title: { default: null } }),
+  parseHTML: () => [{ tag: "span[data-reference-chip]" }],
+  renderHTML: ({ HTMLAttributes }) => ["span", { "data-reference-chip": "", ...HTMLAttributes }],
+  addInputRules() {
+    const chip = (href: string, title: string | null) => this.type.create({ href, title });
+    return [
+      // `[title](href)`, with `<href>` for a path with spaces.
+      new InputRule({
+        find: /\[([^\[\]\n]+)\]\((<[^<>\n]+>|[^()\s]+)\)$/,
+        handler: ({ state, range, match }) => {
+          const href = match[2]!.replace(/^<(.*)>$/, "$1");
+          if (parseDescriptionHref(href) === null) return null;
+          state.tr.replaceWith(range.from, range.to, chip(href, match[1]!));
+        },
+      }),
+      // A URL or an absolute path with a folder, finished with a space.
+      new InputRule({
+        find: /(?:^|\s)(https?:\/\/\S+|\/[^\s/]+\/\S+)\s$/,
+        handler: ({ state, range, match }) => {
+          const href = match[1]!.replace(/[.,:;!?'"]+$/, "");
+          if (parseDescriptionHref(href) === null) return null;
+          const start = range.from + match[0].indexOf(match[1]!);
+          // The rule consumes the typed space, so put it back after the chip and any punctuation.
+          state.tr
+            .replaceWith(start, start + href.length, chip(href, null))
+            .insertText(match[0].slice(-1), range.to - href.length + 1);
+        },
+      }),
+    ];
+  },
+});
+
 export const descriptionEditorExtensions = [
   StarterKit.configure({
-    link: { openOnClick: false, enableClickSelection: true },
+    // Reference links are chips; other links (such as `mailto:`) stay link text.
+    link: { openOnClick: false, enableClickSelection: true, autolink: false, linkOnPaste: false },
     // Markdown has no underline, and a trailing paragraph would change the doc on mount.
     underline: false,
     trailingNode: false,
+    bold: false,
+    italic: false,
+    strike: false,
+    code: false,
+    codeBlock: false,
   }),
+  // The composer's typing rules, so formatting behaves as it does in the chat composer.
+  ComposerBoldExtension,
+  ComposerItalicExtension,
+  ComposerStrikeExtension,
+  ComposerCodeExtension,
+  ComposerBoldSelectionOnlyExtension,
+  // Fences open and close on Enter in the editor's key handler, as in the composer.
+  ComposerCodeBlockExtension.extend({ addInputRules: () => [] }),
   TaskList,
   TaskItem.configure({ nested: true }),
   MarkdownSource,
+  ReferenceChip,
 ];
 
 const parser = unified().use(remarkParse).use(remarkGfm);
@@ -69,11 +133,27 @@ function inlineToJson(nodes: ReadonlyArray<PhrasingContent>, marks: MarkJson[]):
         return inlineToJson(node.children, [...marks, { type: "bold" }]);
       case "delete":
         return inlineToJson(node.children, [...marks, { type: "strike" }]);
-      case "link":
+      case "link": {
+        const [only] = node.children;
+        if (!node.title && node.children.length === 1 && only?.type === "text") {
+          const reference = parseDescriptionHref(node.url);
+          if (reference !== null) {
+            const text = only.value;
+            // `chipToMdast` names an untitled file link by its file.
+            const untitled =
+              text === node.url ||
+              text === reference.url ||
+              (reference.kind === "file" && text === reference.label);
+            return [
+              { type: "referenceChip", attrs: { href: node.url, title: untitled ? null : text } },
+            ];
+          }
+        }
         return inlineToJson(node.children, [
           ...marks,
           { type: "link", attrs: { href: node.url, title: node.title ?? null } },
         ]);
+      }
       case "break":
         return [{ type: "hardBreak" }];
       default:
@@ -109,7 +189,7 @@ function blockToJson(node: RootContent | MdastBlock): JSONContent {
       if (node.meta) throw new Unsupported("code meta");
       return {
         type: "codeBlock",
-        attrs: { language: node.lang ?? null },
+        attrs: { language: node.lang ?? "" },
         ...(node.value ? { content: [{ type: "text", text: node.value }] } : {}),
       };
     case "thematicBreak":
@@ -175,8 +255,22 @@ export function parseDescription(source: string, jira: boolean): ParsedDescripti
 export const descriptionUsesJiraMarkup = (source: string, jira: boolean) =>
   jira && workbenchDescriptionMarkdown(source, true) !== source;
 
+/** Pasted Markdown as editor blocks: links become chips and unsupported syntax stays source. */
+export const descriptionPasteContent = (text: string): JSONContent =>
+  parseDescription(text, false).doc;
+
 export const descriptionEditorContent = (parsed: ParsedDescription): JSONContent =>
   parsed.doc.content?.length ? parsed.doc : { type: "doc", content: [{ type: "paragraph" }] };
+
+/** GFM links a bare URL back unchanged when nothing at its end would be read as punctuation. */
+const isBareUrl = (href: string) => /^https?:\/\/[^\s<>()]*[^\s<>().,:;!?'"*_~]$/.test(href);
+
+function chipToMdast(href: string, title: string | null): PhrasingContent {
+  if (title === null && isBareUrl(href)) return { type: "html", value: href };
+  const reference = parseDescriptionHref(href);
+  const text = title ?? (reference?.kind === "file" ? reference.label : href);
+  return { type: "link", url: href, title: null, children: [{ type: "text", value: text }] };
+}
 
 /** Innermost first; links group across text nodes in `inlineToMdast`. */
 const wrappingMarks = [
@@ -203,14 +297,13 @@ function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
     if (link === null) return;
     const href = String(link.mark.attrs.href ?? "");
     const [only] = link.children;
-    // A bare URL stays bare when GFM would link it back unchanged: plain text, no title, and
-    // no trailing punctuation for autolinking to drop.
+    // A bare URL stays bare only as plain, untitled text that GFM links back unchanged.
     if (
       link.children.length === 1 &&
       only?.type === "text" &&
       only.value === href &&
       link.mark.attrs.title == null &&
-      /^https?:\/\/[^\s<>()]*[^\s<>().,:;!?'"*_~]$/.test(href)
+      isBareUrl(href)
     ) {
       result.push({ type: "html", value: href });
     } else {
@@ -226,6 +319,10 @@ function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
   node.forEach((child) => {
     const linkMark = child.marks.find((mark) => mark.type.name === "link") ?? null;
     if (link !== null && (linkMark === null || !linkMark.eq(link.mark))) flush();
+    if (child.type.name === "referenceChip") {
+      result.push(chipToMdast(String(child.attrs.href), child.attrs.title as string | null));
+      return;
+    }
     const content: PhrasingContent =
       child.type.name === "hardBreak" ? { type: "break" } : phrasing(child.text ?? "", child.marks);
     if (linkMark === null) {
@@ -237,6 +334,16 @@ function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
   });
   flush();
   return result;
+}
+
+/** Markdown ignores spaces at a line's ends, and remark-stringify would write them as `&#x20;`. */
+function trimmedInline(node: ProseMirrorNode): PhrasingContent[] {
+  const children = inlineToMdast(node);
+  const first = children[0];
+  if (first?.type === "text") first.value = first.value.trimStart();
+  const last = children.at(-1);
+  if (last?.type === "text") last.value = last.value.trimEnd();
+  return children.filter((child) => child.type !== "text" || child.value !== "");
 }
 
 function blocksToMdast(node: ProseMirrorNode): BlockContent[] {
@@ -252,11 +359,11 @@ function listItemToMdast(item: ProseMirrorNode, checked: boolean | null): ListIt
 function blockToMdast(node: ProseMirrorNode): BlockContent {
   switch (node.type.name) {
     case "heading":
-      return { type: "heading", depth: node.attrs.level, children: inlineToMdast(node) };
+      return { type: "heading", depth: node.attrs.level, children: trimmedInline(node) };
     case "blockquote":
       return { type: "blockquote", children: blocksToMdast(node) };
     case "codeBlock":
-      return { type: "code", lang: node.attrs.language ?? null, value: node.textContent };
+      return { type: "code", lang: node.attrs.language || null, value: node.textContent };
     case "horizontalRule":
       return { type: "thematicBreak" };
     case "bulletList":
@@ -279,7 +386,7 @@ function blockToMdast(node: ProseMirrorNode): BlockContent {
     case "markdownSource":
       return { type: "html", value: node.textContent };
     default:
-      return { type: "paragraph", children: inlineToMdast(node) };
+      return { type: "paragraph", children: trimmedInline(node) };
   }
 }
 

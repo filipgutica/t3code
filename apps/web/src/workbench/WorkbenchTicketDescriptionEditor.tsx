@@ -1,8 +1,27 @@
 import "./WorkbenchTicketDescriptionEditor.css";
 
-import { EditorContent, useEditor, useEditorState } from "@tiptap/react";
+import { newlineInCode } from "@tiptap/pm/commands";
+import { Node as ProseMirrorNode, Slice } from "@tiptap/pm/model";
+import type { Transaction } from "@tiptap/pm/state";
+import type { EditorView } from "@tiptap/pm/view";
+import {
+  EditorContent,
+  NodeViewWrapper,
+  ReactNodeViewRenderer,
+  useEditor,
+  useEditorState,
+  type NodeViewProps,
+} from "@tiptap/react";
 import { useState } from "react";
 
+import {
+  convertCodeFenceOnEnter,
+  exitCodeBlockOnClosingFence,
+  exitCodeBlockOnTrailingBlankLines,
+  indentCodeBlock,
+  indentedNewlineInCodeBlock,
+  selectionInOneCodeBlock,
+} from "../composer-code-block";
 import { Label } from "../components/ui/label";
 import { cn } from "../lib/utils";
 import { Textarea } from "../components/ui/textarea";
@@ -13,13 +32,82 @@ import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 import {
   descriptionEditorContent,
   descriptionEditorExtensions,
+  descriptionPasteContent,
   descriptionUsesJiraMarkup,
   parseDescription,
+  ReferenceChip,
   serializeDescription,
 } from "./workbenchDescriptionEditor.logic";
 import { parseDescriptionHref } from "./workbenchReferences.logic";
 
 type Mode = "rich" | "markdown";
+
+function ReferenceChipView({ node }: NodeViewProps) {
+  const opener = useWorkbenchReferenceOpener();
+  const href = String(node.attrs.href);
+  const title = node.attrs.title as string | null;
+  const reference = parseDescriptionHref(href);
+  return (
+    <NodeViewWrapper as="span" contentEditable={false}>
+      {reference ? (
+        <WorkbenchReferenceChip reference={reference} title={title} opener={opener} />
+      ) : (
+        (title ?? href)
+      )}
+    </NodeViewWrapper>
+  );
+}
+
+const editorExtensions = descriptionEditorExtensions.map((extension) =>
+  extension === ReferenceChip
+    ? ReferenceChip.extend({ addNodeView: () => ReactNodeViewRenderer(ReferenceChipView) })
+    : extension,
+);
+
+/** As in the composer: fences open and close on Enter, and Tab indents code. */
+function handleCodeKeys(view: EditorView, event: KeyboardEvent): boolean {
+  const dispatch = (tr: Transaction) => view.dispatch(tr.scrollIntoView());
+  if (event.key === "Tab" && selectionInOneCodeBlock(view.state)) {
+    event.preventDefault();
+    return indentCodeBlock(view.state, event.shiftKey ? "out" : "in", dispatch);
+  }
+  if (event.key !== "Enter" || event.shiftKey || event.metaKey || event.ctrlKey) return false;
+  if (event.isComposing) return false;
+  if (selectionInOneCodeBlock(view.state)) {
+    return (
+      exitCodeBlockOnClosingFence(view.state, dispatch) ||
+      exitCodeBlockOnTrailingBlankLines(view) ||
+      indentedNewlineInCodeBlock(view.state, dispatch) ||
+      newlineInCode(view.state, dispatch)
+    );
+  }
+  return convertCodeFenceOnEnter(view.state, dispatch);
+}
+
+/** A pasted URL or path becomes a chip, titled by any selected text; other text is Markdown. */
+function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
+  const text = event.clipboardData?.getData("text/plain");
+  if (!text || (event.clipboardData?.files.length ?? 0) > 0) return false;
+  const { state } = view;
+  if (selectionInOneCodeBlock(state)) {
+    view.dispatch(state.tr.insertText(text).scrollIntoView());
+    return true;
+  }
+  const href = text.trim();
+  const chip = state.schema.nodes.referenceChip;
+  if (chip && !/\n/.test(href) && parseDescriptionHref(href) !== null) {
+    const { from, to, empty } = state.selection;
+    const title = empty ? null : state.doc.textBetween(from, to) || null;
+    view.dispatch(
+      state.tr.replaceSelectionWith(chip.create({ href, title }), false).scrollIntoView(),
+    );
+    return true;
+  }
+  const doc = ProseMirrorNode.fromJSON(state.schema, descriptionPasteContent(text));
+  if (doc.childCount === 0) return false;
+  view.dispatch(state.tr.replaceSelection(new Slice(doc.content, 1, 1)).scrollIntoView());
+  return true;
+}
 
 export function WorkbenchTicketDescriptionEditor({
   id = "edit-workbench-ticket-context",
@@ -148,10 +236,12 @@ function DescriptionRichTextSurface({
 }) {
   const opener = useWorkbenchReferenceOpener();
   const editor = useEditor({
-    extensions: descriptionEditorExtensions,
+    extensions: editorExtensions,
     content: descriptionEditorContent(parsed),
     editable: !disabled,
     editorProps: {
+      handleKeyDown: handleCodeKeys,
+      handlePaste: (view, event) => handlePaste(view, event),
       attributes: {
         role: "textbox",
         "aria-multiline": "true",

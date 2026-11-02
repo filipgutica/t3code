@@ -22,6 +22,16 @@ const doc = (json: JSONContent) => ProseMirrorNode.fromJSON(schema, json);
 const blockTypes = (source: string, jira = false) =>
   parseDescription(source, jira).doc.content?.map((block) => block.type);
 
+const chip = (href: string, title: string | null = null): JSONContent => ({
+  type: "referenceChip",
+  attrs: { href, title },
+});
+
+const link = (href: string, title: string | null = null) => ({
+  type: "link",
+  attrs: { href, title },
+});
+
 const paragraph = (text: string): JSONContent => ({
   type: "paragraph",
   content: [{ type: "text", text }],
@@ -91,25 +101,54 @@ describe("description editor Markdown", () => {
   });
 
   it.each([
-    ["bold", "https://example.com/a", [{ type: "bold" }], null],
-    ["titled", "https://example.com/a", [], "Spec"],
-    ["ending in a period", "https://example.com/a.", [], null],
-  ])(
-    "keeps a %s link whose text is its URL when its paragraph changes",
-    (_name, url, marks, title) => {
-      const link: JSONContent = {
+    [
+      "bold",
+      {
         type: "text",
-        text: url,
-        marks: [...marks, { type: "link", attrs: { href: url, title } }],
-      };
-      const edited = { type: "paragraph", content: [{ type: "text", text: "See " }, link] };
-      const reloaded = parseDescription(
-        save("Old\n", () => [edited]),
-        false,
-      ).doc;
-      expect(doc(reloaded).eq(doc({ type: "doc", content: [edited] }))).toBe(true);
-    },
-  );
+        text: "https://example.com/a",
+        marks: [{ type: "bold" }, link("https://example.com/a")],
+      },
+    ],
+    [
+      "titled",
+      {
+        type: "text",
+        text: "https://example.com/a",
+        marks: [link("https://example.com/a", "Spec")],
+      },
+    ],
+    ["chip ending in a period", chip("https://example.com/a.")],
+    ["file chip with spaces", chip("/Users/me/My Plan.md")],
+    ["titled chip", chip("https://example.com/a", "the spec")],
+  ])("keeps a %s when its paragraph changes", (_name, inline) => {
+    const edited = { type: "paragraph", content: [{ type: "text", text: "See " }, inline] };
+    const reloaded = parseDescription(
+      save("Old\n", () => [edited]),
+      false,
+    ).doc;
+    expect(doc(reloaded).eq(doc({ type: "doc", content: [edited] }))).toBe(true);
+  });
+
+  it("shows Reference links as chips and keeps other links as link text", () => {
+    const [paragraph] = parseDescription(
+      "See [plan](/Users/me/plan.md), https://example.com and [mail](mailto:a@example.com).",
+      false,
+    ).doc.content!;
+    expect(paragraph!.content!.filter((node) => node.type === "referenceChip")).toEqual([
+      chip("/Users/me/plan.md", "plan"),
+      chip("https://example.com"),
+    ]);
+    expect(paragraph!.content!.at(-2)!.marks).toEqual([link("mailto:a@example.com")]);
+  });
+
+  it("writes a new untitled file chip as a link named by the file", () => {
+    expect(
+      save("# Goal\n", (content) => [
+        ...content,
+        { type: "paragraph", content: [chip("/Users/me/plan.md")] },
+      ]),
+    ).toBe("# Goal\n\n[plan.md](/Users/me/plan.md)\n");
+  });
 
   it("writes an edited task list with its checkboxes", () => {
     expect(

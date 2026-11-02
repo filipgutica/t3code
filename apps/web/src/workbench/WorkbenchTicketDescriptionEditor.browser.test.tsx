@@ -26,8 +26,9 @@ it("opens and switches modes without changing the description", async () => {
   await using _screen = await render(<Harness initial={source} onChange={onChange} />);
   const editor = page.getByRole("textbox", { name: "Description" });
   await expect.element(editor).toBeVisible();
-  expect(editor.element().textContent).toContain("Intro with https://example.com");
-  await expect.element(page.getByRole("link", { name: "https://example.com" })).toBeVisible();
+  expect(editor.element().textContent).toContain("Intro with");
+  // The bare URL shows as the Reference chip the saved description uses.
+  await expect.element(page.getByRole("link", { name: "example.com" })).toBeVisible();
 
   await page.getByRole("button", { name: "Markdown" }).click();
   await expect.element(page.getByRole("textbox", { name: "Description" })).toHaveValue(source);
@@ -73,4 +74,41 @@ it("ignores typing while disabled", async () => {
   await expect
     .element(page.getByRole("textbox", { name: "Description" }))
     .toHaveAttribute("contenteditable", "false");
+});
+
+it("turns typed Markdown links and URLs into Reference chips", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial="Plan" onChange={onChange} />);
+  await page.getByText("Plan").click();
+  await userEvent.keyboard("{End} [[the plan](/Users/me/plan.md) and https://example.com/spec ");
+  await expect.element(page.getByRole("button", { name: "the plan" })).toBeVisible();
+  await expect.element(page.getByRole("link", { name: "example.com" })).toBeVisible();
+  expect(onChange).toHaveBeenLastCalledWith(
+    "Plan [the plan](/Users/me/plan.md) and https://example.com/spec",
+  );
+});
+
+it("pastes Markdown as rich text", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial="Intro" onChange={onChange} />);
+  await page.getByText("Intro").click();
+  await userEvent.keyboard("{End}");
+  const data = new DataTransfer();
+  data.setData("text/plain", "\n\n- Run `vp test`\n- See [plan](/Users/me/plan.md)");
+  page
+    .getByRole("textbox", { name: "Description" })
+    .element()
+    .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  await expect.element(page.getByRole("button", { name: "plan" })).toBeVisible();
+  expect(onChange).toHaveBeenLastCalledWith(
+    "Intro\n\n- Run `vp test`\n- See [plan](/Users/me/plan.md)",
+  );
+});
+
+it("opens a code block on a fence and leaves it after two blank lines", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial="Intro" onChange={onChange} />);
+  await page.getByText("Intro").click();
+  await userEvent.keyboard("{End}{Enter}```ts{Enter}const a = 1;{Enter}{Enter}{Enter}After");
+  expect(onChange).toHaveBeenLastCalledWith("Intro\n\n```ts\nconst a = 1;\n```\n\nAfter");
 });
