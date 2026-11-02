@@ -47,6 +47,13 @@ describe("workbenchDescriptionLinks", () => {
       ["https://github.com/acme/app/pull/4", "PR"],
     ]);
   });
+
+  it("reads a percent-encoded file destination as the path the chip opens", () => {
+    const links = workbenchDescriptionLinks(
+      "[Plan](/work/My%20Plan.md) and [again](</work/My Plan.md>)",
+    );
+    expect(links.map(({ parsed }) => parsed.url)).toEqual(["/work/My Plan.md"]);
+  });
 });
 
 describe("parseDescriptionHref", () => {

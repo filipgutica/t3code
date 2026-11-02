@@ -98,7 +98,7 @@ export function workbenchDescriptionLinks(
         : undefined;
   const links = new Map<string, WorkbenchDescriptionLink>();
   const addLink = (url: string, text: string) => {
-    const parsed = parseWorkbenchReferenceUrl(url);
+    const parsed = parseDescriptionHref(url);
     if (parsed === null || links.has(parsed.url)) return;
     const isAutolink = text === "" || text === url || text === parsed.url;
     links.set(parsed.url, { parsed, title: isAutolink ? null : text });
@@ -112,7 +112,7 @@ export function workbenchDescriptionLinks(
   return [...links.values()];
 }
 
-/** Rendered Markdown percent-encodes a link's destination, but a host path needs its own characters. */
+/** A link destination may be percent-encoded, by its author or by rendering, but a host path needs its own characters. */
 export function parseDescriptionHref(href: string): WorkbenchParsedReferenceUrl | null {
   const parsed = parseWorkbenchReferenceUrl(href);
   if (parsed?.kind !== "file") return parsed;
