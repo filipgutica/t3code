@@ -6,6 +6,7 @@ import { StarterKit } from "@tiptap/starter-kit";
 import type {
   BlockContent,
   DefinitionContent,
+  Link,
   ListItem,
   PhrasingContent,
   Root,
@@ -120,6 +121,22 @@ type MarkJson = NonNullable<JSONContent["marks"]>[number];
 const textJson = (text: string, marks: MarkJson[]): JSONContent[] =>
   text === "" ? [] : [{ type: "text", text, ...(marks.length > 0 ? { marks } : {}) }];
 
+/** A Reference link as the chip `chipToMdast` writes back, or null to keep it link text. */
+function referenceChipJson(node: Link, marks: MarkJson[]): JSONContent[] | null {
+  const [only] = node.children;
+  // A chip carries no marks, so a formatted link stays link text.
+  if (marks.length > 0 || node.title || node.children.length !== 1 || only?.type !== "text") {
+    return null;
+  }
+  const reference = parseDescriptionHref(node.url);
+  if (reference === null) return null;
+  // Untitled only when `chipToMdast` writes the same text back.
+  const untitled = only.value === (reference.kind === "file" ? reference.label : node.url);
+  return [
+    { type: "referenceChip", attrs: { href: node.url, title: untitled ? null : only.value } },
+  ];
+}
+
 function inlineToJson(nodes: ReadonlyArray<PhrasingContent>, marks: MarkJson[]): JSONContent[] {
   return nodes.flatMap((node): JSONContent[] => {
     switch (node.type) {
@@ -133,30 +150,14 @@ function inlineToJson(nodes: ReadonlyArray<PhrasingContent>, marks: MarkJson[]):
         return inlineToJson(node.children, [...marks, { type: "bold" }]);
       case "delete":
         return inlineToJson(node.children, [...marks, { type: "strike" }]);
-      case "link": {
-        const [only] = node.children;
-        // A chip carries no marks, so a formatted link stays link text.
-        if (
-          marks.length === 0 &&
-          !node.title &&
-          node.children.length === 1 &&
-          only?.type === "text"
-        ) {
-          const reference = parseDescriptionHref(node.url);
-          if (reference !== null) {
-            const text = only.value;
-            // Untitled only when `chipToMdast` writes the same text back.
-            const untitled = text === (reference.kind === "file" ? reference.label : node.url);
-            return [
-              { type: "referenceChip", attrs: { href: node.url, title: untitled ? null : text } },
-            ];
-          }
-        }
-        return inlineToJson(node.children, [
-          ...marks,
-          { type: "link", attrs: { href: node.url, title: node.title ?? null } },
-        ]);
-      }
+      case "link":
+        return (
+          referenceChipJson(node, marks) ??
+          inlineToJson(node.children, [
+            ...marks,
+            { type: "link", attrs: { href: node.url, title: node.title ?? null } },
+          ])
+        );
       case "break":
         return [{ type: "hardBreak" }];
       default:
