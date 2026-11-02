@@ -1,5 +1,5 @@
 import type { ElementContent } from "hast";
-import { createContext, use, type ReactNode } from "react";
+import { createContext, lazy, Suspense, use, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -10,6 +10,9 @@ import {
   useWorkbenchReferenceOpener,
   type WorkbenchReferenceOpener,
 } from "./WorkbenchReferenceLink";
+
+// Chat's code block loads Shiki and client settings, so only descriptions with code fetch it.
+const DescriptionCodeBlock = lazy(() => import("./WorkbenchDescriptionCodeBlock"));
 
 const DescriptionOpenerContext = createContext<WorkbenchReferenceOpener | null>(null);
 
@@ -55,9 +58,16 @@ const descriptionComponents: Components = {
       {children}
     </DescriptionLink>
   ),
-  pre: ({ children }) => (
-    <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3">{children}</pre>
-  ),
+  pre: ({ children }) => {
+    const plain = (
+      <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3">{children}</pre>
+    );
+    return (
+      <Suspense fallback={plain}>
+        <DescriptionCodeBlock fallback={plain}>{children}</DescriptionCodeBlock>
+      </Suspense>
+    );
+  },
   table: ({ children }) => (
     <div className="my-3 max-w-full overflow-x-auto">
       <table className="w-full border-collapse">{children}</table>
