@@ -680,16 +680,20 @@ it("resizes from the top-left corner and keeps the size for the next ticket", as
 
 /** A Board chat expanded on Thread t, as the user leaves the Board. */
 const renderBoardShowing = async (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => {
-  const screen = await render(
-    <div data-workbench-page-column="">
-      <Harness key="board" kind="board" threads={threads} />
-    </div>,
+  await using stack = new AsyncDisposableStack();
+  const screen = stack.use(
+    await render(
+      <div data-workbench-page-column="">
+        <Harness key="board" kind="board" threads={threads} />
+      </div>,
+    ),
   );
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await userEvent.click(screen.getByRole("button", { name: /^Board Threads: / }));
   await userEvent.click(screen.getByRole("menuitemradio", { name: /Thread t/ }));
   await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
-  return screen;
+  const environment = stack.move();
+  return Object.assign(screen, { [Symbol.asyncDispose]: () => environment.disposeAsync() });
 };
 
 const ticketChat = (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => (
