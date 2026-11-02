@@ -22,15 +22,15 @@ erDiagram
 
 The diagram shows conceptual relationships. Native T3 Project and Thread references are IDs, not SQL foreign keys to their projection tables. The server adapter reads those projections through the same SQL client used by Workbench writes, so store operations can check that referenced records are live. See [WorkbenchNativeAccess](../../apps/server/src/workbench/WorkbenchNativeAccess.ts) and [WorkbenchStore](../../packages/workbench/src/WorkbenchStore.ts).
 
-| Record                                 | Role and constraint                                                                                                                                                         |
-| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workbench Workspace and Project link   | A Workspace groups planning records and an ordered set of native repository Projects.                                                                                       |
-| Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. An Epic can carry one Jira issue key and URL.                                              |
-| Ticket repository and Ticket Workspace | A Ticket has a non-empty ordered repository scope with one primary Project. Its optional Ticket Workspace tracks branch preparation and repository worktrees.               |
-| Assignment                             | Links a Ticket to one native Thread. A Thread ID is unique across Assignments; superseded rows retain history.                                                              |
-| Thread recap                           | Generated cache keyed by native Thread ID, with no foreign key. Rows outlive unlinked Assignments; snapshots return only recaps of Ticket Threads.                          |
-| Reference                              | An ordered, unique URL owned by a Ticket or draft ID. See [References](#references-v22).                                                                                    |
-| Thread context                         | What each native Thread was last given of its Ticket or draft, keyed by Thread ID with no foreign key. See [Progress and Thread context](#progress-and-thread-context-v23). |
+| Record                                 | Role and constraint                                                                                                                                                                          |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Workbench Workspace and Project link   | A Workspace groups planning records and an ordered set of native repository Projects.                                                                                                        |
+| Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. An Epic can carry one Jira issue key and URL.                                                               |
+| Ticket repository and Ticket Workspace | A Ticket has a non-empty ordered repository scope; each of its Threads works in one of those repositories. Its optional Ticket Workspace tracks branch preparation and repository worktrees. |
+| Assignment                             | Links a Ticket to one native Thread. A Thread ID is unique across Assignments; superseded rows retain history.                                                                               |
+| Thread recap                           | Generated cache keyed by native Thread ID, with no foreign key. Rows outlive unlinked Assignments; snapshots return only recaps of Ticket Threads.                                           |
+| Reference                              | An ordered, unique URL owned by a Ticket or draft ID. See [References](#references-v22).                                                                                                     |
+| Thread context                         | What each native Thread was last given of its Ticket or draft, keyed by Thread ID with no foreign key. See [Progress and Thread context](#progress-and-thread-context-v23).                  |
 
 These constraints come from the [table keys and relationships](../../packages/workbench/src/WorkbenchSchema.ts) and [Ticket scope validation](../../packages/workbench/src/WorkbenchStore.ts). Workbench never reads Jira or any Reference target; a link is only what a user or agent recorded. Tickets imported before v20 keep IDs of the form `jira:<binding>:issue:<id>`; treat them as opaque, because the binding they name no longer exists.
 
@@ -42,11 +42,14 @@ Workbench uses SQL transactions for related local changes, such as Ticket and re
 
 The key application invariants are:
 
-- A Ticket's primary native Project belongs to its Workspace's linked Projects and appears in the Ticket's repository scope.
+- A Ticket's repositories belong to its Workspace's linked Projects.
 - An Epic assigned to a Ticket belongs to the same Workspace. Archived Epics cannot receive new Tickets.
-- An Assignment references a live native Thread in the Ticket's primary Project when it is created. Historical Assignment rows remain after replacement.
+- An Assignment references a live native Thread whose Project is one of the Ticket's repositories when it is created. Historical Assignment rows remain after replacement.
+- A repository cannot leave a Ticket while a current Assignment's unarchived Thread works in it. The check reads native Threads inside the Ticket write, so it covers users and agents alike.
 
 These rules are enforced by [WorkbenchStore](../../packages/workbench/src/WorkbenchStore.ts), rather than by foreign keys to native systems.
+
+A Ticket has no primary repository, but `workbench_tickets.primary_t3_project_id` is `NOT NULL` and stays as a retired anchor, along with `workbench_ticket_workspace_repositories.is_primary`. No contract exposes either. The store fills the anchor with the first repository, keeps it when repositories are reordered, and moves it to the new first repository only when the anchor leaves the Ticket; `is_primary` marks the anchor's checkout and orders checkout rows. Do not give them meaning again: choose a Thread's repository explicitly.
 
 ## References (v22)
 

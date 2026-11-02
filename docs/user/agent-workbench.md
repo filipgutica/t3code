@@ -63,11 +63,11 @@ without leaving the Board, start a draft from its chat; see [Chat with Threads](
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the
-primary worktree. Start work does not send a message; send your next instruction
+first repository's worktree. Start work does not send a message; send your next instruction
 to begin implementation. Planning supports Codex and Claude providers.
 
-The primary repository is where new Threads open. A Ticket can include other
-repositories when the work spans several codebases. Use **Edit Workspace** to
+A Ticket can include several repositories when the work spans several
+codebases. Each Thread works in one of them. Use **Edit Workspace** to
 rename a Workspace or add repositories; existing Tickets and Threads
 keep their scope.
 
@@ -99,14 +99,14 @@ when ready.
 For a manually created Ticket, or an additional conversation:
 
 1. Open a Ticket and choose **Create Thread**.
-2. If the work area is not prepared, review the primary and additional repositories.
+2. If the work area is not prepared, review the Ticket's repositories.
    Select a provider and model, then choose **Create work area and Thread**.
    Prepared work areas show the repositories that the new Thread will reuse.
 3. Add instructions and send the message.
 
 Creating a Thread does not start an agent turn. Workbench prepares one Git
-worktree per selected repository and opens the Thread in the primary repository's
-worktree.
+worktree per selected repository and opens the Thread in one repository's worktree: the
+repository of the Ticket's active Thread, or else the first one.
 
 Each Thread receives the full Ticket on its first turn: the brief, Progress,
 References, prepared worktrees, and other linked Threads. Later turns receive only
@@ -122,7 +122,7 @@ in **Work area**, review the repositories, and confirm.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/workspace-light.png">
-  <img src="./media/workbench/workspace.png" alt="A prepared Ticket work area with worktrees for Beacon Docs (primary) and Beacon CLI.">
+  <img src="./media/workbench/workspace.png" alt="A prepared Ticket work area with worktrees for Beacon Docs and Beacon CLI.">
 </picture>
 
 <picture>
@@ -294,13 +294,13 @@ Threads and repository worktrees.
 ## Manage repositories and worktrees
 
 Choose **Edit** in **Work area** to change the Ticket's repositories. Use **Add
-repository** to add one, and a repository's **⋯** menu to make it primary or
-remove it. Changes stay marked as Adding or Removing until you choose **Save
+repository** to add one, and a repository's **⋯** menu to remove it. A
+repository cannot be removed while an active Thread works in it. Changes stay marked as Adding or Removing until you choose **Save
 changes**; **Cancel** restores the saved choices. Adding repositories to a
 prepared work area prepares their worktrees together after saving. **Create
 Thread** can change any repository while the Ticket has no prepared worktrees.
-After preparation, it can only add repositories; change the primary or remove a
-prepared repository in **Work area**.
+After preparation, it can only add repositories; remove a prepared repository in
+**Work area**.
 
 Threads using the same Ticket worktree share its files, branch, and uncommitted
 changes. Existing Threads keep their working directory and sent context when the
