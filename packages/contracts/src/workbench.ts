@@ -386,12 +386,6 @@ export const WorkbenchTicketDraftActionInput = Schema.Struct({
   expectedRevision: NonNegativeInt,
 });
 export type WorkbenchTicketDraftActionInput = typeof WorkbenchTicketDraftActionInput.Type;
-export const WorkbenchStartTicketDraftWorkInput = Schema.Struct({
-  ...WorkbenchTicketDraftActionInput.fields,
-  /** The Ticket repository the planning Thread continues in; defaults to the first. */
-  repositoryProjectId: Schema.optionalKey(ProjectId),
-});
-export type WorkbenchStartTicketDraftWorkInput = typeof WorkbenchStartTicketDraftWorkInput.Type;
 
 /** Generated recap of a Thread's latest finished run, shown to sibling Threads on its Ticket. */
 export const WorkbenchThreadRecap = Schema.Struct({

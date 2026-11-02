@@ -9,7 +9,6 @@ import {
   WorkbenchBeginTicketDraftInput,
   WorkbenchUpdateTicketDraftInput,
   WorkbenchTicketDraftActionInput,
-  WorkbenchStartTicketDraftWorkInput,
   WorkbenchAssignment,
   WorkbenchArchiveEpicInput,
   WorkbenchArchiveProjectInput,
@@ -262,7 +261,7 @@ const WsWorkbenchDiscardTicketDraftRpc = Rpc.make(
 const WsWorkbenchStartTicketDraftWorkRpc = Rpc.make(
   WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork,
   {
-    payload: WorkbenchStartTicketDraftWorkInput,
+    payload: WorkbenchTicketDraftActionInput,
     success: WorkbenchTicketDraft,
     error: WorkbenchRpcError,
   },

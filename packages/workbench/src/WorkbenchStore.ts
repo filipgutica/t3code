@@ -3255,7 +3255,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
             WHERE ticket_id = ${input.id}
               AND revision = ${input.expectedRevision}
           `;
-          if (repositoryScopeChanged) {
+          const repositoryOrderChanged = repositoryProjectIds.some(
+            (repositoryProjectId, index) =>
+              repositoryProjectId !== currentRepositoryProjectIds[index],
+          );
+          if (repositoryScopeChanged || repositoryOrderChanged) {
             yield* sql`
               DELETE FROM workbench_ticket_repositories
               WHERE ticket_id = ${input.id}

@@ -628,7 +628,7 @@ describe("TicketDraftService", () => {
     },
   );
   it.effect(
-    "planning execution never starts the ticket; Start work moves to the chosen repository and advances the boundary",
+    "planning execution never starts the ticket; Start work uses the first repository and advances the boundary",
     () => {
       const f = fixture();
       return Effect.gen(function* () {
@@ -645,14 +645,10 @@ describe("TicketDraftService", () => {
         expect(ticket.status).toBe("todo");
         expect(f.threads.get(threadId)).toBe(second);
         f.setSequence(20);
-        draft = yield* service.startWork({
-          id: draft.id,
-          expectedRevision: draft.revision,
-          repositoryProjectId: first,
-        });
+        draft = yield* service.startWork({ id: draft.id, expectedRevision: draft.revision });
         expect(draft.phase).toBe("working");
-        expect(f.threads.get(threadId)).toBe(first);
-        expect(f.paths.get(threadId)).toBe("/work-area/first-repo");
+        expect(f.threads.get(threadId)).toBe(second);
+        expect(f.paths.get(threadId)).toBe("/work-area/second-repo");
         yield* store.consumeTicketExecution({
           sequence: 19,
           run: { id: RunId.make("delayed-planning-run"), threadId, startedAt: timestamp },

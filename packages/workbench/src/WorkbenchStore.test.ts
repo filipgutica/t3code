@@ -850,6 +850,11 @@ describe("WorkbenchStore package boundary", () => {
         expect(yield* anchor()).toBe(web);
         yield* setRepositories([api, web, docs]);
         expect(yield* anchor()).toBe(web);
+        expect(Option.getOrThrow(yield* store.getTicket(ticketId)).repositoryProjectIds).toEqual([
+          api,
+          web,
+          docs,
+        ]);
         const locked = yield* Effect.flip(setRepositories([web, docs]));
         expect(locked).toMatchObject({
           code: "ticket_repository_scope_locked",

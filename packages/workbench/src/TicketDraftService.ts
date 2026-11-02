@@ -3,7 +3,6 @@ import {
   WorkbenchOperationError,
   type WorkbenchTicketDraft,
   type WorkbenchTicketDraftActionInput,
-  type WorkbenchStartTicketDraftWorkInput,
   type WorkbenchBeginTicketDraftInput,
   type WorkbenchUpdateTicketDraftInput,
 } from "@t3tools/contracts";
@@ -33,7 +32,7 @@ export class TicketDraftService extends Context.Service<
       input: WorkbenchTicketDraftActionInput,
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly startWork: (
-      input: WorkbenchStartTicketDraftWorkInput,
+      input: WorkbenchTicketDraftActionInput,
     ) => Effect.Effect<WorkbenchTicketDraft, WorkbenchOperationError>;
     readonly discard: (
       input: WorkbenchTicketDraftActionInput,
@@ -165,10 +164,9 @@ const make = Effect.gen(function* () {
       phase: "planning",
     });
   });
-  const startWork = Effect.fn("TicketDraftService.startWork")(function* ({
-    repositoryProjectId,
-    ...input
-  }: WorkbenchStartTicketDraftWorkInput) {
+  const startWork = Effect.fn("TicketDraftService.startWork")(function* (
+    input: WorkbenchTicketDraftActionInput,
+  ) {
     let draft = yield* store.getTicketDraft(input.id);
     if (draft.phase === "working") return draft;
     yield* requireRevision(draft, input.expectedRevision);
@@ -200,11 +198,11 @@ const make = Effect.gen(function* () {
         code: "assignment_changed",
         message: "The ticket's planning Thread is no longer linked.",
       });
-    const projectId = repositoryProjectId ?? ticket.repositoryProjectIds[0];
-    if (projectId === undefined || !ticket.repositoryProjectIds.includes(projectId))
+    const projectId = ticket.repositoryProjectIds[0];
+    if (projectId === undefined)
       return yield* new WorkbenchOperationError({
         code: "repository_not_linked",
-        message: "Choose one of the ticket's repositories to start work in.",
+        message: "Link a repository to this ticket before starting work.",
       });
     const workspace = yield* workspaces.prepare({
       ticketId: draft.id,
