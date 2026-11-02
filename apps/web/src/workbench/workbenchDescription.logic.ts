@@ -1,3 +1,7 @@
+/** The description to save: trimmed when edited, and byte for byte as it was when not. */
+export const workbenchSavedDescription = (edited: string, saved: string) =>
+  edited === saved ? saved : edited.trim();
+
 /** Adapt Jira's wiki-style text for the read-only Markdown preview; never change the saved source. */
 export function workbenchDescriptionMarkdown(source: string, jira: boolean): string {
   if (!jira || !/(^h[1-6]\. |\{\{|\{code|\{noformat\}|\[[^\]\n]+\|https?:)/m.test(source)) {

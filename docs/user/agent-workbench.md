@@ -279,8 +279,10 @@ Use Board search to find loaded Tickets by title or by a Reference's label or
 title, such as an issue key. Filter by any
 repository in their scope. Search, repository filtering, grouping, and the
 selected Board column are retained per Workspace when returning from a Ticket.
-Open a Ticket and choose **Edit** to change its title or description. Saved
-descriptions display formatting. Board previews use a separate summary generated
+Open a Ticket and choose **Edit** to change its title or description. The
+description editor shows formatting as you type; choose **Markdown** to edit the
+source. Tables, HTML, and other Markdown it can't format stay as editable source,
+and parts you don't edit are saved exactly as they were. Board previews use a separate summary generated
 from **Settings → General → Text generation model**. Regenerate it from the Ticket
 menu when needed; the summary does not replace the full description sent to the
 agent.

@@ -349,7 +349,7 @@ export function useWorkbenchTicketActions({
     if (title.trim().length === 0) return Promise.resolve(false as const);
     return updateTicketFields({
       ticket,
-      patch: { title: title.trim(), markdown: markdown.trim() },
+      patch: { title: title.trim(), markdown },
       updatedAt: new Date().toISOString(),
     });
   };

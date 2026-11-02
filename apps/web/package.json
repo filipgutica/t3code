@@ -82,6 +82,7 @@
     "remark-math": "6.0.0",
     "remark-parse": "catalog:",
     "remark-rehype": "catalog:",
+    "remark-stringify": "11.0.0",
     "saxes": "6.0.0",
     "sql.js": "1.15.0",
     "tailwind-merge": "^3.4.0",

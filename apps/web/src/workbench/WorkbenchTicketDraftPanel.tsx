@@ -14,9 +14,9 @@ import {
   WorkbenchCreateTicketEpic,
   WorkbenchCreateTicketKind,
   WorkbenchCreateTicketRepositories,
-  WorkbenchTicketDescriptionEditor,
   getWorkbenchCreateTicketRepositories,
 } from "./WorkbenchForms";
+import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 
