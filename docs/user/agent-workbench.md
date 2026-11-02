@@ -161,8 +161,8 @@ Ticket's Threads. Use it to follow and answer agents without leaving the page.
   you** opens the menu on the first of them.
 - Select the message field to expand the conversation, or choose **Show chat** in
   the command palette. Drag the chat's left edge, top edge, or top-left corner to
-  resize it. Clicking elsewhere on the page minimizes the chat; select it to bring it
-  back with your message intact.
+  resize it. Clicking elsewhere on the page collapses the chat; select it to expand it
+  again with your message intact.
 - **Settle Thread** in the chat's header settles the open Thread and shows the
   Ticket's next one. Open a settled Thread from the menu to **Un-settle** it.
 

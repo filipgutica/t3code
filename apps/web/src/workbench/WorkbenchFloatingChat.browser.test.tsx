@@ -367,7 +367,7 @@ it("restores an expanded panel from the launcher without moving focus into the c
   await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toHaveFocus();
 });
 
-it("minimizes on a page click, but not for clicks in the chat or its menus", async () => {
+it("collapses on a page click, but not for clicks in the chat or its menus", async () => {
   setup();
   await using screen = await render(
     <div data-workbench-page-column="">
@@ -381,12 +381,17 @@ it("minimizes on a page click, but not for clicks in the chat or its menus", asy
   await expect.element(screen.getByLabelText("Composer for b")).toBeInTheDocument();
 
   await userEvent.click(screen.getByRole("button", { name: "Page action" }));
-  const launcher = screen.getByRole("button", { name: "Show PAY-1 chat" });
-  await expect.element(launcher).toBeVisible();
-  // Minimizing on a page click leaves focus where the user clicked.
+  const expand = screen.getByRole("button", { name: "Expand ticket chat" });
+  await expect.element(expand).toBeVisible();
+  await expect.element(screen.getByLabelText("Composer for b")).not.toBeInTheDocument();
+  // Collapsing on a page click leaves focus where the user clicked.
   await expect.element(screen.getByRole("button", { name: "Page action" })).toHaveFocus();
 
-  await userEvent.click(launcher);
+  // A collapsed chat stays collapsed; only its minimize control hides it.
+  await userEvent.click(screen.getByRole("button", { name: "Page action" }));
+  await expect.element(expand).toBeVisible();
+
+  await userEvent.click(expand);
   await expect.element(screen.getByLabelText("Composer for b")).toBeInTheDocument();
 });
 
