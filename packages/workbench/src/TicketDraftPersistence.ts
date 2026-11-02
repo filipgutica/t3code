@@ -357,6 +357,32 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(operationError));
+  const requirePlanningDraftLinked = Effect.fn("TicketDraftPersistence.requirePlanningDraftLinked")(
+    function* (draft: WorkbenchTicketDraft) {
+      const tickets =
+        yield* sql`SELECT 1 FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
+      const thread = yield* native.findThread(draft.threadId);
+      const linked = Option.isSome(thread)
+        ? yield* sql`SELECT 1 FROM workbench_ticket_repositories
+          WHERE ticket_id = ${draft.id} AND t3_project_id = ${thread.value.projectId}`
+        : [];
+      const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
+        WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
+      if (
+        !tickets[0] ||
+        Option.isNone(thread) ||
+        linked.length === 0 ||
+        thread.value.worktreePath !== null ||
+        assignments.length !== 1
+      ) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_changed",
+          message:
+            "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
+        });
+      }
+    },
+  );
   const transitionTicketDraft = Effect.fn("TicketDraftPersistence.transitionTicketDraft")(
     function* (
       input: WorkbenchTicketDraftActionInput & {
@@ -400,30 +426,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
                 "The planning conversation no longer owns this Ticket. Open its current conversation before starting work.",
             });
           }
-          if (input.phase === "planning") {
-            const tickets =
-              yield* sql`SELECT 1 FROM workbench_tickets WHERE ticket_id = ${draft.id} AND deleted_at IS NULL AND archived_at IS NULL`;
-            const thread = yield* native.findThread(draft.threadId);
-            const linked = Option.isSome(thread)
-              ? yield* sql`SELECT 1 FROM workbench_ticket_repositories
-                WHERE ticket_id = ${draft.id} AND t3_project_id = ${thread.value.projectId}`
-              : [];
-            const assignments = yield* sql`SELECT assignment_id FROM workbench_assignments
-              WHERE ticket_id = ${draft.id} AND thread_id = ${draft.threadId} AND superseded_at IS NULL`;
-            if (
-              !tickets[0] ||
-              Option.isNone(thread) ||
-              linked.length === 0 ||
-              thread.value.worktreePath !== null ||
-              assignments.length !== 1
-            ) {
-              return yield* new WorkbenchOperationError({
-                code: "ticket_changed",
-                message:
-                  "The saved ticket or Thread changed during linking. Reload and retry ticket creation.",
-              });
-            }
-          }
+          if (input.phase === "planning") yield* requirePlanningDraftLinked(draft);
           if (input.phase === "draft" || input.phase === "promoting")
             yield* validateFields(draft, validatedRoots);
           return yield* save(draft, {

@@ -229,6 +229,11 @@ const resolveThreadRepositoryChoice = ({
     ticketRepositoryIds,
     repositoryScope,
     repositoryProjectId,
+    workspaceReady:
+      isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
+      isWorkbenchRepositoryScopeEqual(ticket, repositoryScope),
+    workspaceLocked: workspace?.status === "preparing" || workspace?.status === "releasing",
+    scopeValid: isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects }),
     note: {
       title: getWorkbenchRepositoryTitle(projects, repositoryProjectId),
       adding,
@@ -290,20 +295,22 @@ export function WorkbenchStartThreadDialog({
     startLabel = "Create Thread",
   } = request;
   const [pickedRepositoryProjectId, setPickedRepositoryProjectId] = useState<ProjectId>();
-  const { ticketRepositoryIds, repositoryScope, repositoryProjectId, note } =
-    resolveThreadRepositoryChoice({
-      ticket,
-      workspace,
-      projects,
-      draft: initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
-      picked: pickedRepositoryProjectId,
-      preferred: preferredRepositoryProjectId,
-    });
-  const workspaceReady =
-    isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
-    isWorkbenchRepositoryScopeEqual(ticket, repositoryScope);
-  const workspaceLocked = workspace?.status === "preparing" || workspace?.status === "releasing";
-  const scopeValid = isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects });
+  const {
+    ticketRepositoryIds,
+    repositoryScope,
+    repositoryProjectId,
+    workspaceReady,
+    workspaceLocked,
+    scopeValid,
+    note,
+  } = resolveThreadRepositoryChoice({
+    ticket,
+    workspace,
+    projects,
+    draft: initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
+    picked: pickedRepositoryProjectId,
+    preferred: preferredRepositoryProjectId,
+  });
   const settings = useEnvironmentSettings(environmentId);
   const stickyModelSelection = useComposerDraftStore((store) =>
     store.stickyActiveProvider === null

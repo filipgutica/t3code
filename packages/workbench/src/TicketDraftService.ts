@@ -86,18 +86,23 @@ const make = Effect.gen(function* () {
     });
     return draft;
   });
+  const requirePromotableFields = Effect.fn("TicketDraftService.requirePromotableFields")(
+    function* (draft: WorkbenchTicketDraft) {
+      if (!draft.fields.title.trim() || draft.fields.repositoryProjectIds.length === 0) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_draft_invalid",
+          message: "Add a title and select the ticket's repositories before creating it.",
+        });
+      }
+    },
+  );
   const promote = Effect.fn("TicketDraftService.promote")(function* (
     input: WorkbenchTicketDraftActionInput,
   ) {
     let draft = yield* store.getTicketDraft(input.id);
     if (draft.phase === "planning" || draft.phase === "working") return draft;
     yield* requireRevision(draft, input.expectedRevision);
-    if (!draft.fields.title.trim() || draft.fields.repositoryProjectIds.length === 0) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_draft_invalid",
-        message: "Add a title and select the ticket's repositories before creating it.",
-      });
-    }
+    yield* requirePromotableFields(draft);
     yield* host.requireIdle(draft.threadId);
     if (draft.phase !== "promoting") {
       draft = yield* store.transitionTicketDraft({ ...input, from: ["draft"], phase: "promoting" });

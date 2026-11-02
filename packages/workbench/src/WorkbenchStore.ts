@@ -3100,6 +3100,29 @@ const makeWorkbenchStore = Effect.gen(function* () {
     blocked: input.blocked ?? current.blocked === 1,
   });
 
+  const resolveTicketRepositoryChanges = ({
+    currentAnchorProjectId,
+    currentRepositoryProjectIds,
+    repositoryProjectIds,
+  }: {
+    readonly currentAnchorProjectId: ProjectId;
+    readonly currentRepositoryProjectIds: ReadonlyArray<ProjectId>;
+    readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
+  }) => ({
+    // A reorder keeps the anchor, so existing checkouts keep their root.
+    anchorProjectId: repositoryProjectIds.includes(currentAnchorProjectId)
+      ? currentAnchorProjectId
+      : (repositoryProjectIds[0] ?? currentAnchorProjectId),
+    repositoryScopeChanged:
+      repositoryProjectIds.length !== currentRepositoryProjectIds.length ||
+      repositoryProjectIds.some(
+        (repositoryProjectId) => !currentRepositoryProjectIds.includes(repositoryProjectId),
+      ),
+    repositoryOrderChanged: repositoryProjectIds.some(
+      (repositoryProjectId, index) => repositoryProjectId !== currentRepositoryProjectIds[index],
+    ),
+  });
+
   const recordLocalExecutionReset = Effect.fnUntraced(function* ({
     ticketId,
     status,
@@ -3201,16 +3224,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 ? currentRepositoryProjectIds
                 : [current.anchorProjectId]),
           });
-          // A reorder keeps the anchor, so existing checkouts keep their root.
-          const anchorProjectId = repositoryProjectIds.includes(current.anchorProjectId)
-            ? current.anchorProjectId
-            : (repositoryProjectIds[0] ?? current.anchorProjectId);
+          const { anchorProjectId, repositoryScopeChanged, repositoryOrderChanged } =
+            resolveTicketRepositoryChanges({
+              currentAnchorProjectId: current.anchorProjectId,
+              currentRepositoryProjectIds,
+              repositoryProjectIds,
+            });
           const existingTicketWorkspace = yield* loadTicketWorkspace(input.id);
-          const repositoryScopeChanged =
-            repositoryProjectIds.length !== currentRepositoryProjectIds.length ||
-            repositoryProjectIds.some(
-              (repositoryProjectId) => !currentRepositoryProjectIds.includes(repositoryProjectId),
-            );
           if (
             repositoryScopeChanged &&
             Option.isSome(existingTicketWorkspace) &&
@@ -3255,10 +3275,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             WHERE ticket_id = ${input.id}
               AND revision = ${input.expectedRevision}
           `;
-          const repositoryOrderChanged = repositoryProjectIds.some(
-            (repositoryProjectId, index) =>
-              repositoryProjectId !== currentRepositoryProjectIds[index],
-          );
           if (repositoryScopeChanged || repositoryOrderChanged) {
             yield* sql`
               DELETE FROM workbench_ticket_repositories
