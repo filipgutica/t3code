@@ -1,4 +1,4 @@
-import { getSchema, type JSONContent } from "@tiptap/core";
+import { getSchema, getText, getTextSerializersFromSchema, type JSONContent } from "@tiptap/core";
 import { Node as ProseMirrorNode } from "@tiptap/pm/model";
 import { describe, expect, it } from "vite-plus/test";
 
@@ -146,6 +146,38 @@ describe("description editor Markdown", () => {
         { ...first, content: [...first!.content!, { type: "text", text: " More." }] },
       ]),
     ).toBe(saved);
+  });
+
+  it("keeps an untouched block's own source when an equal block before it changes", () => {
+    expect(
+      save("* [ ] Done\n\n- [ ] Done\n", ([first, second]) => [
+        {
+          ...first,
+          content: [{ ...first!.content![0], attrs: { checked: true } }],
+        },
+        second!,
+      ]),
+    ).toBe("- [x] Done\n\n- [ ] Done\n");
+  });
+
+  it("copies chips as their Markdown links", () => {
+    const copied = doc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "See " },
+            chip("/Users/me/plan.md"),
+            { type: "text", text: " and " },
+            chip("https://example.com/a", "the spec"),
+          ],
+        },
+      ],
+    });
+    expect(getText(copied, { textSerializers: getTextSerializersFromSchema(schema) })).toBe(
+      "See [plan.md](/Users/me/plan.md) and [the spec](https://example.com/a)",
+    );
   });
 
   it("shows Reference links as chips and keeps other links as link text", () => {

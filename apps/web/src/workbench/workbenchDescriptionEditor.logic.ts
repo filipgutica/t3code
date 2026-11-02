@@ -51,6 +51,16 @@ export const ReferenceChip = Node.create({
   addAttributes: () => ({ href: { default: "" }, title: { default: null } }),
   parseHTML: () => [{ tag: "span[data-reference-chip]" }],
   renderHTML: ({ HTMLAttributes }) => ["span", { "data-reference-chip": "", ...HTMLAttributes }],
+  // Copied text carries the chip as its Markdown link, which pastes back as the chip.
+  renderText: ({ node }) =>
+    stringifier
+      .stringify({
+        type: "root",
+        children: [
+          { type: "paragraph", children: [chipToMdast(node.attrs.href, node.attrs.title)] },
+        ],
+      })
+      .trim(),
   addInputRules() {
     const chip = (href: string, title: string | null) => this.type.create({ href, title });
     return [
@@ -420,19 +430,48 @@ function originalDoc(doc: ProseMirrorNode, parsed: ParsedDescription): ProseMirr
  * Markdown for `doc`. Blocks equal to one the editor loaded keep their source byte for byte,
  * with their original spacing, so only edited blocks are re-serialized.
  */
-export function serializeDescription(doc: ProseMirrorNode, parsed: ParsedDescription): string {
-  const original = originalDoc(doc, parsed);
-  const parts: string[] = [];
-  let next = 0;
-  let previous: number | null = null;
-  doc.forEach((node) => {
-    let matched: number | null = null;
-    for (let index = next; index < original.childCount; index += 1) {
-      if (original.child(index).eq(node)) {
-        matched = index;
+/**
+ * Pairs each block with the loaded block it still equals. Equal blocks can differ in source,
+ * such as `*` and `-` bullets, so the unchanged ends pair by position before the edited middle.
+ */
+function matchBlocks(nodes: ProseMirrorNode[], original: ProseMirrorNode): Array<number | null> {
+  const matches: Array<number | null> = nodes.map(() => null);
+  const same = (node: number, block: number) => original.child(block).eq(nodes[node]!);
+  let head = 0;
+  while (head < nodes.length && head < original.childCount && same(head, head)) {
+    matches[head] = head;
+    head += 1;
+  }
+  let tail = 0;
+  while (
+    tail < nodes.length - head &&
+    tail < original.childCount - head &&
+    same(nodes.length - 1 - tail, original.childCount - 1 - tail)
+  ) {
+    matches[nodes.length - 1 - tail] = original.childCount - 1 - tail;
+    tail += 1;
+  }
+  let next = head;
+  for (let node = head; node < nodes.length - tail; node += 1) {
+    for (let block = next; block < original.childCount - tail; block += 1) {
+      if (same(node, block)) {
+        matches[node] = block;
+        next = block + 1;
         break;
       }
     }
+  }
+  return matches;
+}
+
+export function serializeDescription(doc: ProseMirrorNode, parsed: ParsedDescription): string {
+  const nodes: ProseMirrorNode[] = [];
+  doc.forEach((node) => nodes.push(node));
+  const matches = matchBlocks(nodes, originalDoc(doc, parsed));
+  const parts: string[] = [];
+  let previous: number | null = null;
+  nodes.forEach((node, index) => {
+    const matched = matches[index] ?? null;
     if (matched === null && isEmptyParagraph(node)) return;
     const first = parts.length === 0;
     const gap =
@@ -442,7 +481,6 @@ export function serializeDescription(doc: ProseMirrorNode, parsed: ParsedDescrip
           ? ""
           : "\n\n";
     parts.push(gap, matched === null ? serializeBlock(node) : parsed.blocks[matched]!.source);
-    if (matched !== null) next = matched + 1;
     previous = matched;
   });
   if (parts.length === 0) return parsed.blocks.length === 0 ? parsed.source : "";

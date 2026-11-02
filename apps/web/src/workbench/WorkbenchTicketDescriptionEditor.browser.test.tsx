@@ -154,6 +154,19 @@ it.each([
   expect(onChange).toHaveBeenLastCalledWith(saved);
 });
 
+it("pastes a URL into inline code as text", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial="Run `example` now" onChange={onChange} />);
+  await page.getByText("example", { exact: true }).click();
+  const data = new DataTransfer();
+  data.setData("text/plain", "https://example.com");
+  page
+    .getByRole("textbox", { name: "Description" })
+    .element()
+    .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  expect(onChange.mock.lastCall?.[0]).toMatch(/^Run `[a-z]*https:\/\/example\.com[a-z]*` now$/);
+});
+
 it("opens a code block on a fence and leaves it after two blank lines", async () => {
   const onChange = vi.fn();
   await using _screen = await render(<Harness initial="Intro" onChange={onChange} />);

@@ -43,6 +43,12 @@
   white-space: pre;
 }
 
+/* The editor underlines links; a chip keeps the look it has in the saved description. */
+[data-workbench-description-editor] [data-node-view-wrapper] a {
+  color: inherit;
+  text-decoration: none;
+}
+
 [data-workbench-description-editor] .ProseMirror-selectednode {
   border-radius: var(--radius-sm);
   outline: 2px solid var(--color-ring);
