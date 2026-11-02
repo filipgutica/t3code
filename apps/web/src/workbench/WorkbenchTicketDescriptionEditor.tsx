@@ -109,7 +109,8 @@ function handlePaste(view: EditorView, event: ClipboardEvent): boolean {
   const text = event.clipboardData?.getData("text/plain");
   if (!text || (event.clipboardData?.files.length ?? 0) > 0) return false;
   const { state } = view;
-  const inInlineCode = state.schema.marks.code?.isInSet(state.selection.$from.marks());
+  const marks = state.storedMarks ?? state.selection.$from.marks();
+  const inInlineCode = state.schema.marks.code?.isInSet(marks);
   if (selectionInOneCodeBlock(state) || inInlineCode) {
     view.dispatch(state.tr.insertText(text).scrollIntoView());
     return true;

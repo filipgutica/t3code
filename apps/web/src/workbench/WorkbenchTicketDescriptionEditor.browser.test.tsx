@@ -167,6 +167,21 @@ it("pastes a URL into inline code as text", async () => {
   expect(onChange.mock.lastCall?.[0]).toMatch(/^Run `[a-z]*https:\/\/example\.com[a-z]*` now$/);
 });
 
+it("pastes a URL as text after turning on inline code", async () => {
+  const onChange = vi.fn();
+  await using _screen = await render(<Harness initial="Run" onChange={onChange} />);
+  await page.getByText("Run").click();
+  const mod = navigator.platform.startsWith("Mac") ? "Meta" : "Control";
+  await userEvent.keyboard(`{End} {${mod}>}e{/${mod}}`);
+  const data = new DataTransfer();
+  data.setData("text/plain", "https://example.com");
+  page
+    .getByRole("textbox", { name: "Description" })
+    .element()
+    .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
+  expect(onChange).toHaveBeenLastCalledWith("Run `https://example.com`");
+});
+
 it("opens a code block on a fence and leaves it after two blank lines", async () => {
   const onChange = vi.fn();
   await using _screen = await render(<Harness initial="Intro" onChange={onChange} />);

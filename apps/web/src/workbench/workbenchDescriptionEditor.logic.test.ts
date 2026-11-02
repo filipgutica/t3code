@@ -126,7 +126,10 @@ describe("description editor Markdown", () => {
       save("Old\n", () => [edited]),
       false,
     ).doc;
-    expect(doc(reloaded).eq(doc({ type: "doc", content: [edited] }))).toBe(true);
+    const [paragraph] = doc(reloaded).children;
+    expect(paragraph!.content.eq(doc({ type: "doc", content: [edited] }).child(0).content)).toBe(
+      true,
+    );
   });
 
   it.each([
@@ -158,6 +161,34 @@ describe("description editor Markdown", () => {
         second!,
       ]),
     ).toBe("- [x] Done\n\n- [ ] Done\n");
+  });
+
+  it("keeps an untouched block's own source when an equal block before it is deleted", () => {
+    expect(save("* [ ] Done\n\n- [ ] Done\n", ([, second]) => [second!])).toBe("- [ ] Done\n");
+  });
+
+  it.each([
+    [
+      "followed by text",
+      [chip("https://example.com/a"), { type: "text", text: "suffix" }],
+      "<https://example.com/a>suffix",
+    ],
+    [
+      "next to another chip",
+      [chip("https://example.com/a"), chip("https://example.com/b")],
+      "<https://example.com/a><https://example.com/b>",
+    ],
+    [
+      "between spaces and punctuation",
+      [
+        { type: "text", text: "See " },
+        chip("https://example.com/a"),
+        { type: "text", text: ". More" },
+      ],
+      "See https://example.com/a. More",
+    ],
+  ])("writes an untitled URL chip %s so it links to the same URL", (_name, content, saved) => {
+    expect(save("Old\n", () => [{ type: "paragraph", content }])).toBe(`${saved}\n`);
   });
 
   it("copies chips as their Markdown links", () => {

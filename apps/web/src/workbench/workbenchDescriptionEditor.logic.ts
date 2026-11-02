@@ -1,4 +1,4 @@
-import { InputRule, Node, type JSONContent } from "@tiptap/core";
+import { Extension, InputRule, Node, type JSONContent } from "@tiptap/core";
 import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
 import { Node as ProseMirrorNode, type Mark } from "@tiptap/pm/model";
@@ -90,6 +90,27 @@ export const ReferenceChip = Node.create({
   },
 });
 
+/** A loaded top-level block's place in the source, so an untouched block keeps its own bytes. */
+const SourceIndex = Extension.create({
+  name: "sourceIndex",
+  addGlobalAttributes: () => [
+    {
+      types: [
+        "paragraph",
+        "heading",
+        "blockquote",
+        "codeBlock",
+        "horizontalRule",
+        "bulletList",
+        "orderedList",
+        "taskList",
+        "markdownSource",
+      ],
+      attributes: { sourceIndex: { default: null, rendered: false, keepOnSplit: false } },
+    },
+  ],
+});
+
 // Fences open and close on Enter in the editor's key handler, as in the composer.
 export const DescriptionCodeBlock = ComposerCodeBlockExtension.extend({ addInputRules: () => [] });
 
@@ -117,6 +138,7 @@ export const descriptionEditorExtensions = [
   TaskItem.configure({ nested: true }),
   MarkdownSource,
   ReferenceChip,
+  SourceIndex,
 ];
 
 const parser = unified().use(remarkParse).use(remarkGfm);
@@ -242,6 +264,15 @@ export interface ParsedDescription {
  * Tables, HTML, reference definitions, and anything else rich text would lose stay
  * editable Markdown source. With `jira`, so does every block in Jira wiki markup.
  */
+function blockOrSource(node: RootContent, source: string): JSONContent {
+  try {
+    return blockToJson(node);
+  } catch (error) {
+    if (!(error instanceof Unsupported)) throw error;
+    return sourceBlock(source);
+  }
+}
+
 export function parseDescription(source: string, jira: boolean): ParsedDescription {
   const tree = parser.parse(source);
   const blocks: Array<{ source: string; gapBefore: string }> = [];
@@ -251,18 +282,14 @@ export function parseDescription(source: string, jira: boolean): ParsedDescripti
     const start = node.position?.start.offset ?? offset;
     const end = node.position?.end.offset ?? start;
     const block = source.slice(start, end);
+    const sourceIndex = blocks.length;
     blocks.push({ source: block, gapBefore: source.slice(offset, start) });
     offset = end;
-    if (jira && workbenchDescriptionMarkdown(block, true) !== block) {
-      content.push(sourceBlock(block));
-      continue;
-    }
-    try {
-      content.push(blockToJson(node));
-    } catch (error) {
-      if (!(error instanceof Unsupported)) throw error;
-      content.push(sourceBlock(block));
-    }
+    const json =
+      jira && workbenchDescriptionMarkdown(block, true) !== block
+        ? sourceBlock(block)
+        : blockOrSource(node, block);
+    content.push({ ...json, attrs: { ...json.attrs, sourceIndex } });
   }
   return { source, doc: { type: "doc", content }, blocks, trailing: source.slice(offset) };
 }
@@ -272,8 +299,14 @@ export const descriptionUsesJiraMarkup = (source: string, jira: boolean) =>
   jira && workbenchDescriptionMarkdown(source, true) !== source;
 
 /** Pasted Markdown as editor blocks: links become chips and unsupported syntax stays source. */
-export const descriptionPasteContent = (text: string): JSONContent =>
-  parseDescription(text, false).doc;
+export const descriptionPasteContent = (text: string): JSONContent => ({
+  type: "doc",
+  // Pasted blocks are new, not the loaded blocks at those indexes.
+  content: (parseDescription(text, false).doc.content ?? []).map(({ attrs, ...block }) => {
+    const { sourceIndex: _, ...rest } = attrs ?? {};
+    return { ...block, attrs: rest };
+  }),
+});
 
 export const descriptionEditorContent = (parsed: ParsedDescription): JSONContent =>
   parsed.doc.content?.length ? parsed.doc : { type: "doc", content: [{ type: "paragraph" }] };
@@ -349,8 +382,22 @@ function inlineToMdast(node: ProseMirrorNode): PhrasingContent[] {
     link.children.push(content);
   });
   flush();
-  return result;
+  return result.map((child, index) =>
+    child.type === "html" && !bareUrlStandsAlone(result[index - 1], result[index + 1])
+      ? {
+          type: "link",
+          url: child.value,
+          title: null,
+          children: [{ type: "text", value: child.value }],
+        }
+      : child,
+  );
 }
+
+/** GFM links a bare URL only after a space and up to a space, or punctuation then a space. */
+const bareUrlStandsAlone = (before?: PhrasingContent, after?: PhrasingContent) =>
+  (before === undefined || (before.type === "text" && /\s$/.test(before.value))) &&
+  (after === undefined || (after.type === "text" && /^[.,:;!?]*(?:\s|$)/.test(after.value)));
 
 /** Markdown ignores spaces at a line's ends, and remark-stringify would write them as `&#x20;`. */
 function trimmedInline(node: ProseMirrorNode): PhrasingContent[] {
@@ -430,48 +477,20 @@ function originalDoc(doc: ProseMirrorNode, parsed: ParsedDescription): ProseMirr
  * Markdown for `doc`. Blocks equal to one the editor loaded keep their source byte for byte,
  * with their original spacing, so only edited blocks are re-serialized.
  */
-/**
- * Pairs each block with the loaded block it still equals. Equal blocks can differ in source,
- * such as `*` and `-` bullets, so the unchanged ends pair by position before the edited middle.
- */
-function matchBlocks(nodes: ProseMirrorNode[], original: ProseMirrorNode): Array<number | null> {
-  const matches: Array<number | null> = nodes.map(() => null);
-  const same = (node: number, block: number) => original.child(block).eq(nodes[node]!);
-  let head = 0;
-  while (head < nodes.length && head < original.childCount && same(head, head)) {
-    matches[head] = head;
-    head += 1;
-  }
-  let tail = 0;
-  while (
-    tail < nodes.length - head &&
-    tail < original.childCount - head &&
-    same(nodes.length - 1 - tail, original.childCount - 1 - tail)
-  ) {
-    matches[nodes.length - 1 - tail] = original.childCount - 1 - tail;
-    tail += 1;
-  }
-  let next = head;
-  for (let node = head; node < nodes.length - tail; node += 1) {
-    for (let block = next; block < original.childCount - tail; block += 1) {
-      if (same(node, block)) {
-        matches[node] = block;
-        next = block + 1;
-        break;
-      }
-    }
-  }
-  return matches;
-}
-
 export function serializeDescription(doc: ProseMirrorNode, parsed: ParsedDescription): string {
-  const nodes: ProseMirrorNode[] = [];
-  doc.forEach((node) => nodes.push(node));
-  const matches = matchBlocks(nodes, originalDoc(doc, parsed));
+  const original = originalDoc(doc, parsed);
+  const used = new Set<number>();
+  const loadedIndex = (node: ProseMirrorNode): number | null => {
+    const index: unknown = node.attrs.sourceIndex;
+    if (typeof index !== "number" || used.has(index) || index >= original.childCount) return null;
+    if (!original.child(index).eq(node)) return null;
+    used.add(index);
+    return index;
+  };
   const parts: string[] = [];
   let previous: number | null = null;
-  nodes.forEach((node, index) => {
-    const matched = matches[index] ?? null;
+  doc.forEach((node) => {
+    const matched = loadedIndex(node);
     if (matched === null && isEmptyParagraph(node)) return;
     const first = parts.length === 0;
     const gap =
