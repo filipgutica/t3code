@@ -14,6 +14,7 @@ import {
   type RuntimeMode,
   type WorkbenchReference,
   type WorkbenchTicket,
+  type WorkbenchTicketWorktree,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as Crypto from "effect/Crypto";
@@ -63,6 +64,9 @@ const AgentRepository = Schema.Struct({
   selected: Schema.Boolean,
   worktreePath: Schema.NullOr(Schema.String).annotate({
     description: "Prepared worktree for this Ticket, when there is one.",
+  }),
+  worktrees: Schema.optional(Schema.Array(Schema.String)).annotate({
+    description: "Other worktrees in the Ticket's workspace, such as ones other Threads added.",
   }),
 });
 
@@ -206,10 +210,12 @@ const make = Effect.gen(function* () {
     workspaceId,
     selected,
     worktreePaths,
+    worktrees = [],
   }: {
     readonly workspaceId: WorkbenchTicket["projectId"];
     readonly selected: ReadonlyArray<ProjectId>;
     readonly worktreePaths: ReadonlyMap<ProjectId, string>;
+    readonly worktrees?: ReadonlyArray<WorkbenchTicketWorktree>;
   }) {
     const workspace = yield* store.getProject(workspaceId);
     const linked = Option.isSome(workspace) ? workspace.value.linkedProjectIds : [];
@@ -217,12 +223,18 @@ const make = Effect.gen(function* () {
     const titles = new Map(
       (yield* host.describeProjects(ids)).map((project) => [project.id, project.title]),
     );
-    return ids.map((projectId) => ({
-      projectId,
-      name: titles.get(projectId) ?? projectId,
-      selected: selected.includes(projectId),
-      worktreePath: worktreePaths.get(projectId) ?? null,
-    }));
+    return ids.map((projectId) => {
+      const paths = worktrees
+        .filter((worktree) => worktree.projectId === projectId)
+        .map((worktree) => worktree.path);
+      return {
+        projectId,
+        name: titles.get(projectId) ?? projectId,
+        selected: selected.includes(projectId),
+        worktreePath: worktreePaths.get(projectId) ?? null,
+        ...(paths.length > 0 ? { worktrees: paths } : {}),
+      };
+    });
   });
 
   const readTicket = Effect.fn("WorkbenchAgentService.readTicket")(function* ({
@@ -240,6 +252,15 @@ const make = Effect.gen(function* () {
             .filter((repository) => repository.status === "ready")
             .map((repository) => [repository.projectId, repository.worktreePath] as const)
         : [],
+    );
+    // A failed listing only hides the other worktrees; the rest of the Ticket still reads.
+    const worktrees = yield* workspaces.listWorktrees({ ticketId }).pipe(
+      Effect.catch((error) =>
+        Effect.logWarning("Ticket worktrees could not be read", {
+          ticketId,
+          error: error.message,
+        }).pipe(Effect.as<ReadonlyArray<WorkbenchTicketWorktree>>([])),
+      ),
     );
     const roster = yield* store.getThreadRoster(threadId);
     const members = Option.isSome(roster)
@@ -276,6 +297,7 @@ const make = Effect.gen(function* () {
         workspaceId: ticket.projectId,
         selected: ticket.repositoryProjectIds,
         worktreePaths,
+        worktrees,
       }),
       references: references.map(agentReference),
       threads: members.flatMap((member) => {

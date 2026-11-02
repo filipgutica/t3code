@@ -24,6 +24,13 @@ const ticketPreparations = createEnvironmentRpcQueryAtomFamily(connectionAtomRun
   staleTimeMs: 5_000,
 });
 
+// Git runs per read, so this stays out of the snapshot and refreshes on window focus.
+const ticketWorktrees = createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
+  label: "environment-data:workbench:ticket-worktrees",
+  tag: WS_METHODS.workbenchListTicketWorktrees,
+  staleTimeMs: 5_000,
+});
+
 const scheduler = createAtomCommandScheduler();
 const serialPerEnvironment = {
   mode: "serial",
@@ -75,6 +82,7 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
   }),
   ticketPreparations,
+  ticketWorktrees,
   // One read per host tells attention which review discussions you answered last.
   pullRequestViewer: createEnvironmentRpcQueryAtomFamily(connectionAtomRuntime, {
     label: "environment-data:workbench:pull-request-viewer",
@@ -258,5 +266,16 @@ export const workbenchEnvironment = {
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
+  }),
+  // A refused removal can mean the list is stale, so it refreshes either way.
+  removeTicketWorktree: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:remove-ticket-worktree",
+    tag: WS_METHODS.workbenchRemoveTicketWorktree,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSettled: ({ environmentId, input }, registry) =>
+      Effect.sync(() =>
+        registry.refresh(ticketWorktrees({ environmentId, input: { ticketId: input.ticketId } })),
+      ),
   }),
 };

@@ -19,9 +19,12 @@ import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 export function useWorkbenchCheckoutStatusRefresh({
   environmentId,
   cwds,
+  onFocus,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwds: ReadonlyArray<string | null | undefined>;
+  /** Runs on each focus or visibility return, even with no checkouts yet. Keep it stable. */
+  readonly onFocus?: () => void;
 }) {
   const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus);
   const cwdKey = [...new Set(cwds.filter((cwd) => typeof cwd === "string" && cwd.length > 0))]
@@ -29,10 +32,10 @@ export function useWorkbenchCheckoutStatusRefresh({
     .join("\0");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes native checkout status on window focus/visibility changes and releases those listeners on unmount
   useEffect(() => {
-    if (!cwdKey) return;
-    const paths = cwdKey.split("\0");
+    if (!cwdKey && !onFocus) return;
+    const paths = cwdKey ? cwdKey.split("\0") : [];
     const pending = new Set<string>();
-    const refresh = () => {
+    const refreshStatuses = () => {
       if (document.visibilityState !== "visible") return;
       for (const cwd of paths) {
         if (pending.has(cwd)) continue;
@@ -40,14 +43,19 @@ export function useWorkbenchCheckoutStatusRefresh({
         void refreshStatus({ environmentId, input: { cwd } }).finally(() => pending.delete(cwd));
       }
     };
-    refresh();
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      onFocus?.();
+      refreshStatuses();
+    };
+    refreshStatuses();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [cwdKey, environmentId, refreshStatus]);
+  }, [cwdKey, environmentId, onFocus, refreshStatus]);
 }
 
 export function WorkbenchCheckoutDirectory({

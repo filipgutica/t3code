@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest";
 import {
   AuthOrchestrationOperateScope,
   AuthOrchestrationReadScope,
+  ProjectId,
   WORKBENCH_WS_METHODS,
   WorkbenchTicketId,
   WsRpcGroup,
@@ -56,6 +57,43 @@ describe("Workbench RPC authorization", () => {
       );
       expect(yield* operator[method](input)).toEqual(reference);
       expect(mutations).toBe(1);
+    }).pipe(Effect.scoped),
+  );
+  it.effect("requires operate scope to remove a Ticket worktree", () =>
+    Effect.gen(function* () {
+      const method = WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+        ),
+      );
+      let removals = 0;
+      const handlers = group.toLayerHandler(method, () =>
+        Effect.sync(() => {
+          removals++;
+        }),
+      );
+      const input = {
+        ticketId: reference.ticketId,
+        projectId: ProjectId.make("scope-project"),
+        path: "/home/user/worktrees/scope-ticket/pr-x",
+      };
+      const reader = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationReadScope])),
+        ),
+      );
+      expect(yield* reader[method](input).pipe(Effect.flip)).toMatchObject({
+        requiredScope: AuthOrchestrationOperateScope,
+      });
+      expect(removals).toBe(0);
+      const operator = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationOperateScope])),
+        ),
+      );
+      yield* operator[method](input);
+      expect(removals).toBe(1);
     }).pipe(Effect.scoped),
   );
   it.effect("allows preparation index reads with read scope and rejects callers without it", () =>

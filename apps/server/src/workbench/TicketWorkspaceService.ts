@@ -11,6 +11,7 @@ import * as Option from "effect/Option";
 
 import { ServerConfig } from "../config.ts";
 import { GitWorkflowService } from "../git/GitWorkflowService.ts";
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderRegistry from "../provider/ProviderRegistry.ts";
@@ -27,6 +28,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
   TicketWorkspaceHost,
   Effect.gen(function* () {
     const git = yield* GitWorkflowService;
+    const vcs = yield* GitVcsDriver;
     const projects = yield* ProjectStoreV2;
     const threads = yield* ThreadManagementService;
     const serverSettings = yield* ServerSettings.ServerSettingsService;
@@ -111,6 +113,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
         fetchRemoteTrackingBranch: git.fetchRemoteTrackingBranch,
         listRefs: git.listRefs,
         createWorktree: git.createWorktree,
+        listWorktreePaths: vcs.listWorktreePaths,
         removeWorktree: git.removeWorktree,
         localStatus: git.localStatus,
         invalidateLocalStatus: git.invalidateLocalStatus,

@@ -64,7 +64,7 @@ const WorkstreamUpdateInput = Schema.Struct({
 
 const ReadWorkstreamTool = Tool.make("workbench_ticket_read", {
   description:
-    "Read your Ticket: brief, progress, status, repositories, References, Threads, PRs, `artifactsDir`.",
+    "Read your Ticket: brief, progress, status, repositories and their worktrees, References, Threads, PRs, `artifactsDir`.",
   parameters: Tool.EmptyParams,
   success: WorkstreamState,
   failure: WorkbenchToolError,

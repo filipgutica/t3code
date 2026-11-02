@@ -11,6 +11,11 @@ import {
   type WorkbenchReleaseTicketWorkspaceInput,
   type WorkbenchSnapshot,
   type WorkbenchTicketWorkspace,
+  type WorkbenchListTicketWorktreesInput,
+  type WorkbenchRemoveTicketWorktreeInput,
+  type WorkbenchTicketWorktree,
+  type WorkbenchTicket,
+  type WorkbenchReference,
   workbenchTicketIssueLabel,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -131,6 +136,14 @@ interface TicketWorkspaceServiceShape {
   readonly release: (
     input: WorkbenchReleaseTicketWorkspaceInput,
   ) => Effect.Effect<WorkbenchTicketWorkspace, WorkbenchOperationError>;
+  /** Linked repositories' other Git worktrees under the Ticket's workspace directory. */
+  readonly listWorktrees: (
+    input: WorkbenchListTicketWorktreesInput,
+  ) => Effect.Effect<ReadonlyArray<WorkbenchTicketWorktree>, WorkbenchOperationError>;
+  /** Removes one listed worktree without force; its branch and commits stay. */
+  readonly removeWorktree: (
+    input: WorkbenchRemoveTicketWorktreeInput,
+  ) => Effect.Effect<void, WorkbenchOperationError>;
 }
 
 export class TicketWorkspaceService extends Context.Service<
@@ -165,6 +178,31 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     worktreePath,
   }: Pick<WorkbenchTicketWorkspace["repositories"][number], "sourcePath" | "worktreePath">) =>
     `${path.basename(sourcePath)} at ${worktreePath}`;
+  const canonicalizePath = (value: string) => {
+    const resolved = path.resolve(value);
+    // Missing paths still need their lexical identity for stale-worktree handling.
+    return fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
+  };
+  /** A recorded Workspace keeps its directory; otherwise new worktrees go to the proposed one. */
+  const recordedWorkspaceDirectory = (workspace: Option.Option<WorkbenchTicketWorkspace>) =>
+    Option.isSome(workspace) && workspace.value.repositories[0] !== undefined
+      ? path.dirname(workspace.value.repositories[0].worktreePath)
+      : null;
+  const proposedWorkspaceDirectory = (
+    ticket: Pick<WorkbenchTicket, "id" | "title">,
+    references: ReadonlyArray<WorkbenchReference>,
+  ) =>
+    path.join(
+      worktreesDir,
+      "workbench",
+      ticketWorkspaceDirectoryName({
+        ticketId: ticket.id,
+        issueLabel: workbenchTicketIssueLabel(
+          references.filter((reference) => reference.ticketId === ticket.id),
+        ),
+        title: ticket.title,
+      }),
+    );
 
   const getWorkspaceLock = Effect.fn("TicketWorkspaceService.getWorkspaceLock")(function* (
     ticketId: string,
@@ -196,11 +234,6 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
             preparationError(`Could not inspect a Ticket Workspace repository: ${cause.detail}`),
           ),
         );
-      const canonicalizePath = (value: string) => {
-        const resolved = path.resolve(value);
-        // Missing paths still need their lexical identity for stale-worktree handling.
-        return fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
-      };
       const expectedPath = yield* canonicalizePath(worktreePath);
       for (const ref of refs.refs) {
         if (ref.isRemote === true || ref.worktreePath === null) continue;
@@ -325,22 +358,33 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     });
   });
 
+  const inspectWorktree = Effect.fn("TicketWorkspaceService.inspectWorktree")(function* ({
+    worktreePath,
+    label,
+  }: {
+    readonly worktreePath: string;
+    readonly label: string;
+  }) {
+    yield* git.invalidateLocalStatus(worktreePath);
+    return yield* git
+      .localStatus({ cwd: worktreePath })
+      .pipe(
+        Effect.mapError((cause) =>
+          preparationError(`Could not inspect ${label}: ${cause.message}`),
+        ),
+      );
+  });
+
   const preflightCleanWorktrees = Effect.fn("TicketWorkspaceService.preflightCleanWorktrees")(
     function* ({ workspace }: { readonly workspace: WorkbenchTicketWorkspace }) {
       const observedBranches = new Map<ProjectId, string>();
       for (const repository of workspace.repositories) {
         if (repository.status === "released") continue;
         if (!(yield* worktreePathExists(repository.worktreePath))) continue;
-        yield* git.invalidateLocalStatus(repository.worktreePath);
-        const status = yield* git
-          .localStatus({ cwd: repository.worktreePath })
-          .pipe(
-            Effect.mapError((cause) =>
-              preparationError(
-                `Could not inspect Ticket Workspace repository ${repositoryLabel(repository)}: ${cause.message}`,
-              ),
-            ),
-          );
+        const status = yield* inspectWorktree({
+          worktreePath: repository.worktreePath,
+          label: `Ticket Workspace repository ${repositoryLabel(repository)}`,
+        });
         if (!status.isRepo) {
           return yield* preparationError(
             `Could not reset Ticket Workspace repository ${repositoryLabel(repository)}: its worktree path is not a Git repository.`,
@@ -1105,14 +1149,10 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     const issueLabel = workbenchTicketIssueLabel(
       snapshot.references.filter((reference) => reference.ticketId === ticket.id),
     );
+    const recordedDirectory = recordedWorkspaceDirectory(reconciledExisting);
     const assignedThreadIds = snapshot.assignments
       .filter((assignment) => assignment.ticketId === ticket.id && assignment.supersededAt === null)
       .map((assignment) => assignment.threadId);
-    const proposedWorkspaceDirectoryName = ticketWorkspaceDirectoryName({
-      ticketId: ticket.id,
-      issueLabel,
-      title: ticket.title,
-    });
     let generatedBranchName = Option.getOrUndefined(
       yield* store.getTicketWorkspaceGeneratedBranchName(ticket.id),
     );
@@ -1128,11 +1168,9 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       return generatedBranchName;
     });
     const workspaceDirectory =
-      !startsNewGeneration &&
-      Option.isSome(reconciledExisting) &&
-      reconciledExisting.value.repositories[0] !== undefined
-        ? path.dirname(reconciledExisting.value.repositories[0].worktreePath)
-        : path.join(worktreesDir, "workbench", proposedWorkspaceDirectoryName);
+      !startsNewGeneration && recordedDirectory !== null
+        ? recordedDirectory
+        : proposedWorkspaceDirectory(ticket, snapshot.references);
     if (
       startsNewGeneration &&
       snapshot.ticketWorkspaces.some(
@@ -1147,13 +1185,9 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         `The Ticket Workspace directory ${workspaceDirectory} is already assigned to another Ticket.`,
       );
     }
-    const recordedWorkspaceDirectory =
-      Option.isSome(reconciledExisting) && reconciledExisting.value.repositories[0] !== undefined
-        ? path.dirname(reconciledExisting.value.repositories[0].worktreePath)
-        : null;
     if (
       startsNewGeneration &&
-      workspaceDirectory !== recordedWorkspaceDirectory &&
+      workspaceDirectory !== recordedDirectory &&
       (yield* worktreePathExists(workspaceDirectory))
     ) {
       return yield* preparationError(
@@ -1253,6 +1287,121 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     return yield* releaseClaimedWorkspace({ workspace: releasing, releasedAt: operationAt });
   });
 
+  const requireTicket = Effect.fn("TicketWorkspaceService.requireTicket")(function* (
+    ticketId: WorkbenchTicketId,
+  ) {
+    const ticket = yield* store.getTicket(ticketId);
+    if (Option.isNone(ticket)) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_not_found",
+        message: "The Workbench Ticket does not exist.",
+      });
+    }
+    return ticket.value;
+  });
+
+  const listWorktreesForTicket = Effect.fn("TicketWorkspaceService.listWorktreesForTicket")(
+    function* (ticket: WorkbenchTicket) {
+      const workspace = yield* store.getTicketWorkspace(ticket.id);
+      const directory = yield* canonicalizePath(
+        recordedWorkspaceDirectory(workspace) ??
+          proposedWorkspaceDirectory(ticket, yield* store.listReferences(ticket.id)),
+      );
+      const prepared = new Set<string>();
+      if (Option.isSome(workspace)) {
+        for (const repository of workspace.value.repositories) {
+          if (repository.status === "released") continue;
+          prepared.add(yield* canonicalizePath(repository.worktreePath));
+        }
+      }
+      const worktrees: Array<WorkbenchTicketWorktree> = [];
+      for (const projectId of ticket.repositoryProjectIds) {
+        const project = yield* projections.getProjectShellById(projectId);
+        if (Option.isNone(project)) continue;
+        const sourceRoot = yield* canonicalizePath(project.value.workspaceRoot);
+        // The repository's own root lists every worktree, prepared checkout or not.
+        const listed = yield* git.listWorktreePaths(project.value.workspaceRoot).pipe(
+          Effect.catch((cause) =>
+            Effect.logWarning("Ticket worktrees could not be listed", {
+              projectId,
+              detail: cause.detail,
+            }).pipe(Effect.as<ReadonlyArray<string>>([])),
+          ),
+        );
+        for (const worktreePath of listed) {
+          const canonical = yield* canonicalizePath(worktreePath);
+          const relative = path.relative(directory, canonical);
+          const insideDirectory =
+            relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+          if (!insideDirectory || canonical === sourceRoot || prepared.has(canonical)) continue;
+          worktrees.push({ projectId, path: worktreePath });
+        }
+      }
+      return worktrees.toSorted((left, right) => left.path.localeCompare(right.path));
+    },
+  );
+
+  const listWorktrees: TicketWorkspaceServiceShape["listWorktrees"] = Effect.fn(
+    "TicketWorkspaceService.listWorktrees",
+  )(function* (input) {
+    return yield* listWorktreesForTicket(yield* requireTicket(input.ticketId));
+  });
+
+  const removeWorktreeUnlocked = Effect.fn("TicketWorkspaceService.removeWorktreeUnlocked")(
+    function* (input: WorkbenchRemoveTicketWorktreeInput) {
+      const ticket = yield* requireTicket(input.ticketId);
+      if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_archived",
+          message: "Archived Workbench Tickets cannot remove worktrees.",
+        });
+      }
+      const requested = yield* canonicalizePath(input.path);
+      const [worktree] = yield* Effect.filter(yield* listWorktreesForTicket(ticket), (candidate) =>
+        candidate.projectId === input.projectId
+          ? canonicalizePath(candidate.path).pipe(Effect.map((value) => value === requested))
+          : Effect.succeed(false),
+      );
+      // Membership also refuses the prepared checkout and paths outside the workspace.
+      if (worktree === undefined) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_workspace_repository_not_found",
+          message: "This worktree is not one of the Ticket's worktrees.",
+        });
+      }
+      const project = yield* projections.getProjectShellById(worktree.projectId);
+      if (Option.isNone(project)) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_workspace_repository_not_found",
+          message: "The worktree's repository is unavailable.",
+        });
+      }
+      yield* ensureNoActiveAssignment({
+        snapshot: yield* store.getSnapshot,
+        ticketId: ticket.id,
+        message:
+          "A Thread works in this worktree. Delete that Thread, including an archived one, before removing the worktree.",
+        worktreePaths: [worktree.path],
+      });
+      const status = yield* inspectWorktree({
+        worktreePath: worktree.path,
+        label: `the worktree at ${worktree.path}`,
+      });
+      if (status.isRepo && status.hasWorkingTreeChanges) {
+        return yield* preparationError(
+          `The worktree at ${worktree.path} has local changes. Commit or remove them before removing the worktree.`,
+        );
+      }
+      yield* git
+        .removeWorktree({ cwd: project.value.workspaceRoot, path: worktree.path })
+        .pipe(
+          Effect.mapError((cause) =>
+            preparationError(`Could not remove the worktree at ${worktree.path}: ${cause.detail}`),
+          ),
+        );
+    },
+  );
+
   const prepare: TicketWorkspaceServiceShape["prepare"] = Effect.fn(
     "TicketWorkspaceService.prepare",
   )(
@@ -1271,7 +1420,14 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     return yield* lock.withPermit(releaseUnlocked(input));
   });
 
-  return TicketWorkspaceService.of({ prepare, release });
+  const removeWorktree: TicketWorkspaceServiceShape["removeWorktree"] = Effect.fn(
+    "TicketWorkspaceService.removeWorktree",
+  )(function* (input) {
+    const lock = yield* getWorkspaceLock(input.ticketId);
+    return yield* lock.withPermit(removeWorktreeUnlocked(input));
+  });
+
+  return TicketWorkspaceService.of({ prepare, release, listWorktrees, removeWorktree });
 });
 
 export const TicketWorkspaceServiceLive = Layer.effect(

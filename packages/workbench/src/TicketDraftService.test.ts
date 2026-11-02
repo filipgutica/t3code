@@ -152,6 +152,8 @@ const fixture = (options?: {
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       return TicketWorkspaceService.of({
+        listWorktrees: () => Effect.die("unused"),
+        removeWorktree: () => Effect.die("unused"),
         prepare: (input) =>
           Effect.gen(function* () {
             prepares++;

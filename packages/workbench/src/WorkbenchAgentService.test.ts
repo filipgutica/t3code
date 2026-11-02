@@ -5,6 +5,7 @@ import {
   RunId,
   ThreadId,
   WorkbenchAssignmentId,
+  WorkbenchOperationError,
   WorkbenchProjectId,
   WorkbenchTicketId,
   WorkbenchTicketWorkspaceAttemptId,
@@ -36,9 +37,11 @@ const createdAt = "2026-10-20T10:00:00.000Z";
 const makeTestLayer = ({
   host = () => ({}),
   prepare = () => Effect.die("unused"),
+  listWorktrees = () => Effect.succeed([]),
 }: {
   readonly host?: (store: WorkbenchStore["Service"]) => Partial<WorkbenchAgentHost["Service"]>;
   readonly prepare?: TicketWorkspaceService["Service"]["prepare"];
+  readonly listWorktrees?: TicketWorkspaceService["Service"]["listWorktrees"];
 } = {}) =>
   layer.pipe(
     Layer.provideMerge(
@@ -63,7 +66,12 @@ const makeTestLayer = ({
     Layer.provideMerge(
       Layer.succeed(
         TicketWorkspaceService,
-        TicketWorkspaceService.of({ prepare, release: () => Effect.die("unused") }),
+        TicketWorkspaceService.of({
+          prepare,
+          release: () => Effect.die("unused"),
+          listWorktrees,
+          removeWorktree: () => Effect.die("unused"),
+        }),
       ),
     ),
     Layer.provideMerge(WorkbenchStoreLive),
@@ -251,6 +259,54 @@ describe("WorkbenchAgentService", () => {
       const stranger = yield* Effect.flip(agent.read(ThreadId.make("agent-stranger")));
       expect(stranger.message).toBe("This Thread does not belong to a Ticket");
     }).pipe(Effect.provide(testLayer)),
+  );
+
+  it.effect.each([
+    { name: "lists the Ticket's other worktrees under their repository", fails: false },
+    { name: "still reads the Ticket when its worktrees can't be listed", fails: true },
+  ])("$name", ({ fails }) =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const agent = yield* WorkbenchAgentService;
+      yield* seedWorkspace;
+      const ticket = yield* store.createTicket({
+        id: WorkbenchTicketId.make("agent-worktrees-ticket"),
+        projectId: workspaceId,
+        title: "Expire invitations",
+        kind: "story",
+        markdown: "",
+        repositoryProjectIds: [first, second],
+        createdAt,
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("agent-worktrees-assignment"),
+        ticketId: ticket.id,
+        threadId: worker,
+        createdAt,
+      });
+
+      const read = yield* agent.read(worker);
+      expect(
+        read.repositories.map(({ projectId, worktrees }) => ({ projectId, worktrees })),
+      ).toEqual([
+        { projectId: first, worktrees: undefined },
+        { projectId: second, worktrees: fails ? undefined : ["/home/user/worktrees/acme/pr-x"] },
+      ]);
+    }).pipe(
+      Effect.provide(
+        makeTestLayer({
+          listWorktrees: () =>
+            fails
+              ? Effect.fail(
+                  new WorkbenchOperationError({
+                    code: "persistence_failed",
+                    message: "The Ticket Workspace could not be loaded.",
+                  }),
+                )
+              : Effect.succeed([{ projectId: second, path: "/home/user/worktrees/acme/pr-x" }]),
+        }),
+      ),
+    ),
   );
 
   // The store checks this under its write lock, so a Thread linked after the caller read the Ticket counts.

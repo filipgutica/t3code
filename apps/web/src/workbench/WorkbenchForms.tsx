@@ -172,6 +172,10 @@ import {
   WorkbenchCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import {
+  WorkbenchTicketWorktreeRows,
+  useWorkbenchTicketWorktrees,
+} from "./WorkbenchTicketWorktrees";
+import {
   WorkbenchJiraIssueKeyLink,
   WorkbenchTicketTypeBadge,
   WorkbenchTicketCopyMenuItems,
@@ -2749,6 +2753,7 @@ function WorkbenchTicketWorkspacePanel({
           </WorkbenchTicketWorkspaceRepositoryEditor>
         ) : (
           <WorkbenchTicketWorkspaceRepositories
+            ticket={ticket}
             repositories={repositories}
             environmentId={environmentId}
             keybindings={keybindings}
@@ -3032,6 +3037,7 @@ function WorkbenchTicketAdvancedWorkspace({
 }
 
 function WorkbenchTicketWorkspaceRepositories({
+  ticket,
   repositories,
   environmentId,
   keybindings,
@@ -3042,6 +3048,7 @@ function WorkbenchTicketWorkspaceRepositories({
   retainedRepositories,
 }: Pick<
   WorkbenchTicketWorkspacePanelProps,
+  | "ticket"
   | "repositories"
   | "environmentId"
   | "keybindings"
@@ -3051,18 +3058,28 @@ function WorkbenchTicketWorkspaceRepositories({
   | "workspaceIsPreparing"
   | "retainedRepositories"
 >) {
+  const worktrees = useWorkbenchTicketWorktrees({ environmentId, ticketId: ticket.id });
   return (
     <div className="divide-y divide-border/50">
       {repositories.map((entry) => (
-        <WorkbenchTicketRepositoryRow
-          key={entry.id}
-          environmentId={environmentId}
-          entry={entry}
-          keybindings={keybindings}
-          availableEditors={availableEditors}
-          isArchived={isArchived}
-          canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
-        />
+        <div key={entry.id}>
+          <WorkbenchTicketRepositoryRow
+            environmentId={environmentId}
+            entry={entry}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            isArchived={isArchived}
+            canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+          />
+          <WorkbenchTicketWorktreeRows
+            environmentId={environmentId}
+            ticketId={ticket.id}
+            worktrees={worktrees.filter((worktree) => worktree.projectId === entry.id)}
+            keybindings={keybindings}
+            availableEditors={availableEditors}
+            isArchived={isArchived}
+          />
+        </div>
       ))}
       {retainedRepositories.length > 0 ? (
         <details className="pt-2">
