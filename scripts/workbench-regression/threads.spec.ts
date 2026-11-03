@@ -70,7 +70,8 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   ).toBe(true);
   expect(complete.tickets.find((t) => t.id === "orbit-004")?.status).toBe("in_progress");
   expect(complete.assignments.filter((a) => a.ticketId === "orbit-004")).toHaveLength(1);
-  await chat.getByRole("button", { name: "Open full Thread", exact: true }).click();
+  await chat.getByRole("button", { name: "Thread actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Open full Thread", exact: true }).click();
   await expect(page).toHaveURL(
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === null,
   );
