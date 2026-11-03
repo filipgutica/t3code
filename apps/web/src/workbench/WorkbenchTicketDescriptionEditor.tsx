@@ -171,8 +171,8 @@ export function WorkbenchTicketDescriptionEditor({
   return (
     <div className="min-w-0 space-y-2">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Label id={labelId} htmlFor={mode === "markdown" ? id : undefined}>
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <Label className="shrink-0" id={labelId} htmlFor={mode === "markdown" ? id : undefined}>
             Description
           </Label>
           {updatedBy !== null ? (

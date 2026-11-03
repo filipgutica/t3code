@@ -79,7 +79,7 @@ function DraftBriefView({
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-2">
       <div className="flex min-w-0 items-center gap-2">
-        <h3 id={headingId} className="font-medium text-sm">
+        <h3 id={headingId} className="shrink-0 font-medium text-sm">
           Description
         </h3>
         {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}

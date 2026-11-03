@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { Project } from "../types";
 import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
@@ -206,8 +207,15 @@ function CardHeader({
   return (
     <header className="flex shrink-0 items-center gap-2 py-1 pr-1.5 pl-3 text-xs text-muted-foreground">
       <PencilLineIcon className="size-3.5 shrink-0" aria-hidden />
-      <span className="font-medium text-foreground">Ticket draft</span>
-      {updatedBy ? <span className="truncate">Updated by {updatedBy}</span> : null}
+      <span className="shrink-0 font-medium text-foreground">Ticket draft</span>
+      {updatedBy ? (
+        <Tooltip>
+          <TooltipTrigger render={<span className="min-w-0 max-w-72 truncate" />}>
+            Updated by {updatedBy}
+          </TooltipTrigger>
+          <TooltipPopup>Updated by {updatedBy}</TooltipPopup>
+        </Tooltip>
+      ) : null}
       <span className="flex-1" />
       <Button size="icon-xs" variant="ghost" aria-label={toggle} onClick={() => show(next)}>
         <ChevronUpIcon />

@@ -2211,9 +2211,9 @@ function WorkbenchTicketDescriptionPanel({
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2">
-            <h2 className="text-sm font-semibold">Description</h2>
+            <h2 className="shrink-0 text-sm font-semibold">Description</h2>
             {updatedBy !== null ? (
               <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
             ) : null}
