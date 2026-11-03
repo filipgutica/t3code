@@ -1291,7 +1291,7 @@ describe("TicketWorkspaceService", () => {
       const { fileSystem, path } = fixture;
       const primary = fixture.repositories[0]!;
       const workspaceDirectory = path.dirname(primary.worktreePath);
-      for (const name of ["pr-clean", "pr-dirty", "pr-used", "pr-project"]) {
+      for (const name of ["pr-clean", "pr-dirty", "pr-used", "pr-project", "pr-nested"]) {
         yield* fixture.git(primary.sourcePath, [
           "worktree",
           "add",
@@ -1304,6 +1304,10 @@ describe("TicketWorkspaceService", () => {
         path.join(workspaceDirectory, "pr-dirty", "notes.txt"),
         "untracked work",
       );
+      // An empty directory leaves the worktree clean for Git.
+      yield* fileSystem.makeDirectory(path.join(workspaceDirectory, "pr-nested", "apps", "web"), {
+        recursive: true,
+      });
       const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-alias-" });
       const alias = path.join(outside, "workspace-alias");
       yield* fileSystem.symlink(workspaceDirectory, alias);
@@ -1327,22 +1331,26 @@ describe("TicketWorkspaceService", () => {
           worktreePath: path.join(alias, "pr-used"),
           archivedAt: createdAt,
         });
-        // A native Project opened on the worktree runs its Threads there with no worktreePath.
-        const worktreeProjectId = ProjectId.make("project-worktree");
+        // A native Project opened on the worktree, or inside it, runs its Threads there with no worktreePath.
         const sql = yield* SqlClient.SqlClient;
-        yield* sql`
-          INSERT INTO projection_projects (
-            project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
-          ) VALUES (
-            ${worktreeProjectId}, 'Worktree', ${listed.get("pr-project")!}, '[]',
-            ${createdAt}, ${createdAt}, NULL
-          )
-        `;
-        yield* seedNativeThread({
-          threadId: ThreadId.make("thread-project-root"),
-          projectId: worktreeProjectId,
-          createdAt,
-        });
+        const seedProjectThread = (name: string, workspaceRoot: string) =>
+          Effect.gen(function* () {
+            const projectId = ProjectId.make(`project-${name}`);
+            yield* sql`
+              INSERT INTO projection_projects (
+                project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+              ) VALUES (
+                ${projectId}, ${name}, ${workspaceRoot}, '[]', ${createdAt}, ${createdAt}, NULL
+              )
+            `;
+            yield* seedNativeThread({
+              threadId: ThreadId.make(`thread-${name}`),
+              projectId,
+              createdAt,
+            });
+          });
+        yield* seedProjectThread("worktree", listed.get("pr-project")!);
+        yield* seedProjectThread("nested", path.join(listed.get("pr-nested")!, "apps", "web"));
 
         const dirty = yield* Effect.flip(remove(listed.get("pr-dirty")!));
         expect(dirty.message).toContain("has local changes");
@@ -1350,6 +1358,8 @@ describe("TicketWorkspaceService", () => {
         expect(used.code).toBe("ticket_workspace_in_use");
         const projectRoot = yield* Effect.flip(remove(listed.get("pr-project")!));
         expect(projectRoot.code).toBe("ticket_workspace_in_use");
+        const nested = yield* Effect.flip(remove(listed.get("pr-nested")!));
+        expect(nested.code).toBe("ticket_workspace_in_use");
         const prepared = yield* Effect.flip(remove(primary.worktreePath));
         expect(prepared.code).toBe("ticket_workspace_repository_not_found");
         expect(fixture.removals).toEqual([]);
@@ -1360,7 +1370,7 @@ describe("TicketWorkspaceService", () => {
           (yield* service.listWorktrees({ ticketId })).map((worktree) =>
             path.basename(worktree.path),
           ),
-        ).toEqual(["pr-dirty", "pr-project", "pr-used"]);
+        ).toEqual(["pr-dirty", "pr-nested", "pr-project", "pr-used"]);
         expect(yield* fixture.git(primary.sourcePath, ["branch", "--list", "pr-clean"])).toBe(
           "pr-clean",
         );

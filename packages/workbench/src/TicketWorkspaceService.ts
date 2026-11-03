@@ -1388,8 +1388,10 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         });
       }
       // Threads may record the worktree through a symlinked path, so compare real paths.
+      // A Project opened inside the worktree runs its Threads there too.
       for (const threadWorkspacePath of yield* store.listThreadWorkspacePaths) {
-        if ((yield* canonicalizePath(threadWorkspacePath)) === requested) {
+        const threadPath = yield* canonicalizePath(threadWorkspacePath);
+        if (threadPath === requested || isInsideDirectory(requested, threadPath)) {
           return yield* new WorkbenchOperationError({
             code: "ticket_workspace_in_use",
             message:
