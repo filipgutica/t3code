@@ -32,7 +32,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await page.getByRole("button", { name: "Create Thread", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Create work area and Thread", exact: true })
+    .getByRole("button", { name: "Create worktrees and Thread", exact: true })
     .click();
   const chat = ticketChat(page);
   const editor = chat.locator('[contenteditable="true"]');
@@ -75,11 +75,11 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
     (url) => url.pathname !== "/workbench" && url.searchParams.get("workbench") === null,
   );
   const workspaceBreadcrumb = page.getByRole("link", {
-    name: "Back to Workspace Orbit Board",
+    name: "Back to Board Orbit",
     exact: true,
   });
   const ticketBreadcrumb = page.getByRole("link", {
-    name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",
+    name: "Back to Ticket Fix focus after creating a project in Board Orbit",
     exact: true,
   });
   await page.setViewportSize({ width: 1600, height: 900 });
@@ -91,9 +91,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await page.setViewportSize({ width: 1600, height: 900 });
   await expect(workspaceBreadcrumb).toBeVisible();
   // The full Thread is the native page, so the regular sidebar replaces the Workbench one.
-  await expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toHaveCount(
-    0,
-  );
+  await expect(page.getByRole("list", { name: "Boards", exact: true })).toHaveCount(0);
   await page.reload();
   await expect(workspaceBreadcrumb).toBeVisible();
   await expect(page.getByText("Workbench regression passed.", { exact: true })).toBeVisible();
@@ -102,7 +100,7 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   ).toBeVisible();
   await page
     .getByRole("link", {
-      name: "Back to Ticket Fix focus after creating a project in Workspace Orbit",
+      name: "Back to Ticket Fix focus after creating a project in Board Orbit",
       exact: true,
     })
     .click();
@@ -194,7 +192,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
     page.getByRole("heading", { name: "Create the welcome checklist", exact: true }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Expand Advanced work area settings", exact: true })
+    .getByRole("button", { name: "Expand Advanced repository settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
@@ -210,7 +208,7 @@ test("R1 R3: multi-repository worktrees persist and reset refuses retained Threa
   const refusal = page.getByRole("alertdialog").getByRole("alert");
   await expect(refusal).toBeVisible();
   await expect(refusal).toContainText(
-    "The Ticket Workspace cannot be reset while it has linked Agent Threads, including archived or historical Threads.",
+    "The Ticket's worktrees cannot be reset while it has linked Threads, including archived or historical Threads.",
   );
   expect((await snapshot(demo)).ticketWorkspaces.find((w) => w.ticketId === "orbit-001")).toEqual(
     workspace,

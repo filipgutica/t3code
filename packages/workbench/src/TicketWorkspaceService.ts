@@ -102,7 +102,7 @@ export const ticketWorkspaceBranchName = ({
 const preparationError = (message: string) =>
   new WorkbenchOperationError({
     code: "ticket_workspace_preparation_failed",
-    message: message.trim().slice(0, 4_000) || "The Ticket Workspace could not be prepared.",
+    message: message.trim().slice(0, 4_000) || "The Ticket's worktrees could not be prepared.",
   });
 
 const uniqueRepositoryDirectoryName = ({
@@ -260,11 +260,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
   ) {
     return yield* fileSystem
       .exists(path.resolve(worktreePath))
-      .pipe(
-        Effect.mapError(() =>
-          preparationError("Could not inspect a Ticket Workspace repository path."),
-        ),
-      );
+      .pipe(Effect.mapError(() => preparationError("Could not inspect a Ticket repository path.")));
   });
 
   const cleanupWorktree = Effect.fn("TicketWorkspaceService.cleanupWorktree")(function* ({
@@ -357,7 +353,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         ticketId: workspace.ticketId,
         attemptId: workspace.attemptId,
         projectId: null,
-        errorMessage: "An interrupted Ticket Workspace extension was recovered.",
+        errorMessage: "An interrupted worktree preparation was recovered.",
         failedAt: recoveredAt,
       });
     }
@@ -409,7 +405,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         observedBranches.set(repository.projectId, observedBranch.value);
         if (status.hasWorkingTreeChanges) {
           return yield* preparationError(
-            `The Ticket Workspace repository ${repositoryLabel(repository)} has local changes. Commit or remove them before resetting the Workspace.`,
+            `The Ticket repository ${repositoryLabel(repository)} has local changes. Commit or remove them before resetting the worktrees.`,
           );
         }
       }
@@ -528,7 +524,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     yield* ensureNoActiveAssignment({
       snapshot,
       ticketId: workspace.ticketId,
-      message: "The Ticket Workspace cannot be prepared while it has an active Agent Thread.",
+      message: "The Ticket's worktrees cannot be prepared while it has an active Thread.",
       worktreePaths: staleRepositories.map((repository) => repository.worktreePath),
     });
     const repository = staleRepositories[0]!;
@@ -555,13 +551,13 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       if (!Number.isFinite(preparationAge) || preparationAge < interruptedPreparationThresholdMs) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_preparation_in_progress",
-          message: "The Ticket Workspace is already being prepared.",
+          message: "The Ticket's worktrees are already being prepared.",
         });
       }
       yield* ensureNoActiveAssignment({
         snapshot,
         ticketId: workspace.ticketId,
-        message: "The interrupted Ticket Workspace is still used by an active Agent Thread.",
+        message: "The Ticket's interrupted worktrees are still used by an active Thread.",
         worktreePaths: workspace.repositories
           .filter((repository) =>
             repositoryStates.some(
@@ -603,7 +599,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         ticketId: workspace.ticketId,
         attemptId: workspace.attemptId,
         projectId: null,
-        errorMessage: workspace.errorMessage ?? "The Ticket Workspace could not be prepared.",
+        errorMessage: workspace.errorMessage ?? "The Ticket's worktrees could not be prepared.",
         failedAt: operationAt,
       });
       yield* Effect.gen(function* () {
@@ -618,7 +614,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         yield* ensureNoActiveAssignment({
           snapshot: yield* store.getSnapshot,
           ticketId: workspace.ticketId,
-          message: "The failed Ticket Workspace is still used by an active Agent Thread.",
+          message: "The Ticket's failed worktrees are still used by an active Thread.",
           worktreePaths: currentAttemptRepositories.map((repository) => repository.worktreePath),
         });
         for (const repository of currentAttemptRepositories) {
@@ -1139,7 +1135,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_archived",
-        message: "Archived Workbench Tickets cannot receive a Workspace.",
+        message: "Archived Tickets cannot prepare worktrees.",
       });
     }
     const existing = yield* store.getTicketWorkspace(input.ticketId);
@@ -1192,7 +1188,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       )
     ) {
       return yield* preparationError(
-        `The Ticket Workspace directory ${workspaceDirectory} is already assigned to another Ticket.`,
+        `The Ticket directory ${workspaceDirectory} is already assigned to another Ticket.`,
       );
     }
     if (
@@ -1201,7 +1197,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
       (yield* worktreePathExists(workspaceDirectory))
     ) {
       return yield* preparationError(
-        `The Ticket Workspace directory ${workspaceDirectory} already exists and is not recorded for this Ticket.`,
+        `The Ticket directory ${workspaceDirectory} already exists and is not recorded for this Ticket.`,
       );
     }
     const validatedRepositories = yield* validateRepositories({
@@ -1258,7 +1254,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     if (Option.isNone(existing)) {
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_not_found",
-        message: "The Ticket Workspace does not exist.",
+        message: "The Ticket's worktrees do not exist.",
       });
     }
     const snapshot = yield* store.getSnapshot;
@@ -1272,14 +1268,14 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     if (ticket?.archivedAt !== undefined && ticket.archivedAt !== null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_archived",
-        message: "Archived Workbench Tickets cannot release a Workspace.",
+        message: "Archived Tickets cannot release worktrees.",
       });
     }
     if (existing.value.status === "released" && input.retained !== true) return existing.value;
     if (existing.value.status === "preparing") {
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_preparation_in_progress",
-        message: "The Ticket Workspace is still being prepared and cannot be reset yet.",
+        message: "The Ticket's worktrees are still being prepared and cannot be reset yet.",
       });
     }
     // Keep a dirty or unreadable workspace unchanged. The release claim below

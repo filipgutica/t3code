@@ -235,7 +235,6 @@
         "apps/web/src/lib/openPullRequestLink.ts",
         "apps/web/src/rightPanelStore.ts",
         "apps/web/src/routeTree.gen.ts",
-        "apps/web/src/routes/_chat.$environmentId.$threadId.tsx",
         "apps/web/src/state/pullRequests.ts",
         "apps/web/src/state/query.ts",
         "apps/web/src/vite-env.d.ts",

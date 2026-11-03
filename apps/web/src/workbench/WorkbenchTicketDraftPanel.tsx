@@ -1,26 +1,15 @@
-import type {
-  ProjectId,
-  WorkbenchEpic,
-  WorkbenchEpicId,
-  WorkbenchTicketDraftFields,
-  WorkbenchTicketKind,
-} from "@t3tools/contracts";
+import type { ProjectId, WorkbenchTicketDraftFields } from "@t3tools/contracts";
 import { useId, type Dispatch, type ReactNode, type SetStateAction } from "react";
 
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import type { Project } from "../types";
-import {
-  WorkbenchCreateTicketEpic,
-  WorkbenchCreateTicketKind,
-  WorkbenchCreateTicketRepositories,
-} from "./WorkbenchForms";
+import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 
 interface DraftFieldContext {
   readonly linkedProjects: ReadonlyArray<Project>;
-  readonly epics: ReadonlyArray<WorkbenchEpic>;
 }
 
 const getCreateBlocker = ({
@@ -36,15 +25,13 @@ const getCreateBlocker = ({
 };
 
 /**
- * Validates the draft's chosen repositories and Epic against the current Workspace.
+ * Validates the draft's chosen repositories against the current Board.
  * `effectiveFields` is what Create ticket sends; `blocker` explains why it is disabled.
  */
 export const getTicketDraftCreateState = ({
   fields,
   linkedProjects,
-  epics,
 }: DraftFieldContext & { readonly fields: WorkbenchTicketDraftFields }) => {
-  const selectedEpicId = epics.some((epic) => epic.id === fields.epicId) ? fields.epicId : null;
   const repositories = {
     selectedRepositoryProjectIds: fields.repositoryProjectIds.filter((id) =>
       linkedProjects.some((project) => project.id === id),
@@ -56,10 +43,9 @@ export const getTicketDraftCreateState = ({
   });
   const effectiveFields: WorkbenchTicketDraftFields = {
     ...fields,
-    epicId: selectedEpicId,
     repositoryProjectIds: repositories.selectedRepositoryProjectIds,
   };
-  return { selectedEpicId, repositories, blocker, effectiveFields };
+  return { repositories, blocker, effectiveFields };
 };
 
 /** Adapts a patch callback to the `Dispatch<SetStateAction>` setters the manual form's fields expect. */
@@ -80,7 +66,7 @@ function DraftBriefView({
     <section aria-labelledby={headingId} className="min-w-0 space-y-2">
       <div className="flex min-w-0 items-center gap-2">
         <h3 id={headingId} className="shrink-0 font-medium text-sm">
-          Description
+          Brief
         </h3>
         {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
       </div>
@@ -99,19 +85,17 @@ export function WorkbenchTicketDraftFieldsForm({
   updatedBy,
   references,
   onChange,
-  onCreateEpic,
   ...context
 }: DraftFieldContext & {
   readonly fields: WorkbenchTicketDraftFields;
   readonly disabled: boolean;
   /** The agent Thread that last wrote the title or brief, if one did. */
   readonly updatedBy: string | null;
-  /** Sits after the description and keeps its own read-only rules, outside the form's fieldsets. */
+  /** Sits after the brief and keeps its own read-only rules, outside the form's fieldsets. */
   readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
-  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
 }) {
-  const { selectedEpicId, repositories } = getTicketDraftCreateState({ fields, ...context });
+  const { repositories } = getTicketDraftCreateState({ fields, ...context });
   return (
     <div className="min-w-0 space-y-5">
       <fieldset disabled={disabled} className="min-w-0 space-y-5">
@@ -128,19 +112,6 @@ export function WorkbenchTicketDraftFieldsForm({
       </fieldset>
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">
-        <WorkbenchCreateTicketKind
-          kind={fields.kind}
-          markdown={fields.markdown}
-          setKind={asSetter<WorkbenchTicketKind>(fields.kind, (kind) => onChange({ kind }))}
-          setMarkdown={asSetter(fields.markdown, (markdown) => onChange({ markdown }))}
-        />
-        <WorkbenchCreateTicketEpic
-          onCreateEpic={onCreateEpic}
-          epics={context.epics}
-          pending={disabled}
-          epicId={selectedEpicId}
-          setEpicId={asSetter(selectedEpicId, (epicId) => onChange({ epicId }))}
-        />
         <WorkbenchCreateTicketRepositories
           linkedProjects={context.linkedProjects}
           selectedRepositoryProjectIds={repositories.selectedRepositoryProjectIds}

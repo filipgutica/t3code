@@ -184,7 +184,7 @@ const getPreparedRepository = ({
   const checkout = readyCheckout(projectId);
   if (!checkout || !ticket.repositoryProjectIds.every(readyCheckout)) {
     throw new Error(
-      "The prepared work area does not match the reviewed repositories. Review the work area and try again.",
+      "The prepared worktrees do not match the reviewed repositories. Review the repositories and try again.",
     );
   }
   return checkout;

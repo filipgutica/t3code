@@ -36,7 +36,7 @@ const SPINNER = <LoaderCircleIcon className="animate-spin" aria-hidden />;
 function PlanningActions({ phase, action, canOperate, onStartWork, layout }: DraftActionsProps) {
   const label =
     action === "start"
-      ? "Preparing work area…"
+      ? "Preparing worktrees…"
       : phase === "starting"
         ? "Retry start work"
         : "Start work";
@@ -44,8 +44,8 @@ function PlanningActions({ phase, action, canOperate, onStartWork, layout }: Dra
   return (
     <div className={inline ? "flex items-center gap-2" : "space-y-2"}>
       <p className={cn("text-xs text-muted-foreground", inline && "line-clamp-2 min-w-0 flex-1")}>
-        Start work prepares the work area and continues this conversation there. Nothing is sent
-        automatically.
+        Start work prepares the repository worktrees and continues this conversation there. Nothing
+        is sent automatically.
       </p>
       <Button
         className={inline ? "shrink-0" : "w-full"}

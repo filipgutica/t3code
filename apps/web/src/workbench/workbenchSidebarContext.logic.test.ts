@@ -23,10 +23,8 @@ const pr = {
 const ticket = {
   id: ticketId,
   projectId: workspaceId,
-  kind: "bug" as const,
   status: "in_progress" as const,
   blocked: true,
-  epicId: null,
   repositoryProjectIds: [projectId],
 };
 const thread = {
@@ -66,7 +64,6 @@ describe("Workbench sidebar ticket context", () => {
       threads: [],
       projects: [],
       workbenchProjects,
-      epics: [],
       referencesByTicket: new Map(),
     };
     expect(getWorkbenchSidebarTicketDetails(inputs).get(ticketId)?.readOnly).toBe(readOnly);
@@ -96,7 +93,6 @@ describe("Workbench sidebar ticket context", () => {
         { id: projectId, environmentId: EnvironmentId.make("remote"), title: "Remote repo" },
       ],
       workbenchProjects: [],
-      epics: [],
       referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.repositories).toEqual(["Local repo"]);
@@ -104,6 +100,35 @@ describe("Workbench sidebar ticket context", () => {
     expect(details?.threadCount).toBe(1);
     expect(details?.attentionLabel).toBe("Blocked");
     expect(details?.statusLabel).toBe("In Progress");
+  });
+
+  it("labels the row with the first issue Reference in list order", () => {
+    const reference = (url: string) => ({
+      ticketId,
+      url,
+      title: null,
+      addedByThreadId: null,
+      createdAt: "2026-10-09T00:00:00.000Z",
+    });
+    const details = getWorkbenchSidebarTicketDetails({
+      environmentId,
+      tickets: [ticket],
+      assignments: [],
+      threads: [],
+      projects: [],
+      workbenchProjects: [],
+      referencesByTicket: new Map([
+        [
+          ticketId,
+          [
+            reference("https://github.com/acme/app/pull/7"),
+            reference("https://github.com/acme/app/issues/61"),
+            reference("https://acme.atlassian.net/browse/APP-5"),
+          ],
+        ],
+      ]),
+    }).get(ticketId);
+    expect(details?.issue?.label).toBe("app#61");
   });
 
   it("retains ticket context when thread and repository metadata is unavailable", () => {
@@ -114,13 +139,11 @@ describe("Workbench sidebar ticket context", () => {
       threads: [],
       projects: [],
       workbenchProjects: [],
-      epics: [],
       referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.pullRequests).toEqual([]);
     expect(details?.repositories).toEqual([]);
     expect(details?.threadCount).toBe(0);
-    expect(details?.kind).toBe("bug");
   });
 
   it("tracks current native execution independently of ticket planning and historical Threads", () => {
@@ -147,7 +170,6 @@ describe("Workbench sidebar ticket context", () => {
       threads: [working, { ...thread, id: historicalId, hasPendingApprovals: true }],
       projects: [],
       workbenchProjects: [],
-      epics: [],
       referencesByTicket: new Map(),
     };
     const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);

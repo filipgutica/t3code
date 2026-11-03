@@ -17,12 +17,9 @@ const state = vi.hoisted(() => ({
   route: null as ScopedThreadRef | null,
 }));
 vi.mock("@tanstack/react-router", () => ({
-  useLocation: () => ({ pathname: "/workbench" }),
+  useLocation: () => ({ pathname: state.active ? "/workbench" : "/env/thread" }),
   useParams: () => state.route,
   useSearch: () => ({}),
-}));
-vi.mock("./useWorkbenchSidebar", () => ({
-  useWorkbenchSidebar: () => ({ isOnWorkbench: state.active }),
 }));
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => EnvironmentId.make("local"),

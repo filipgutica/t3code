@@ -10,16 +10,13 @@ import {
   WorkbenchUpdateTicketDraftInput,
   WorkbenchTicketDraftActionInput,
   WorkbenchAssignment,
-  WorkbenchArchiveEpicInput,
   WorkbenchArchiveProjectInput,
   WorkbenchDeleteProjectInput,
   WorkbenchArchiveTicketInput,
   WorkbenchCreateAssignmentInput,
-  WorkbenchCreateEpicInput,
   WorkbenchCreateProjectInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
-  WorkbenchEpic,
   WorkbenchOperationError,
   WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchProject,
@@ -29,7 +26,6 @@ import {
   WorkbenchRemoveTicketWorktreeInput,
   WorkbenchTicketWorktree,
   WorkbenchReplaceAssignmentInput,
-  WorkbenchSetJiraIssueLinkInput,
   WorkbenchAddReferenceInput,
   WorkbenchReference,
   WorkbenchRemoveReferenceInput,
@@ -39,7 +35,6 @@ import {
   WorkbenchTicketId,
   WorkbenchTicketWorkspace,
   WorkbenchUnlinkAssignmentInput,
-  WorkbenchUpdateEpicInput,
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
 } from "./workbench.ts";
@@ -59,9 +54,6 @@ export const WORKBENCH_WS_METHODS = {
   workbenchUpdateProject: "workbench.projects.update",
   workbenchArchiveProject: "workbench.projects.archive",
   workbenchDeleteProject: "workbench.projects.delete",
-  workbenchCreateEpic: "workbench.epics.create",
-  workbenchUpdateEpic: "workbench.epics.update",
-  workbenchArchiveEpic: "workbench.epics.archive",
   workbenchCreateTicket: "workbench.tickets.create",
   workbenchUpdateTicket: "workbench.tickets.update",
   workbenchRegenerateTicketSummary: "workbench.tickets.regenerateSummary",
@@ -74,7 +66,6 @@ export const WORKBENCH_WS_METHODS = {
   workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
   workbenchListTicketWorktrees: "workbench.ticketWorktrees.list",
   workbenchRemoveTicketWorktree: "workbench.ticketWorktrees.remove",
-  workbenchSetJiraIssueLink: "workbench.setJiraIssueLink",
   workbenchAddReference: "workbench.references.add",
   workbenchRemoveReference: "workbench.references.remove",
 } as const;
@@ -129,24 +120,6 @@ const WsWorkbenchArchiveProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchArch
 const WsWorkbenchDeleteProjectRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchDeleteProject, {
   payload: WorkbenchDeleteProjectInput,
   success: Schema.Void,
-  error: WorkbenchRpcError,
-});
-
-const WsWorkbenchCreateEpicRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchCreateEpic, {
-  payload: WorkbenchCreateEpicInput,
-  success: WorkbenchEpic,
-  error: WorkbenchRpcError,
-});
-
-const WsWorkbenchUpdateEpicRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUpdateEpic, {
-  payload: WorkbenchUpdateEpicInput,
-  success: WorkbenchEpic,
-  error: WorkbenchRpcError,
-});
-
-const WsWorkbenchArchiveEpicRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchArchiveEpic, {
-  payload: WorkbenchArchiveEpicInput,
-  success: WorkbenchEpic,
   error: WorkbenchRpcError,
 });
 
@@ -237,12 +210,6 @@ const WsWorkbenchRemoveTicketWorktreeRpc = Rpc.make(
   },
 );
 
-const WsWorkbenchSetJiraIssueLinkRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink, {
-  payload: WorkbenchSetJiraIssueLinkInput,
-  success: WorkbenchEpic,
-  error: WorkbenchRpcError,
-});
-
 const WsWorkbenchAddReferenceRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchAddReference, {
   payload: WorkbenchAddReferenceInput,
   success: WorkbenchReference,
@@ -304,9 +271,6 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchUpdateProjectRpc,
   WsWorkbenchArchiveProjectRpc,
   WsWorkbenchDeleteProjectRpc,
-  WsWorkbenchCreateEpicRpc,
-  WsWorkbenchUpdateEpicRpc,
-  WsWorkbenchArchiveEpicRpc,
   WsWorkbenchCreateTicketRpc,
   WsWorkbenchUpdateTicketRpc,
   WsWorkbenchRegenerateTicketSummaryRpc,
@@ -319,7 +283,6 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchReleaseTicketWorkspaceRpc,
   WsWorkbenchListTicketWorktreesRpc,
   WsWorkbenchRemoveTicketWorktreeRpc,
-  WsWorkbenchSetJiraIssueLinkRpc,
   WsWorkbenchAddReferenceRpc,
   WsWorkbenchRemoveReferenceRpc,
 );

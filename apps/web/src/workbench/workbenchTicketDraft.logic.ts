@@ -113,7 +113,6 @@ export const canDiscardConversationDraft = ({
 export type WorkbenchWorkItemView =
   | { readonly kind: "draft"; readonly draft: WorkbenchConversationDraft | null }
   | { readonly kind: "ticket" }
-  | { readonly kind: "epic" }
   | { readonly kind: "board" };
 
 /**
@@ -124,7 +123,6 @@ export const resolveWorkbenchWorkItemView = ({
   workspaceId,
   selectedTicketId,
   ticketExists,
-  hasSelectedEpic,
   createTicket,
   awaitingTicketId,
 }: {
@@ -133,7 +131,6 @@ export const resolveWorkbenchWorkItemView = ({
   /** The route's ticket id, which can name a ticket the snapshot does not hold yet. */
   readonly selectedTicketId: WorkbenchTicketId | null;
   readonly ticketExists: boolean;
-  readonly hasSelectedEpic: boolean;
   readonly createTicket: boolean;
   readonly awaitingTicketId?: WorkbenchTicketId | null;
 }): WorkbenchWorkItemView => {
@@ -146,7 +143,6 @@ export const resolveWorkbenchWorkItemView = ({
     return { kind: "draft", draft: null };
   }
   if (selectedTicketId !== null && ticketExists) return { kind: "ticket" };
-  if (hasSelectedEpic) return { kind: "epic" };
   if (createTicket && workspaceId !== null) {
     return { kind: "draft", draft: null };
   }

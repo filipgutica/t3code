@@ -7,20 +7,16 @@ import {
   WorkbenchArchiveTicketInput,
   WorkbenchArchiveProjectInput,
   WorkbenchDeleteProjectInput,
-  WorkbenchCreateEpicInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
   WorkbenchReplaceAssignmentInput,
-  WorkbenchSetJiraIssueLinkInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketDraft,
-  WorkbenchTicketKind,
   WorkbenchTicketStatus,
   WorkbenchUnlinkAssignmentInput,
   WorkbenchUpdateProjectInput,
   WorkbenchUpdateTicketInput,
-  parseJiraIssueUrl,
   parseWorkbenchReferenceUrl,
   workbenchTicketIssueLabel,
 } from "./workbench.ts";
@@ -32,16 +28,11 @@ import { WsRpcGroup } from "./rpc.ts";
 const decodeWorkbenchArchiveProjectInput = Schema.decodeUnknownEffect(WorkbenchArchiveProjectInput);
 const decodeWorkbenchDeleteProjectInput = Schema.decodeUnknownEffect(WorkbenchDeleteProjectInput);
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
-const decodeWorkbenchCreateEpicInput = Schema.decodeUnknownEffect(WorkbenchCreateEpicInput);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
-const decodeWorkbenchTicketKind = Schema.decodeUnknownEffect(WorkbenchTicketKind);
 const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCreateTicketInput);
 const decodeWorkbenchArchiveTicketInput = Schema.decodeUnknownEffect(WorkbenchArchiveTicketInput);
 const decodeWorkbenchDeleteTicketInput = Schema.decodeUnknownEffect(WorkbenchDeleteTicketInput);
 const decodeWorkbenchUpdateProjectInput = Schema.decodeUnknownEffect(WorkbenchUpdateProjectInput);
-const decodeWorkbenchSetJiraIssueLinkInput = Schema.decodeUnknownEffect(
-  WorkbenchSetJiraIssueLinkInput,
-);
 const decodeWorkbenchTicketDraft = Schema.decodeUnknownEffect(WorkbenchTicketDraft);
 const decodeWorkbenchUpdateTicketInput = Schema.decodeUnknownEffect(WorkbenchUpdateTicketInput);
 const decodeWorkbenchReplaceAssignmentInput = Schema.decodeUnknownEffect(
@@ -51,12 +42,22 @@ const decodeWorkbenchUnlinkAssignmentInput = Schema.decodeUnknownEffect(
   WorkbenchUnlinkAssignmentInput,
 );
 
+const emptySnapshot = {
+  projects: [],
+  tickets: [],
+  assignments: [],
+  reservedThreadIds: [],
+  ticketWorkspaces: [],
+  threadRecaps: [],
+  references: [],
+};
+
 describe("Workbench contracts", () => {
   it.effect(
     "keeps compact snapshot markers optional and full snapshots compatible with legacy decoders",
     () =>
       Effect.gen(function* () {
-        const legacyTicket = {
+        const archivedTicket = {
           id: "archived",
           projectId: "workspace",
           title: "Archived",
@@ -64,17 +65,18 @@ describe("Workbench contracts", () => {
           repositoryProjectIds: ["native"],
           status: "done",
           blocked: false,
+          revision: 0,
           archivedAt: "2026-10-17T10:00:00.000Z",
           createdAt: "2026-10-17T10:00:00.000Z",
           updatedAt: "2026-10-17T10:00:00.000Z",
         };
-        const legacySnapshot = { projects: [], tickets: [legacyTicket], assignments: [] };
-        const full = yield* decodeWorkbenchSnapshot(legacySnapshot);
+        const fullSnapshot = { ...emptySnapshot, tickets: [archivedTicket] };
+        const full = yield* decodeWorkbenchSnapshot(fullSnapshot);
         expect(full.tickets[0]?.markdownOmitted).toBeUndefined();
         expect(full.tickets[0]?.markdown).toBe("Full archived body");
         const compact = yield* decodeWorkbenchSnapshot({
-          ...legacySnapshot,
-          tickets: [{ ...legacyTicket, markdown: "", markdownOmitted: true }],
+          ...fullSnapshot,
+          tickets: [{ ...archivedTicket, markdown: "", markdownOmitted: true }],
         });
         expect(compact.tickets[0]).toMatchObject({ markdown: "", markdownOmitted: true });
         const legacyDecoder = Schema.decodeUnknownEffect(
@@ -92,48 +94,19 @@ describe("Workbench contracts", () => {
       }),
   );
 
-  it.effect("treats snapshots from older hosts as lacking Epic lifecycle support", () =>
-    Effect.gen(function* () {
-      const snapshot = yield* decodeWorkbenchSnapshot({
-        projects: [],
-        tickets: [],
-        assignments: [],
-      });
-      expect(snapshot).not.toHaveProperty("supportsEpicLifecycle", true);
-    }),
-  );
-  it.effect("decodes snapshots from hosts without Thread recaps", () =>
-    Effect.gen(function* () {
-      const snapshot = yield* decodeWorkbenchSnapshot({
-        projects: [],
-        tickets: [],
-        assignments: [],
-      });
-      expect(snapshot.threadRecaps).toEqual([]);
-      expect(snapshot.references).toEqual([]);
-    }),
-  );
   it.effect("decodes the persisted Project, Ticket, and Assignment snapshot", () =>
     Effect.gen(function* () {
       const snapshot = yield* decodeWorkbenchSnapshot({
+        ...emptySnapshot,
         projects: [
           {
             id: "workbench-project-1",
             title: "Agent Workbench",
             linkedProjectIds: ["t3-project-1"],
+            archivedAt: null,
+            revision: 0,
             createdAt: "2026-09-03T12:00:00.000Z",
             updatedAt: "2026-09-03T12:00:00.000Z",
-          },
-        ],
-        epics: [
-          {
-            id: "epic-1",
-            projectId: "workbench-project-1",
-            title: "Native planning",
-            markdown: "Keep planning connected to execution.",
-            archivedAt: null,
-            createdAt: "2026-09-03T12:00:30.000Z",
-            updatedAt: "2026-09-03T12:00:30.000Z",
           },
         ],
         tickets: [
@@ -141,12 +114,11 @@ describe("Workbench contracts", () => {
             id: "ticket-1",
             projectId: "workbench-project-1",
             title: "Create the first Ticket flow",
-            epicId: "epic-1",
-            kind: "story",
             markdown: "Keep the native T3 Thread experience.",
             repositoryProjectIds: ["t3-project-1", "t3-project-2"],
             status: "in_progress",
             blocked: false,
+            revision: 3,
             createdAt: "2026-09-03T12:01:00.000Z",
             updatedAt: "2026-09-03T12:02:00.000Z",
           },
@@ -187,10 +159,7 @@ describe("Workbench contracts", () => {
 
       expect(snapshot.projects[0]).toMatchObject({ archivedAt: null, revision: 0 });
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual(["t3-project-1"]);
-      expect(snapshot.epics[0]).toMatchObject({ id: "epic-1", archivedAt: null });
       expect(snapshot.tickets[0]).toMatchObject({
-        epicId: "epic-1",
-        kind: "story",
         repositoryProjectIds: ["t3-project-1", "t3-project-2"],
         status: "in_progress",
       });
@@ -217,7 +186,6 @@ describe("Workbench contracts", () => {
         id: "workspace",
         expectedRevision: 0,
         expectedTicketCount: 2,
-        expectedEpicCount: 1,
         deletedAt: archive.updatedAt,
       };
       expect(yield* decodeWorkbenchArchiveProjectInput(archive)).toEqual(archive);
@@ -254,57 +222,15 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it.effect("accepts only Story and Bug Ticket kinds", () =>
-    Effect.gen(function* () {
-      expect(yield* decodeWorkbenchTicketKind("story")).toBe("story");
-      expect(yield* decodeWorkbenchTicketKind("bug")).toBe("bug");
-      expect((yield* Effect.exit(decodeWorkbenchTicketKind("task")))._tag).toBe("Failure");
-    }),
-  );
-
-  it.effect("decodes pre-type and pre-history Workbench payloads", () =>
-    Effect.gen(function* () {
-      const snapshot = yield* decodeWorkbenchSnapshot({
-        projects: [],
-        tickets: [
-          {
-            id: "ticket-1",
-            projectId: "workbench-project-1",
-            title: "Legacy Ticket",
-            markdown: "Legacy body",
-            primaryT3ProjectId: "t3-project-1",
-            status: "todo",
-            blocked: false,
-            createdAt: "2026-09-03T12:00:00.000Z",
-            updatedAt: "2026-09-03T12:00:00.000Z",
-          },
-        ],
-        assignments: [
-          {
-            id: "assignment-1",
-            ticketId: "ticket-1",
-            threadId: "thread-1",
-            createdAt: "2026-09-03T12:00:00.000Z",
-          },
-        ],
-      });
-
-      expect(snapshot.tickets[0]).toMatchObject({ kind: "story", repositoryProjectIds: [] });
-      expect(snapshot.tickets[0]).not.toHaveProperty("primaryT3ProjectId");
-      expect(snapshot.epics).toEqual([]);
-      expect(snapshot.tickets[0]?.epicId).toBeNull();
-      expect(snapshot.tickets[0]?.archivedAt).toBeUndefined();
-      expect(snapshot.assignments[0]?.supersededAt).toBeNull();
-      expect(snapshot.ticketWorkspaces).toEqual([]);
-    }),
-  );
-
   it.effect("requires a Ticket revision for mutation inputs", () =>
     Effect.gen(function* () {
       const createInput = yield* decodeWorkbenchCreateTicketInput({
         id: "ticket-1",
         projectId: "workbench-project-1",
         title: "Legacy Ticket",
+        // Clients from before Epics and types were removed still send these fields.
+        kind: "bug",
+        epicId: "epic-1",
         markdown: "Legacy body",
         repositoryProjectIds: ["t3-project-1"],
         createdAt: "2026-09-03T12:00:00.000Z",
@@ -334,13 +260,6 @@ describe("Workbench contracts", () => {
         ticketId: "ticket-1",
         threadId: "thread-1",
       });
-      const epicInput = yield* decodeWorkbenchCreateEpicInput({
-        id: "epic-1",
-        projectId: "workbench-project-1",
-        title: "Native planning",
-        markdown: "",
-        createdAt: "2026-09-03T12:00:00.000Z",
-      });
       const archiveInput = yield* decodeWorkbenchArchiveTicketInput({
         ticketId: "ticket-1",
         archivedAt: null,
@@ -353,10 +272,9 @@ describe("Workbench contracts", () => {
         deletedAt: "2026-09-03T12:04:00.000Z",
       });
 
-      expect(createInput).toMatchObject({ kind: "story" });
-      expect(createInput.epicId).toBeUndefined();
+      expect(createInput).not.toHaveProperty("kind");
+      expect(createInput).not.toHaveProperty("epicId");
       expect(createInput.repositoryProjectIds).toEqual(["t3-project-1"]);
-      expect(updateInput.kind).toBeUndefined();
       expect(statusOnlyUpdateInput).toEqual({
         id: "ticket-1",
         expectedRevision: 0,
@@ -366,7 +284,6 @@ describe("Workbench contracts", () => {
       expect(updateInput.repositoryProjectIds).toBeUndefined();
       expect(replaceInput.id).toBeUndefined();
       expect(unlinkInput).toEqual({ ticketId: "ticket-1", threadId: "thread-1" });
-      expect(epicInput.title).toBe("Native planning");
       expect(archiveInput.archivedAt).toBeNull();
       expect(deleteInput.deletedAt).toBe("2026-09-03T12:04:00.000Z");
       expect(
@@ -384,61 +301,24 @@ describe("Workbench contracts", () => {
     }),
   );
 
-  it.effect("decodes Epic Jira links and Ticket References", () =>
+  it.effect("decodes Ticket References", () =>
     Effect.gen(function* () {
-      const jiraIssue = {
-        key: "ORBIT-375",
-        url: "https://acme.atlassian.net/browse/ORBIT-375",
-      };
-      const epic = {
-        id: "epic-1",
-        projectId: "workspace",
-        title: "Linked",
-        markdown: "",
-        archivedAt: null,
-        createdAt: "2026-10-25T10:00:00.000Z",
-        updatedAt: "2026-10-25T10:00:00.000Z",
-      };
       const reference = {
         ticketId: "ticket-1",
-        url: jiraIssue.url,
+        url: "https://acme.atlassian.net/browse/ORBIT-375",
         title: null,
         addedByThreadId: null,
         createdAt: "2026-10-25T10:00:00.000Z",
       };
       const snapshot = yield* decodeWorkbenchSnapshot({
-        projects: [],
-        epics: [{ ...epic, jiraIssue }],
-        tickets: [],
-        assignments: [],
+        ...emptySnapshot,
         references: [reference],
       });
-      expect(snapshot.epics[0]?.jiraIssue).toEqual(jiraIssue);
       expect(snapshot.references).toEqual([reference]);
     }),
   );
 
-  it.effect("requires the Epic version for a Jira link", () =>
-    Effect.gen(function* () {
-      const epicUnlink = {
-        epicId: "epic-1",
-        url: null,
-        expectedUpdatedAt: "2026-10-25T10:00:00.000Z",
-      };
-      expect(yield* decodeWorkbenchSetJiraIssueLinkInput(epicUnlink)).toEqual(epicUnlink);
-      for (const invalid of [
-        { ...epicUnlink, expectedUpdatedAt: undefined },
-        { ...epicUnlink, url: " " },
-        { kind: "ticket", ticketId: "ticket-1", url: null, expectedRevision: 2 },
-      ]) {
-        expect((yield* Effect.exit(decodeWorkbenchSetJiraIssueLinkInput(invalid)))._tag).toBe(
-          "Failure",
-        );
-      }
-    }),
-  );
-
-  it.effect("decodes stored drafts that still carry removed Jira and primary fields", () =>
+  it.effect("decodes stored drafts that still carry removed Jira, primary, and type fields", () =>
     Effect.gen(function* () {
       const draft = yield* decodeWorkbenchTicketDraft({
         id: "draft-1",
@@ -452,7 +332,7 @@ describe("Workbench contracts", () => {
           title: "Draft",
           markdown: "",
           kind: "story",
-          epicId: null,
+          epicId: "epic-1",
           repositoryProjectIds: ["native"],
           primaryT3ProjectId: "native",
           localOnly: false,
@@ -464,6 +344,8 @@ describe("Workbench contracts", () => {
       expect(draft.fields).not.toHaveProperty("localOnly");
       expect(draft.fields).not.toHaveProperty("jiraSprintId");
       expect(draft.fields).not.toHaveProperty("primaryT3ProjectId");
+      expect(draft.fields).not.toHaveProperty("kind");
+      expect(draft.fields).not.toHaveProperty("epicId");
     }),
   );
 
@@ -507,25 +389,20 @@ describe("Workbench contracts", () => {
   });
 });
 
-describe("parseJiraIssueUrl", () => {
+describe("parseWorkbenchReferenceUrl", () => {
   it.each([
-    ["https://acme.atlassian.net/browse/ORBIT-375", "ORBIT-375"],
-    ["  https://acme.atlassian.net/browse/ORBIT-375  ", "ORBIT-375"],
     ["https://acme.atlassian.net/browse/orbit-375", "ORBIT-375"],
     ["https://acme.atlassian.net/browse/ORBIT-375/", "ORBIT-375"],
     ["https://acme.atlassian.net/browse/ORBIT-375?focusedCommentId=1", "ORBIT-375"],
-    ["http://jira.internal:8080/jira/browse/OPS_2-9/activity", "OPS_2-9"],
-    [
-      "https://acme.atlassian.net/jira/software/projects/ORBIT/boards/1?selectedIssue=orbit-12",
-      "ORBIT-12",
-    ],
-  ])("reads the issue key from %s", (input, key) => {
-    expect(parseJiraIssueUrl(input)).toEqual({ key, url: new URL(input.trim()).href });
+  ])("reads the Jira issue key from %s", (input, label) => {
+    expect(parseWorkbenchReferenceUrl(input)).toEqual({
+      url: new URL(input).href,
+      kind: "jira_issue",
+      label,
+    });
   });
 
   it.each([
-    "",
-    "ORBIT-375",
     "https://acme.atlassian.net/",
     "https://acme.atlassian.net/jira/software/projects/ORBIT/boards/1",
     "https://acme.atlassian.net/browse/",
@@ -533,15 +410,10 @@ describe("parseJiraIssueUrl", () => {
     "https://acme.atlassian.net/browse/375-ORBIT",
     "https://acme.atlassian.net/issues/ORBIT-375",
     "https://acme.atlassian.net/board?selectedIssue=not a key",
-    "javascript:alert('https://acme.atlassian.net/browse/ORBIT-375')",
-    "ftp://acme.atlassian.net/browse/ORBIT-375",
-    "data:text/html,https://acme.atlassian.net/browse/ORBIT-375",
-  ])("rejects %s", (input) => {
-    expect(parseJiraIssueUrl(input)).toBeNull();
+  ])("reads %s without an issue key as a link", (input) => {
+    expect(parseWorkbenchReferenceUrl(input)).toMatchObject({ kind: "link" });
   });
-});
 
-describe("parseWorkbenchReferenceUrl", () => {
   it.each([
     ["https://acme.atlassian.net/browse/ORBIT-375", "jira_issue", "ORBIT-375"],
     ["http://jira.internal:8080/jira/browse/OPS_2-9/activity", "jira_issue", "OPS_2-9"],
@@ -598,7 +470,9 @@ describe("parseWorkbenchReferenceUrl", () => {
     "//nas/share/spec.md",
     `/${"a".repeat(2_048)}`,
     "javascript:alert(1)",
+    "javascript:alert('https://acme.atlassian.net/browse/ORBIT-375')",
     "ftp://acme.atlassian.net/browse/ORBIT-375",
+    "data:text/html,https://acme.atlassian.net/browse/ORBIT-375",
     `https://example.com/${"a".repeat(2_048)}`,
   ])("rejects %s", (input) => {
     expect(parseWorkbenchReferenceUrl(input)).toBeNull();

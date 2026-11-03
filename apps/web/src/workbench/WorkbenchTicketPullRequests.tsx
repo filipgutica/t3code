@@ -134,7 +134,7 @@ export function WorkbenchTicketPullRequests({
       <WorkbenchTicketPanelHeader
         title="Pull requests"
         count={rows.length}
-        description="Linked through threads, references, or the ticket work area"
+        description="From Threads and branches"
         collapsed={collapsed}
         onToggle={() => setCollapsed((value) => !value)}
         contentId={contentId}
@@ -227,9 +227,9 @@ function WorkbenchTicketPullRequestRow({
             </TooltipPopup>
           </Tooltip>
         ) : row.inDescription ? (
-          <Badge variant="outline">In description</Badge>
+          <Badge variant="outline">In brief</Badge>
         ) : reference === null ? (
-          <Badge variant="secondary">Work area</Badge>
+          <Badge variant="secondary">Repositories</Badge>
         ) : null}
         {reference !== null && unlinkDisabled !== null ? (
           <Button
@@ -287,7 +287,7 @@ function WorkbenchPullRequestCheckoutStatus({
     <>
       {checkout.isPending ? (
         <p role="status" className="text-xs leading-5 text-muted-foreground">
-          Checking ticket work area pull requests…
+          Checking pull requests for this ticket’s repositories…
         </p>
       ) : null}
       {checkout.errors.map((error) => (

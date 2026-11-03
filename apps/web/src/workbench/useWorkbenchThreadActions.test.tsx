@@ -100,10 +100,8 @@ const workspace = {
 const ticket: WorkbenchTicket = {
   id: WorkbenchTicketId.make("ticket"),
   projectId: workspace.id,
-  epicId: null,
   title: "Delivery Ticket",
   markdown: "",
-  kind: "story",
   repositoryProjectIds: [projectId],
   status: "todo",
   blocked: false,
@@ -144,7 +142,6 @@ const snapshot: WorkbenchSnapshot = {
   references: [],
   projects: [workspace],
   tickets: [ticket],
-  epics: [],
   assignments: [],
   threadRecaps: [],
   ticketWorkspaces: [],
@@ -460,7 +457,7 @@ describe("Thread repository review", () => {
         } else actions.requestTicketThread(ticket, assignment.threadId);
       });
       expect(actions.startThreadRequest).toBeNull();
-      expect(error).toBe("Restore this Workspace before creating a Thread.");
+      expect(error).toBe("Restore this Board before creating a Thread.");
       expectNoStartEffects();
     },
   );

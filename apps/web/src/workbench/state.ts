@@ -117,27 +117,6 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
-  createEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:create-epic",
-    tag: WS_METHODS.workbenchCreateEpic,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshSnapshot,
-  }),
-  updateEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:update-epic",
-    tag: WS_METHODS.workbenchUpdateEpic,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshSnapshot,
-  }),
-  archiveEpic: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:archive-epic",
-    tag: WS_METHODS.workbenchArchiveEpic,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshSnapshot,
-  }),
   createTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:create-ticket",
     tag: WS_METHODS.workbenchCreateTicket,
@@ -148,13 +127,6 @@ export const workbenchEnvironment = {
   updateTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:update-ticket",
     tag: WS_METHODS.workbenchUpdateTicket,
-    scheduler,
-    concurrency: serialPerEnvironment,
-    onSuccess: refreshSnapshot,
-  }),
-  setJiraIssueLink: createEnvironmentRpcCommand(connectionAtomRuntime, {
-    label: "environment-data:workbench:set-jira-issue-link",
-    tag: WS_METHODS.workbenchSetJiraIssueLink,
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,

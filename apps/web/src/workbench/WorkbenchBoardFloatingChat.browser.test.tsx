@@ -25,7 +25,7 @@ import { makeThreadFixture } from "../test-fixtures";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
-import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
@@ -121,10 +121,8 @@ const workspace: WorkbenchProject = {
 const ticket = (id: string, title: string): WorkbenchTicket => ({
   id: WorkbenchTicketId.make(id),
   projectId,
-  epicId: null,
   title,
   markdown: "",
-  kind: "story",
   repositoryProjectIds: [repositoryId],
   status: "todo",
   blocked: false,
@@ -151,8 +149,6 @@ const draft = (id: string, threadId: string, title: string): WorkbenchTicketDraf
   fields: {
     title,
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt,
@@ -244,7 +240,6 @@ function Harness(props: {
       archivedThreadsById={new Map()}
       createContext={{
         linkedProjects,
-        epics: [],
       }}
       canStartDrafts
       draftRequest={request}
@@ -257,7 +252,6 @@ function Harness(props: {
         props.onOpenDraft?.(id);
         setRequest({ id, draft: drafts.find((draft) => draft.id === id) ?? null });
       }}
-      onCreateEpic={() => {}}
       onOpenThread={props.onOpenThread ?? (() => {})}
       onNewTicketThread={props.onNewTicketThread ?? (() => {})}
       newTicketThreadDisabled={false}
@@ -284,7 +278,6 @@ const headerSnapshot = {
   ticketDrafts: [headerDraft],
   assignments: [headerAssignment],
   references: [],
-  epics: [],
   reservedThreadIds: [],
   threadRecaps: [],
   ticketWorkspaces: [],
@@ -299,7 +292,6 @@ function HeaderDraftPage() {
     environmentId,
     initialProjectId: search.workbenchProjectId,
     initialTicketId: search.ticketId,
-    initialEpicId: search.epicId,
     snapshot: headerSnapshot,
     tickets: headerSnapshot.tickets,
     pendingAction: null,
@@ -349,14 +341,13 @@ function HeaderDraftPage() {
   };
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
-    snapshot: headerSnapshot,
     projects: pageData.projects,
     canOperate: true,
     selection,
     setError: noop,
     setPendingAction: noop,
   });
-  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
+  const boardData = getWorkbenchBoardData({ pageData, selection });
   return (
     <WorkbenchPageView
       environmentId={environmentId}
@@ -695,7 +686,7 @@ it("edits a draft's title in its card and shows the full brief above the convers
   await expect.element(card.getByLabelText("Title")).toHaveValue("Plan CSV exports");
   // The full brief is rendered; changes go through the agent.
   await expect.element(card.getByText("Email the CSV")).toBeVisible();
-  await expect.element(card.getByRole("textbox", { name: "Description" })).not.toBeInTheDocument();
+  await expect.element(card.getByRole("textbox", { name: "Brief" })).not.toBeInTheDocument();
   // The conversation stays usable while the full brief is open.
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
@@ -881,7 +872,7 @@ it("retries interrupted discard even when the native planning Thread is gone", a
   expect(mocks.begin).not.toHaveBeenCalled();
 });
 
-it("keeps a failed draft edit when the real Board header starts New Ticket", async () => {
+it("keeps a failed draft edit when the real Board header starts New ticket", async () => {
   await setup();
   useWorkbenchFloatingChatStore.setState({
     pickedThreads: {
@@ -900,7 +891,7 @@ it("keeps a failed draft edit when the real Board header starts New Ticket", asy
   });
   const title = screen.getByRole("textbox", { name: "Title", exact: true });
   await userEvent.fill(title, "Preserve the header edit");
-  await userEvent.click(screen.getByRole("button", { name: "New Ticket", exact: true }));
+  await userEvent.click(screen.getByRole("button", { name: "New ticket", exact: true }));
   await expect.element(page.getByRole("alertdialog")).toBeVisible();
   page.getByRole("button", { name: "Stay", exact: true }).element().focus();
   await userEvent.keyboard("{Enter}");

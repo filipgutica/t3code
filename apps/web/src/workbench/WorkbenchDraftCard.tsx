@@ -1,4 +1,3 @@
-import type { WorkbenchEpic, WorkbenchEpicId } from "@t3tools/contracts";
 import { ChevronDownIcon, ChevronUpIcon, PencilLineIcon, SquareIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
@@ -46,10 +45,8 @@ export interface WorkbenchDraftCardProps {
   /** The agent Thread that last wrote the title or brief, if one did. */
   readonly updatedBy: string | null;
   readonly linkedProjects: ReadonlyArray<Project>;
-  readonly epics: ReadonlyArray<WorkbenchEpic>;
   readonly references: ReactNode;
   readonly referenceCount: number;
-  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   /** The conversation the card is pinned above. */
   readonly children: ReactNode;
 }
@@ -166,7 +163,7 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
       aria-label="Ticket draft"
       className="mx-3 mt-2 flex max-h-[60%] min-h-0 shrink-0 flex-col overflow-hidden rounded-xl border border-border bg-card"
     >
-      {/* The description's label already says who updated it. */}
+      {/* The brief's label already says who updated it. */}
       <CardHeader {...props} updatedBy={null} toggle="Show less" next="compact" />
       <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-3 pt-1 pb-3">
         <CardNotices {...props} />
@@ -174,7 +171,6 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
           fields={props.editor.fields}
           disabled={isFormDisabled(props)}
           linkedProjects={props.linkedProjects}
-          epics={props.epics}
           updatedBy={props.updatedBy}
           references={
             <>
@@ -185,7 +181,6 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
             </>
           }
           onChange={props.editor.edit}
-          onCreateEpic={props.onCreateEpic}
         />
       </div>
       <footer className="shrink-0 border-t border-border px-3 py-1.5">

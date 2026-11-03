@@ -1,16 +1,14 @@
 # Workbench data model
 
-Workbench stores planning and delivery records in each T3 server environment's SQLite database. It shares the database with native T3 projections, but owns its own tables and schema migrations. A **Workbench Workspace** is the planning container stored as `workbench_projects`; it is distinct from a native T3 Project. The existing `WorkbenchProject` names in code and storage remain for compatibility. See the [schema initializer](../../packages/workbench/src/WorkbenchSchema.ts) and [native projection schema](../../apps/server/src/persistence/Migrations/005_Projections.ts).
+Workbench stores planning and delivery records in each T3 server environment's SQLite database. It shares the database with native T3 projections, but owns its own tables and schema migrations. A **Board** is the planning container stored as `workbench_projects`; it is distinct from a native T3 Project. The existing `WorkbenchProject` names in code and storage remain for compatibility. See the [schema initializer](../../packages/workbench/src/WorkbenchSchema.ts) and [native projection schema](../../apps/server/src/persistence/Migrations/005_Projections.ts).
 
 ## Relationships
 
 ```mermaid
 erDiagram
-    WORKBENCH_WORKSPACE ||--o{ PROJECT_LINK : includes
+    BOARD ||--o{ PROJECT_LINK : includes
     NATIVE_T3_PROJECT ||--o{ PROJECT_LINK : referenced_by
-    WORKBENCH_WORKSPACE ||--o{ EPIC : owns
-    WORKBENCH_WORKSPACE ||--o{ TICKET : owns
-    EPIC |o--o{ TICKET : groups
+    BOARD ||--o{ TICKET : owns
     TICKET ||--|{ TICKET_REPOSITORY : scopes
     NATIVE_T3_PROJECT ||--o{ TICKET_REPOSITORY : referenced_by
     TICKET ||--o| TICKET_WORKSPACE : prepares
@@ -24,8 +22,8 @@ The diagram shows conceptual relationships. Native T3 Project and Thread referen
 
 | Record                                 | Role and constraint                                                                                                                                                                          |
 | -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Workbench Workspace and Project link   | A Workspace groups planning records and an ordered set of native repository Projects.                                                                                                        |
-| Epic and Ticket                        | Both belong to one Workspace. A Ticket can belong to one Epic in that Workspace. An Epic can carry one Jira issue key and URL.                                                               |
+| Board and Project link                 | A Board groups planning records and an ordered set of native repository Projects.                                                                                                            |
+| Ticket                                 | Belongs to one Board. Tracker issues are References without lifecycle or parent relationships.                                                                                               |
 | Ticket repository and Ticket Workspace | A Ticket has a non-empty ordered repository scope; each of its Threads works in one of those repositories. Its optional Ticket Workspace tracks branch preparation and repository worktrees. |
 | Assignment                             | Links a Ticket to one native Thread. A Thread ID is unique across Assignments; superseded rows retain history.                                                                               |
 | Thread recap                           | Generated cache keyed by native Thread ID, with no foreign key. Rows outlive unlinked Assignments; snapshots return only recaps of Ticket Threads.                                           |
@@ -42,8 +40,7 @@ Workbench uses SQL transactions for related local changes, such as Ticket and re
 
 The key application invariants are:
 
-- A Ticket's repositories belong to its Workspace's linked Projects.
-- An Epic assigned to a Ticket belongs to the same Workspace. Archived Epics cannot receive new Tickets.
+- A Ticket's repositories belong to its Board's linked Projects.
 - An Assignment references a live native Thread whose Project is one of the Ticket's repositories when it is created. Historical Assignment rows remain after replacement.
 - A repository cannot leave a Ticket while a current Assignment's unarchived Thread works in it. The check reads native Threads inside the Ticket write, so it covers users and agents alike.
 
@@ -61,13 +58,6 @@ Migration 23 adds `workbench_tickets.progress`, a checklist only agents write, a
 
 `workbench_thread_context` holds, per Thread, the snapshot of its owner it has seen (brief, Progress, References, worktrees, and roster titles), the run that delivered it, the provider conversation, and the native compaction or handoff marker at that time, so a turn can carry only the changes. The runtime policy runs at turn start, at queue time, and at checkpoint rollback, so [TicketContextService](../../apps/server/src/workbench/TicketContextService.ts) writes `workbench_thread_context_pending` only for the Thread's run in `starting`, keyed by run ID; a second, different snapshot for that run marks the row conflicted. Each resolve settles the Thread's pending rows from the native runs projection itself, never from an event consumer, because the next turn can resolve before a consumer catches up. The text is built without a lock, because every write in the server waits on a transaction. A short transaction then rechecks the Thread's record and pending rows and records the result: if another resolve or the Thread's own edit changed them meanwhile, the turn sends everything and leaves settling to the next resolve, and a run that is no longer `starting` gets no pending row. A clean row of a completed run becomes the record; a slash-command run leaves it. Any other ended run, or a conflicted one, deletes the record: its provider may hold a change the record lacks, and a change can revert (X → Y → X), so an older record is not a safe subset. While another run is in flight, or once the record's own run is no longer `completed` (rolled back), the turn sends everything. A Thread's own reads and writes update both tables, so its own edits are not sent back. Startup drops only the rows of Threads outside a Ticket or draft.
 
-## Jira state removal (v20)
+## Retired tracker data
 
-Before v20, Workbench synchronized Jira itself in `workbench_jira_*` tables. Migration 20 in the [schema initializer](../../packages/workbench/src/WorkbenchSchema.ts) folds that state into the `jira_issue_key` and `jira_issue_url` columns on `workbench_tickets` and `workbench_epics`, then drops the Jira tables. Epics still use those columns; v22 retires the Ticket pair. Its [tests](../../packages/workbench/src/WorkbenchSchema.test.ts) cover the upgrade.
-
-- **No table rebuild.** The migration adds the link columns with `ALTER TABLE` and updates rows in place. Rebuilding `workbench_tickets` would cascade-delete its repositories, Assignments, and Ticket Workspaces, and rebuilding `workbench_epics` would clear every Ticket's Epic. The base `CREATE TABLE` statements deliberately omit the link columns, and fresh databases get them from the same migration; adding them to the base statements breaks that `ALTER TABLE`.
-- **Legacy DDL stays until migration 20 is recorded.** The Jira `CREATE TABLE` statements run only while the ledger lacks version 20, because earlier numbered migrations still alter those tables. A fresh database creates them and drops them in the same initialization. Do not delete the statements while databases older than v20 can still upgrade.
-- **Link precedence.** A Ticket takes its key and URL from an active issue link first, then the most recently seen link, then its creation record. An Epic takes them from its Epic link, then its creation record. Creation records have no URL, so the migration builds `<site>/browse/<key>` from the connection.
-- **Inactive links archive the Ticket.** Sync hid Tickets whose issue had left every selected sprint (`MAX(active) = 0`). The migration archives them so they leave the active Board instead of reappearing.
-- **Reservations become records.** A Jira creation record whose local Ticket or Epic never appeared, whatever its state, is inserted as a local `todo` record from the stored title and Markdown. Its repository scope comes from the creation request, falling back to the binding defaults. Pending execution runs are settled later by the store's local execution path, not by the migration.
-- **Drop order.** Child tables drop before `workbench_jira_bindings` and `workbench_jira_connections`, so no foreign-key action runs during the drop. Stored Jira OAuth secrets are outside SQLite and are not removed.
+Migrations 20, 22, and 24 preserve tracker links as References without rebuilding tables. Migration 24 first copies missing Epic Jira URLs for existing Tickets and drafts into their ordered References, then removes `fields.kind` and `fields.epicId` from its stored JSON. The retired `workbench_epics` table and the Ticket `kind`, `epic_id`, and Jira link columns remain unread by active code. Keep the historical base DDL and migrations: rebuilding these tables can cascade-delete repositories, Assignments, or worktree records. Fresh databases follow the same migration path; new Ticket inserts use the retired columns' existing defaults.

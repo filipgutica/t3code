@@ -96,7 +96,7 @@ export const ticketWorkspaceHostLayer = Layer.effect(
                 new WorkbenchOperationError({
                   code: "ticket_workspace_preparation_failed",
                   message:
-                    "The Ticket Workspace branch name could not be generated. Check the source control writer model in Settings and retry.",
+                    "The Ticket branch name could not be generated. Check the source control writer model in Settings and retry.",
                 }),
             ),
           );

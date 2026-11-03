@@ -1,6 +1,6 @@
 # Workbench architecture
 
-Workbench is a planning layer inside a T3 Code environment. It owns Workbench Workspaces, Epics, Tickets, repository scope, Ticket Workspaces, Assignments, References, and an Epic's optional Jira issue link. T3 Code remains the owner of Projects, Threads, provider execution, Git, and checkpoints. Workbench records refer to native Project and Thread IDs instead of copying those records. A Workbench Workspace belongs to one environment; boards that span environments are not part of this model.
+Workbench is a planning layer inside a T3 Code environment. It owns Boards, Tickets, repository scope, Ticket worktrees, Assignments, and References. T3 Code remains the owner of Projects, Threads, provider execution, Git, and checkpoints. Workbench records refer to native Project and Thread IDs instead of copying those records. A Board belongs to one environment; boards that span environments are not part of this model.
 
 ## Module boundaries
 
@@ -11,7 +11,7 @@ Workbench is a planning layer inside a T3 Code environment. It owns Workbench Wo
 | [`apps/server/src/workbench`](../../apps/server/src/workbench)          | Environment-specific adapters for native records, Git, and configuration; service composition, reactors, RPC handlers, and authorization.                        |
 | [`apps/web/src/workbench`](../../apps/web/src/workbench)                | React UI and environment-scoped queries and commands. Desktop uses this web UI inside Electron.                                                                  |
 
-The product UI says **Workbench Workspace** to distinguish it from a native T3 Project. Existing `WorkbenchProject` types, RPC names, and `workbench_projects` storage names retain the older term for compatibility. [Contracts](../../packages/contracts/src/workbench.ts) and [schema](../../packages/workbench/src/WorkbenchSchema.ts) use those names.
+The product UI says **Board** to distinguish it from a native T3 Project. Existing `WorkbenchProject` types, RPC names, and `workbench_projects` storage names retain the older term for compatibility. [Contracts](../../packages/contracts/src/workbench.ts) and [schema](../../packages/workbench/src/WorkbenchSchema.ts) use those names.
 
 ## Request and ownership flow
 
@@ -35,6 +35,6 @@ Workbench and native T3 persistence share the environment's SQLite database and 
 
 ## Schemas and lifecycle
 
-Wire contracts describe client/server messages and decoded snapshots. They are not copies of SQLite rows. [`WorkbenchSchema.ts`](../../packages/workbench/src/WorkbenchSchema.ts) owns the Workbench database shape and migration ledger; store and repository code maps rows to the public contract. Compatibility defaults on snapshots allow older servers to omit newer fields, while server-controlled revisions reject stale Ticket writes. Changes to persisted or wire shapes must account for both boundaries. See [Workbench data model](workbench-data-model.md).
+Wire contracts describe client/server messages and decoded snapshots. They are not copies of SQLite rows. [`WorkbenchSchema.ts`](../../packages/workbench/src/WorkbenchSchema.ts) owns the Workbench database shape and migration ledger; store and repository code maps rows to the public contract. Snapshots require the current schema; server-controlled revisions reject stale Ticket writes. Changes to persisted or wire shapes must account for both boundaries. See [Workbench data model](workbench-data-model.md).
 
-Ticket preparation and Assignment history cross into native Git and Thread ownership; see [Ticket lifecycle](workbench-ticket-lifecycle.md). Workbench stores References and Epic Jira links but never calls Jira or opens a Reference; agents use their own connectors and record what they find as References. Fork integration and upstream sync rules remain in [Maintaining the Workbench fork](workbench-fork.md).
+Ticket preparation and Assignment history cross into native Git and Thread ownership; see [Ticket lifecycle](workbench-ticket-lifecycle.md). Workbench stores References but never calls Jira or opens a Reference; agents use their own connectors and record what they find as References. Fork integration and upstream sync rules remain in [Maintaining the Workbench fork](workbench-fork.md).

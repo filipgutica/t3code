@@ -24,10 +24,10 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await expect(preparedCheckouts).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("unprepared.png"), fullPage: true });
   const before = await snapshot(demo);
-  await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare worktrees", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Add repository", exact: true })).toBeVisible();
   expect((await snapshot(demo)).ticketWorkspaces).toEqual(before.ticketWorkspaces);
-  await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare worktrees", exact: true }).click();
   await expect(page.getByText("Ready", { exact: true }).first()).toBeVisible();
   const prepared = await snapshot(demo);
   expect(prepared.assignments).toEqual(before.assignments);
@@ -39,7 +39,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   const original = workspace.repositories[0]!;
   const marker = NodePath.join(original.worktreePath, "retained-work.txt");
   await NodeFSP.writeFile(marker, "Keep this local work.\n");
-  const repositories = page.getByRole("list", { name: "Work area repositories" });
+  const repositories = page.getByRole("list", { name: "Ticket repositories" });
   const addRepository = page.getByRole("combobox", { name: "Add repository", exact: true });
   const orbitApi = page.getByRole("option", { name: "Orbit API", exact: true });
   const orbitWeb = page.getByRole("option", { name: "Orbit Web", exact: true });
@@ -117,7 +117,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await page.screenshot({ path: testInfo.outputPath("narrow.png"), fullPage: true });
   await page.setViewportSize({ width: 1280, height: 900 });
   await page
-    .getByRole("button", { name: "Expand Advanced work area settings", exact: true })
+    .getByRole("button", { name: "Expand Advanced repository settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page
@@ -127,7 +127,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   const refusal = page.getByRole("alertdialog").getByRole("alert");
   await expect(refusal).toBeVisible();
   await expect(refusal).toContainText(
-    "has local changes. Commit or remove them before resetting the Workspace.",
+    "has local changes. Commit or remove them before resetting the worktrees.",
   );
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   await NodeFSP.unlink(marker);
@@ -144,7 +144,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   await page.getByRole("button", { name: "Create Thread", exact: true }).click();
   await page
     .getByRole("dialog")
-    .getByRole("button", { name: "Create work area and Thread", exact: true })
+    .getByRole("button", { name: "Create worktrees and Thread", exact: true })
     .click();
   await expect(ticketChat(page).locator('[contenteditable="true"]')).toBeVisible();
   const initial = await snapshot(demo);
@@ -177,7 +177,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   );
   expect(retainedThread?.worktreePath).toBe(thread.worktreePath);
   await page
-    .getByRole("button", { name: "Expand Advanced work area settings", exact: true })
+    .getByRole("button", { name: "Expand Advanced repository settings", exact: true })
     .click();
   await page.getByRole("button", { name: "Remove prepared worktrees", exact: true }).click();
   await page
@@ -186,10 +186,9 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
     .click();
   await expect(
     page
-      .getByText(
-        "The Ticket Workspace cannot be reset while a native Thread still uses one of its worktrees.",
-        { exact: true },
-      )
+      .getByText("The Ticket's worktrees cannot be reset while a Thread still uses one of them.", {
+        exact: true,
+      })
       .last(),
   ).toBeVisible();
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
@@ -203,7 +202,7 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   );
   await page
     .getByRole("link", {
-      name: "Back to Ticket Validate invitation addresses in Workspace Orbit",
+      name: "Back to Ticket Validate invitation addresses in Board Orbit",
       exact: true,
     })
     .click();
@@ -264,11 +263,11 @@ test("standalone preparation shows progress immediately and retries a failed req
     page,
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-003"),
   );
-  await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare worktrees", exact: true }).click();
   await expect(page.getByRole("combobox", { name: "Add repository", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
+  await page.getByRole("button", { name: "Prepare worktrees", exact: true }).click();
   await expect(
-    page.getByRole("button", { name: "Preparing work area…", exact: true }),
+    page.getByRole("button", { name: "Preparing worktrees…", exact: true }),
   ).toBeDisabled();
   await expect(page.getByText("Preparing", { exact: true })).toBeVisible();
   failure.resolve();

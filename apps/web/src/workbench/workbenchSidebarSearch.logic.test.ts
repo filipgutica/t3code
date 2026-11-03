@@ -77,7 +77,7 @@ describe("Workbench sidebar search destinations", () => {
         kind: "workspace",
         key: "workspace:analytics",
         title: "Analytics",
-        subtitle: "Workspace overview",
+        subtitle: "Board overview",
         workspaceId,
         workspaceTitle: "Analytics",
       },

@@ -5,7 +5,6 @@ import type {
 import type {
   EnvironmentId,
   WorkbenchAssignment,
-  WorkbenchEpic,
   WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -28,15 +27,11 @@ export const getWorkbenchSidebarTicketDetails = ({
   threads,
   projects,
   workbenchProjects,
-  epics,
   referencesByTicket,
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly tickets: ReadonlyArray<
-    Pick<
-      WorkbenchTicket,
-      "id" | "projectId" | "kind" | "status" | "blocked" | "epicId" | "repositoryProjectIds"
-    >
+    Pick<WorkbenchTicket, "id" | "projectId" | "status" | "blocked" | "repositoryProjectIds">
   >;
   readonly assignments: ReadonlyArray<
     Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
@@ -61,7 +56,6 @@ export const getWorkbenchSidebarTicketDetails = ({
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
   readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
-  readonly epics: ReadonlyArray<Pick<WorkbenchEpic, "id" | "title">>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
 }) => {
   const threadsById = new Map(
@@ -82,7 +76,6 @@ export const getWorkbenchSidebarTicketDetails = ({
     assignments,
     threadsById,
   });
-  const epicsById = new Map(epics.map((epic) => [epic.id, epic.title]));
   const assignmentsByTicket = new Map<
     WorkbenchTicketId,
     Array<Pick<WorkbenchAssignment, "threadId">>
@@ -101,11 +94,9 @@ export const getWorkbenchSidebarTicketDetails = ({
           environmentId,
           readOnly: environmentId === null || !activeWorkspaceIds.has(ticket.projectId),
           executionStatus: executionStatuses.get(ticket.id) ?? null,
-          kind: ticket.kind,
           statusLabel: WORKBENCH_TICKET_STATUS_LABELS[ticket.status],
           attentionLabel: ticket.blocked ? "Blocked" : null,
           issue: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id)),
-          epicTitle: ticket.epicId ? epicsById.get(ticket.epicId) : undefined,
           repositories: ticket.repositoryProjectIds.flatMap((id) => {
             const title = projectsById.get(id);
             return title ? [title] : [];

@@ -1,12 +1,5 @@
-import {
-  WorkbenchProjectId,
-  WorkbenchEpicId,
-  type ProjectId,
-  type EnvironmentId,
-  type WorkbenchEpic,
-  type WorkbenchSnapshot,
-} from "@t3tools/contracts";
-import { useRef, useState } from "react";
+import { WorkbenchProjectId, type ProjectId, type EnvironmentId } from "@t3tools/contracts";
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
@@ -20,7 +13,6 @@ import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 
 export function useWorkbenchPageDialogs({
   environmentId,
-  snapshot,
   projects,
   canOperate,
   selection,
@@ -28,7 +20,6 @@ export function useWorkbenchPageDialogs({
   setError,
 }: {
   readonly environmentId: EnvironmentId | null;
-  readonly snapshot: WorkbenchSnapshot | null;
   readonly projects: ReturnType<typeof useWorkbenchPageData>["projects"];
   readonly canOperate: boolean;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
@@ -40,11 +31,8 @@ export function useWorkbenchPageDialogs({
     setAwaitingProjectId,
     setSelectedProjectId,
     setSelectedTicketId,
-    setSelectedEpicId,
     setAwaitingTicketId,
-    setAwaitingEpicId,
     updateRouteSelection,
-    updateEpicRouteSelection,
   } = selection;
   const createProject = useAtomCommand(workbenchEnvironment.createProject, {
     reportFailure: false,
@@ -52,19 +40,10 @@ export function useWorkbenchPageDialogs({
   const updateProject = useAtomCommand(workbenchEnvironment.updateProject, {
     reportFailure: false,
   });
-  const createEpic = useAtomCommand(workbenchEnvironment.createEpic, { reportFailure: false });
-  const updateEpic = useAtomCommand(workbenchEnvironment.updateEpic, { reportFailure: false });
-  const archiveEpic = useAtomCommand(workbenchEnvironment.archiveEpic, { reportFailure: false });
-  const canArchiveEpic = canOperate;
   const createTicket = useAtomCommand(workbenchEnvironment.createTicket, { reportFailure: false });
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const [ticketDialogEpicId, setTicketDialogEpicId] = useState<WorkbenchEpicId | null>(null);
-  // Seeds a new conversation's Epic; a resumed draft keeps the Epic it already has.
-  const [conversationEpicId, setConversationEpicId] = useState<WorkbenchEpicId | null>(null);
-  const [epicDialogOpen, setEpicDialogOpen] = useState(false);
-  const epicCreatedRef = useRef<((epicId: WorkbenchEpicId) => void) | null>(null);
   const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
     if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
@@ -84,7 +63,6 @@ export function useWorkbenchPageDialogs({
     setAwaitingProjectId(id);
     setSelectedProjectId(id);
     setSelectedTicketId(null);
-    setSelectedEpicId(null);
     await updateRouteSelection(id);
     return true;
   };
@@ -103,7 +81,7 @@ export function useWorkbenchPageDialogs({
       environmentId,
       input: {
         id: selectedProject.id,
-        expectedRevision: selectedProject.revision ?? 0,
+        expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
         updatedAt: new Date().toISOString(),
@@ -141,94 +119,13 @@ export function useWorkbenchPageDialogs({
     if (reportWorkbenchCommandFailure(result, setError)) return false;
     const id = result.value.id;
     setAwaitingTicketId(id);
-    setAwaitingEpicId(null);
     setSelectedTicketId(id);
-    setSelectedEpicId(null);
     await updateRouteSelection(selectedProject.id, id);
     return true;
   };
 
-  const saveEpicContent = async (epic: WorkbenchEpic, title: string, markdown: string) => {
-    if (
-      !canOperate ||
-      environmentId === null ||
-      selectedProject?.archivedAt != null ||
-      title.trim().length === 0
-    )
-      return false;
-    setPendingAction(`update-epic:${epic.id}`);
-    setError(null);
-    const result = await updateEpic({
-      environmentId,
-      input: {
-        id: epic.id,
-        title: title.trim(),
-        markdown: markdown.trim(),
-        updatedAt: new Date().toISOString(),
-      },
-    });
-    setPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setError)) return false;
-    return true;
-  };
-
-  const setEpicArchived = async (epic: WorkbenchEpic, archivedAt: string | null) => {
-    if (
-      !canArchiveEpic ||
-      snapshot?.supportsEpicLifecycle !== true ||
-      environmentId === null ||
-      !selectedProject ||
-      selectedProject.archivedAt != null
-    )
-      return false;
-    setPendingAction(`archive-epic:${epic.id}`);
-    setError(null);
-    const result = await archiveEpic({
-      environmentId,
-      input: { id: epic.id, archivedAt, expectedUpdatedAt: epic.updatedAt },
-    });
-    setPendingAction(null);
-    return !reportWorkbenchCommandFailure(result, setError);
-  };
-
-  const submitEpic = async (title: string, markdown: string) => {
-    if (
-      !canOperate ||
-      environmentId === null ||
-      selectedProject === null ||
-      selectedProject.archivedAt != null
-    )
-      return false;
-    const onCreated = epicCreatedRef.current;
-    setPendingAction("create-epic");
-    setError(null);
-    const id = WorkbenchEpicId.make(randomUUID());
-    const result = await createEpic({
-      environmentId,
-      input: {
-        id,
-        projectId: selectedProject.id,
-        title,
-        markdown,
-        createdAt: new Date().toISOString(),
-      },
-    });
-    setPendingAction(null);
-    if (reportWorkbenchCommandFailure(result, setError)) return false;
-    if (onCreated) {
-      onCreated(id);
-      return true;
-    }
-    setAwaitingEpicId(id);
-    setAwaitingTicketId(null);
-    setSelectedEpicId(id);
-    setSelectedTicketId(null);
-    await updateEpicRouteSelection(selectedProject.id, id);
-    return true;
-  };
-
   // New ticket starts a fresh preparation; begin replaces the intent with its durable id.
-  const openTicketConversation = (epicId: WorkbenchEpicId | null = null) => {
+  const openTicketConversation = () => {
     if (
       !canOperate ||
       environmentId === null ||
@@ -237,7 +134,6 @@ export function useWorkbenchPageDialogs({
     )
       return;
     setError(null);
-    setConversationEpicId(epicId);
     void navigate({
       to: "/workbench",
       search: withWorkbenchEnvironmentSearch(environmentId, {
@@ -248,17 +144,13 @@ export function useWorkbenchPageDialogs({
   };
   const closeTicketConversation = () => {
     setError(null);
-    setConversationEpicId(null);
     if (selectedProject) void updateRouteSelection(selectedProject.id);
   };
   // Both draft creation and promotion select the same durable id and conversation.
   const openCreatedTicket = (draft: WorkbenchConversationDraft) => {
     if (!selectedProject) return;
-    setConversationEpicId(null);
     setAwaitingTicketId(draft.id);
-    setAwaitingEpicId(null);
     setSelectedTicketId(draft.id);
-    setSelectedEpicId(null);
     void updateRouteSelection(selectedProject.id, draft.id);
   };
   const openDraftThread = (draft: WorkbenchConversationDraft) => {
@@ -268,50 +160,27 @@ export function useWorkbenchPageDialogs({
       params: { environmentId, threadId: draft.threadId },
     });
   };
-  const openTicketDialog = (epicId: WorkbenchEpicId | null = null) => {
+  const openTicketDialog = () => {
     if (!canOperate || selectedProject?.archivedAt != null) return;
     setError(null);
-    setTicketDialogEpicId(epicId);
     setTicketDialogOpen(true);
-  };
-  const openEpicDialog = (onCreated?: (epicId: WorkbenchEpicId) => void) => {
-    if (!canOperate || selectedProject?.archivedAt != null) return;
-    epicCreatedRef.current = onCreated ?? null;
-    setError(null);
-    setEpicDialogOpen(true);
   };
   const handleTicketDialogOpenChange = (open: boolean) => {
     setTicketDialogOpen(open);
     if (!open) setError(null);
   };
-  const handleEpicDialogOpenChange = (open: boolean) => {
-    setEpicDialogOpen(open);
-    if (!open) {
-      epicCreatedRef.current = null;
-      setError(null);
-    }
-  };
   return {
     editWorkspaceOpen,
     setEditWorkspaceOpen,
     ticketDialogOpen,
-    ticketDialogEpicId,
-    epicDialogOpen,
     submitProject,
     saveWorkspace,
     submitTicket,
-    saveEpicContent,
-    canArchiveEpic,
-    setEpicArchived,
-    submitEpic,
     openTicketDialog,
-    conversationEpicId,
     openTicketConversation,
     closeTicketConversation,
     openCreatedTicket,
     openDraftThread,
-    openEpicDialog,
     handleTicketDialogOpenChange,
-    handleEpicDialogOpenChange,
   };
 }

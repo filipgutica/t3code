@@ -46,9 +46,7 @@ const project = {
 const ticket = {
   id: WorkbenchTicketId.make("ticket-one"),
   projectId: WorkbenchProjectId.make("workspace-one"),
-  epicId: null,
   title: "Streamline Ticket Threads",
-  kind: "story",
   markdown: "## Goal\n\nStart the first turn.",
   repositoryProjectIds: [projectId],
   status: "todo",

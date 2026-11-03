@@ -3,43 +3,25 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 import {
   getActiveAssignmentsByTicket,
   getAssignmentsForTicket,
-  getWorkbenchEpicProgress,
   getWorkbenchContextForThread,
-  groupWorkbenchTicketsByEpic,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
-  getWorkbenchTicketTemplate,
   getWorkbenchTicketThreadSections,
   getWorkbenchThreadPresentation,
   getWorkbenchTicketStatusMoves,
   getVisibleWorkbenchAssignments,
   getWorkbenchOmittedThreadIds,
   getWorkbenchOmittedThreadsStatus,
-  isWorkbenchTicketKind,
   isWorkbenchThreadArchived,
-  WORKBENCH_TICKET_KIND_LABELS,
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
-  it("derives Epic progress from its child Tickets", () => {
-    expect(
-      getWorkbenchEpicProgress([
-        { status: "done" },
-        { status: "in_progress" },
-        { status: "done" },
-        { status: "todo" },
-      ]),
-    ).toEqual({ completed: 2, percent: 50, total: 4 });
-    expect(getWorkbenchEpicProgress([])).toEqual({ completed: 0, percent: 0, total: 0 });
-  });
-
   it("uses stored generated summaries without falling back to descriptions", () => {
     expect(
       getWorkbenchTicketSummaryPresentation({
@@ -113,27 +95,6 @@ describe("Workbench ticket helpers", () => {
     expect(getWorkbenchTicketSummaryActionLabel(undefined)).toBe("Generate summary");
   });
 
-  it("groups Ticket swimlanes by Epic with unassigned Tickets last", () => {
-    const firstEpic = { id: WorkbenchEpicId.make("epic-one"), title: "First Epic" };
-    const secondEpic = { id: WorkbenchEpicId.make("epic-two"), title: "Second Epic" };
-    const emptyEpic = { id: WorkbenchEpicId.make("epic-empty"), title: "Empty Epic" };
-    const firstTicket = { id: "ticket-one", epicId: firstEpic.id };
-    const secondTicket = { id: "ticket-two", epicId: secondEpic.id };
-    const unassignedTicket = { id: "ticket-three", epicId: null };
-
-    expect(
-      groupWorkbenchTicketsByEpic(
-        [unassignedTicket, secondTicket, firstTicket],
-        [firstEpic, secondEpic, emptyEpic],
-      ),
-    ).toEqual([
-      { epic: firstEpic, tickets: [firstTicket] },
-      { epic: secondEpic, tickets: [secondTicket] },
-      { epic: emptyEpic, tickets: [] },
-      { epic: null, tickets: [unassignedTicket] },
-    ]);
-  });
-
   it("prefers a live Thread when live and archived snapshots transiently overlap", () => {
     const threadId = ThreadId.make("thread-one");
 
@@ -145,22 +106,6 @@ describe("Workbench ticket helpers", () => {
       ),
     ).toBe(false);
     expect(isWorkbenchThreadArchived(threadId, new Map(), new Map([[threadId, {}]]))).toBe(true);
-  });
-
-  it("provides stable product-owned templates for each Ticket kind", () => {
-    expect(WORKBENCH_TICKET_KIND_LABELS).toEqual({ story: "Story", bug: "Bug" });
-    expect(getWorkbenchTicketTemplate("story")).toContain("## Goal");
-    expect(getWorkbenchTicketTemplate("story")).toContain("## Work");
-    expect(getWorkbenchTicketTemplate("story")).toContain("## Non-goals");
-    expect(getWorkbenchTicketTemplate("story")).toContain("## Testing");
-    expect(getWorkbenchTicketTemplate("bug")).toContain("## Observed behavior");
-    expect(getWorkbenchTicketTemplate("bug")).toContain("## Environment");
-    expect(getWorkbenchTicketTemplate("bug")).toContain("## Root-cause evidence");
-    expect(getWorkbenchTicketTemplate("bug")).toContain("## Proposed fix");
-    expect(getWorkbenchTicketTemplate("bug")).toContain("## Testing");
-    expect(isWorkbenchTicketKind("story")).toBe(true);
-    expect(isWorkbenchTicketKind("bug")).toBe(true);
-    expect(isWorkbenchTicketKind("task")).toBe(false);
   });
 
   it("offers every other Board column as a direct Ticket destination", () => {
@@ -209,16 +154,16 @@ describe("Workbench ticket helpers", () => {
       id: workspaceId,
       title: "Agent Workbench",
       linkedProjectIds: [repositoryId],
+      archivedAt: null,
+      revision: 0,
       createdAt: "2026-09-03T00:00:00.000Z",
       updatedAt: "2026-09-03T00:00:00.000Z",
     } as const;
     const ticket = {
       id: ticketId,
       projectId: workspaceId,
-      epicId: null,
       title: "Keep Ticket context visible",
       markdown: "",
-      kind: "story",
       repositoryProjectIds: [repositoryId],
       status: "in_progress",
       blocked: false,
@@ -239,7 +184,6 @@ describe("Workbench ticket helpers", () => {
         {
           references: [],
           projects: [workspace],
-          epics: [],
           tickets: [ticket],
           threadRecaps: [],
           ticketWorkspaces: [],
@@ -254,7 +198,6 @@ describe("Workbench ticket helpers", () => {
         {
           references: [],
           projects: [workspace],
-          epics: [],
           tickets: [ticket],
           threadRecaps: [],
           ticketWorkspaces: [],

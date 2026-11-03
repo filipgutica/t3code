@@ -8,7 +8,6 @@ import { DEMO_REPOSITORIES } from "./repositories.mts";
 
 // Synthetic issues on a reserved domain: Workbench stores and shows links but never contacts Jira.
 const JIRA_BROWSE_URL = "https://jira.example.invalid/browse/";
-const EPIC_LINKS = [{ id: "orbit-onboarding", key: "ORBIT-100" }] as const;
 const TICKET_LINKS = [
   { id: "orbit-001", key: "ORBIT-101" },
   { id: "orbit-002", key: "ORBIT-102" },
@@ -64,8 +63,8 @@ const showcaseReferences = (artifactsDir: string) => [
 ];
 
 /**
- * Link the seeded Orbit Epic to Jira and give Orbit Tickets References, after the
- * native seed has created them. The server must be stopped.
+ * Give Orbit Tickets synthetic References after the native seed has created them.
+ * The server must be stopped.
  */
 export const seedDemoReferences = (home: string): void => {
   // Refuses the live ~/.t3 home; the path stays as given so it matches the server's artifacts path.
@@ -88,14 +87,6 @@ export const seedDemoReferences = (home: string): void => {
   try {
     db.exec("BEGIN IMMEDIATE");
     try {
-      for (const link of EPIC_LINKS) {
-        const { changes } = db
-          .prepare(
-            "UPDATE workbench_epics SET jira_issue_key = ?, jira_issue_url = ? WHERE epic_id = ?",
-          )
-          .run(link.key, `${JIRA_BROWSE_URL}${link.key}`, link.id);
-        requireSeeded(changes, link.id);
-      }
       // The Jira issue comes first, so it stays the Ticket's identity label.
       for (const link of TICKET_LINKS) {
         requireSeeded(

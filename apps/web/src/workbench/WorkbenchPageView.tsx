@@ -2,7 +2,7 @@ import "./WorkbenchPage.css";
 
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchThreadActions } from "./useWorkbenchThreadActions";
-import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
@@ -19,7 +19,6 @@ import {
   Trash2Icon,
   BlocksIcon,
   FolderGit2Icon,
-  Layers3Icon,
   LayoutDashboardIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -41,13 +40,6 @@ import {
 } from "../components/ui/empty";
 import { Skeleton } from "../components/ui/skeleton";
 import {
-  Select,
-  SelectItem,
-  SelectPopup,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import {
   Menu,
   MenuGroup,
   MenuItem,
@@ -68,8 +60,6 @@ import { WorkbenchQueryError } from "./WorkbenchQueryError";
 import {
   WorkbenchTicketDetail,
   WorkbenchTicketDialog,
-  WorkbenchEpicDetail,
-  WorkbenchEpicDialog,
   WorkbenchWorkspaceDialog,
 } from "./WorkbenchForms";
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
@@ -91,7 +81,7 @@ type WorkbenchPageViewProps = {
   readonly workspaceActions: ReturnType<typeof useWorkbenchWorkspaceActions>;
   readonly environmentId: EnvironmentId | null;
   readonly createWorkspace: boolean;
-  /** `create=ticket` is in the URL: the Workspace shows its ticket planning conversation. */
+  /** `create=ticket` is in the URL: the Board shows its ticket planning conversation. */
   readonly createTicket?: boolean;
   readonly error: string | null;
   readonly pendingAction: string | null;
@@ -99,7 +89,7 @@ type WorkbenchPageViewProps = {
   readonly pageData: ReturnType<typeof useWorkbenchPageData>;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
   readonly dialogs: ReturnType<typeof useWorkbenchPageDialogs>;
-  readonly boardData: ReturnType<typeof useWorkbenchBoardData>;
+  readonly boardData: ReturnType<typeof getWorkbenchBoardData>;
   readonly ticketActions: ReturnType<typeof useWorkbenchTicketActions>;
   readonly threadActions: ReturnType<typeof useWorkbenchThreadActions>;
 };
@@ -140,14 +130,14 @@ function WorkbenchWorkspaceLifecycleMenu({
         onClick={() => void actions.setArchived(workspace)}
       >
         {archived ? <RotateCcwIcon /> : <ArchiveIcon />}
-        {archived ? "Restore Workspace" : "Archive Workspace"}
+        {archived ? "Restore Board" : "Archive Board"}
       </MenuItem>
       <MenuItem
         variant="destructive"
         disabled={pending || !actions.canDelete}
         onClick={() => actions.requestDeletion(workspace)}
       >
-        <Trash2Icon /> Delete Workspace…
+        <Trash2Icon /> Delete Board…
       </MenuItem>
     </MenuGroup>
   );
@@ -169,8 +159,7 @@ function WorkbenchBoardHeader(
     props;
   const { keybindings, availableEditors } = pageData;
   const { selectedProject } = selection;
-  const { setEditWorkspaceOpen, openTicketDialog, openTicketConversation, openEpicDialog } =
-    dialogs;
+  const { setEditWorkspaceOpen, openTicketDialog, openTicketConversation } = dialogs;
   const { projectTickets, linkedT3Projects } = boardData;
   const controlsHostRef = useWorkbenchControlsHostRef();
 
@@ -192,7 +181,7 @@ function WorkbenchBoardHeader(
             <span className="shrink-0 text-xs text-muted-foreground">
               {projectTickets.length} tickets
             </span>
-            {readOnly ? <Badge variant="outline">Archived Workspace</Badge> : null}
+            {readOnly ? <Badge variant="outline">Archived Board</Badge> : null}
           </div>
         </div>
         <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -221,17 +210,17 @@ function WorkbenchBoardHeader(
             </PopoverPopup>
           </Popover>
           <Button
-            aria-label="New Ticket"
+            aria-label="New ticket"
             disabled={mutationDisabled}
             onClick={() => openTicketConversation()}
             size="sm"
           >
             <PlusIcon data-icon="inline-start" />
-            New Ticket
+            New ticket
           </Button>
           <Menu>
             <MenuTrigger
-              render={<Button aria-label="Workspace actions" size="icon-sm" variant="ghost" />}
+              render={<Button aria-label="Board actions" size="icon-sm" variant="ghost" />}
             >
               <MoreHorizontalIcon />
             </MenuTrigger>
@@ -240,9 +229,6 @@ function WorkbenchBoardHeader(
                 <MenuItem disabled={mutationDisabled} onClick={() => openTicketDialog()}>
                   <PlusIcon /> New ticket manually
                 </MenuItem>
-                <MenuItem disabled={mutationDisabled} onClick={() => openEpicDialog()}>
-                  <Layers3Icon /> New Epic
-                </MenuItem>
                 <MenuItem
                   disabled={mutationDisabled}
                   onClick={() => {
@@ -250,7 +236,7 @@ function WorkbenchBoardHeader(
                     setEditWorkspaceOpen(true);
                   }}
                 >
-                  <Settings2Icon /> Edit Workspace
+                  <Settings2Icon /> Edit Board
                 </MenuItem>
               </MenuGroup>
               <MenuSeparator />
@@ -306,39 +292,6 @@ function WorkbenchBoardErrors(
         </div>
       ) : null}
     </>
-  );
-}
-
-function WorkbenchBoardToolbar(props: Pick<WorkbenchPageViewProps, "boardData">) {
-  const { boardData } = props;
-
-  const { projectEpics, boardGroupModeForView, setBoardGroupMode } = boardData;
-
-  return (
-    <div className="flex min-w-0 max-w-44 flex-wrap items-center gap-2 text-sm">
-      {projectEpics.length > 0 ? (
-        <div className="w-44 max-w-full">
-          <Select
-            value={boardGroupModeForView}
-            onValueChange={(value) => {
-              if (value === "none" || value === "epic") {
-                setBoardGroupMode(value);
-              }
-            }}
-          >
-            <SelectTrigger aria-label="Group Board tickets" size="sm">
-              <SelectValue>
-                Group by: {boardGroupModeForView === "epic" ? "Epic" : "Status"}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectPopup data-workbench-header-overlay="">
-              <SelectItem value="none">Status</SelectItem>
-              <SelectItem value="epic">Epic</SelectItem>
-            </SelectPopup>
-          </Select>
-        </div>
-      ) : null}
-    </div>
   );
 }
 
@@ -425,18 +378,8 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
   } = props;
   const { keybindings, availableEditors, threadsById, archivedThreadsById, threadLookupReady } =
     pageData;
-  const {
-    setSelectedTicketId,
-    setSelectedEpicId,
-    setAwaitingTicketId,
-    setAwaitingEpicId,
-    selectedProject,
-    selectedTicket,
-    updateEpicRouteSelection,
-    closeWorkItem,
-  } = selection;
-  const { openEpicDialog } = dialogs;
-  const { linkedT3Projects, projectEpics, selectedAssignments } = boardData;
+  const { selectedProject, selectedTicket, closeWorkItem } = selection;
+  const { linkedT3Projects, selectedAssignments } = boardData;
   const planning =
     selectedTicket === null ? null : getPlanningTicketDraft(pageData.snapshot, selectedTicket.id);
   const blockThreadChange = () =>
@@ -466,15 +409,12 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         context={{
           environmentId,
           workspace: selectedProject,
-          createContext: {
-            linkedProjects: linkedT3Projects,
-            epics: boardData.activeProjectEpics,
-          },
+          createContext: { linkedProjects: linkedT3Projects },
           refreshSnapshot: pageData.refreshWorkbenchSnapshot,
         }}
         snapshotDraft={planning}
         ticket={selectedTicket}
-        onOpenDraft={() => props.dialogs.openTicketDialog()}
+        onOpenDraft={() => dialogs.openTicketDialog()}
         neverRan={threadsById.get(planning.threadId)?.latestRun == null}
         onDiscarded={closeWorkItem}
       >
@@ -497,7 +437,6 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         onCancelRepositories={ticketActions.cancelRepositoryScope}
         onSaveRepositories={ticketActions.saveRepositories}
         linkedProjects={linkedT3Projects}
-        epics={projectEpics}
         keybindings={keybindings}
         availableEditors={availableEditors}
         assignments={selectedAssignments}
@@ -515,7 +454,7 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
                         useWorkbenchFloatingChatStore.getState().expand(planning.threadId)
                       }
                     >
-                      Planning · No work area yet
+                      Planning · No worktrees yet
                     </Button>
                     {planningThread()}
                   </div>
@@ -536,14 +475,6 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
           void regenerateSummary(ticket);
         }}
         onUpdate={changeTicket}
-        onCreateEpic={openEpicDialog}
-        onOpenEpic={(epicId) => {
-          setAwaitingTicketId(null);
-          setAwaitingEpicId(null);
-          setSelectedTicketId(null);
-          setSelectedEpicId(epicId);
-          void updateEpicRouteSelection(selectedProject.id, epicId);
-        }}
         onOpenThread={requestTicketThread}
         onOpenAssignedThread={openAssignedThread}
         onNewThread={planning ? blockThreadChange : requestNewThread}
@@ -569,72 +500,6 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         onResetWorkspace={resetTicketWorkspace}
       />
     </>
-  );
-}
-
-function WorkbenchPageEpicDetail(
-  props: Pick<
-    WorkbenchPageViewProps,
-    | "boardData"
-    | "dialogs"
-    | "environmentId"
-    | "error"
-    | "pageData"
-    | "pendingAction"
-    | "selection"
-    | "setError"
-  >,
-) {
-  const { pageData, selection, dialogs, boardData, environmentId, error, pendingAction, setError } =
-    props;
-  const { repositoriesById, query, assignmentsByTicket } = pageData;
-  const {
-    setSelectedTicketId,
-    setSelectedEpicId,
-    setAwaitingTicketId,
-    setAwaitingEpicId,
-    selectedProject,
-    selectedEpic,
-    updateRouteSelection,
-    closeWorkItem,
-  } = selection;
-
-  const { saveEpicContent, openTicketConversation, canArchiveEpic, setEpicArchived } = dialogs;
-  const { selectedEpicTickets } = boardData;
-
-  const pending = pendingAction !== null;
-  if (environmentId === null || selectedProject === null || selectedEpic === null) return null;
-  return (
-    <WorkbenchEpicDetail
-      key={selectedEpic.id}
-      environmentId={environmentId}
-      workspaceTitle={selectedProject.title}
-      readOnly={!pageData.canOperate || selectedProject.archivedAt != null}
-      epic={selectedEpic}
-      tickets={selectedEpicTickets}
-      repositoriesById={repositoriesById}
-      assignmentsByTicket={assignmentsByTicket}
-      pending={pending}
-      error={error ?? query.error}
-      onBack={() => {
-        setError(null);
-        closeWorkItem();
-      }}
-      actions={{
-        onSave: saveEpicContent,
-        lifecycleSupported: pageData.snapshot?.supportsEpicLifecycle === true,
-        canArchive: canArchiveEpic,
-        onArchive: setEpicArchived,
-      }}
-      onOpenTicket={(ticketId) => {
-        setAwaitingTicketId(null);
-        setAwaitingEpicId(null);
-        setSelectedEpicId(null);
-        setSelectedTicketId(ticketId);
-        void updateRouteSelection(selectedProject.id, ticketId);
-      }}
-      onCreateTicket={() => openTicketConversation(selectedEpic.id)}
-    />
   );
 }
 
@@ -678,10 +543,10 @@ function WorkbenchPageBoard(
     assignmentsByTicket,
     threadLookupReady,
   } = pageData;
-  const { selectedProject, updateRouteSelection, updateEpicRouteSelection } = selection;
+  const { selectedProject, updateRouteSelection } = selection;
 
   const { openTicketConversation } = dialogs;
-  const { projectTickets, projectEpics, boardGroupModeForView, repositoriesReady } = boardData;
+  const { projectTickets, repositoriesReady } = boardData;
   const { changeTicket, ticketForBoardAction, regenerateSummary } = ticketActions;
   const { requestTicketThread } = threadActions;
   const pending = pendingAction !== null;
@@ -704,9 +569,6 @@ function WorkbenchPageBoard(
           projectId={selectedProject.id}
           drafts={getUnsavedConversationDrafts(snapshot, selectedProject.id)}
           tickets={projectTickets}
-          epics={projectEpics}
-          groupMode={boardGroupModeForView}
-          viewControls={<WorkbenchBoardToolbar boardData={boardData} />}
           floatingChat={
             <WorkbenchPageBoardChat
               pageData={pageData}
@@ -723,7 +585,6 @@ function WorkbenchPageBoard(
               }}
               draftRequest={props.draftRequest}
               dialogs={dialogs}
-              onCreateEpic={dialogs.openEpicDialog}
             />
           }
           selectedTicketId={null}
@@ -740,9 +601,6 @@ function WorkbenchPageBoard(
           pendingAction={pendingAction}
           pendingTicketIds={optimisticStatus.pendingTicketIds}
           onSelect={selectTicket}
-          onSelectEpic={(projectId, epicId) => {
-            void updateEpicRouteSelection(projectId, epicId);
-          }}
           onMove={(ticket, status) => {
             changeTicket(ticketForBoardAction(ticket), { status });
           }}
@@ -769,7 +627,6 @@ function WorkbenchPageBoardChat({
   environmentId,
   workspace,
   onOpenDraft,
-  onCreateEpic,
   draftRequest,
   dialogs,
 }: Pick<
@@ -780,7 +637,6 @@ function WorkbenchPageBoardChat({
   readonly environmentId: EnvironmentId;
   readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
-  readonly onCreateEpic: Parameters<typeof WorkbenchBoardFloatingChat>[0]["onCreateEpic"];
 }) {
   const { snapshot } = pageData;
   return (
@@ -795,24 +651,17 @@ function WorkbenchPageBoardChat({
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}
-      createContext={{
-        linkedProjects: boardData.linkedT3Projects,
-        epics: boardData.activeProjectEpics,
-      }}
+      createContext={{ linkedProjects: boardData.linkedT3Projects }}
       canStartDrafts={
         pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
       }
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onOpenDraft={onOpenDraft}
       draftRequest={draftRequest}
-      initialEpicId={dialogs.conversationEpicId}
       onNewDraft={dialogs.openTicketConversation}
       onDraftPrepared={dialogs.openCreatedTicket}
       onDraftClosed={dialogs.closeTicketConversation}
-      onCreateManually={() =>
-        dialogs.openTicketDialog(draftRequest?.draft?.fields.epicId ?? dialogs.conversationEpicId)
-      }
-      onCreateEpic={onCreateEpic}
+      onCreateManually={() => dialogs.openTicketDialog()}
       onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
       onNewTicketThread={(ticket) =>
         threadActions.requestNewThread(ticketActions.ticketForBoardAction(ticket))
@@ -845,14 +694,13 @@ function WorkbenchPageWorkspace(
   >,
 ) {
   const { pageData, selection, environmentId, pendingAction } = props;
-  const { selectedProject, selectedEpic, selectedTicket } = selection;
+  const { selectedProject, selectedTicket } = selection;
   const workItemView = resolveWorkbenchWorkItemView({
     snapshot: pageData.snapshot,
     workspaceId: selectedProject?.id ?? null,
     selectedTicketId: selection.selectedTicketId,
     ticketExists: selectedTicket !== null,
-    hasSelectedEpic: selectedEpic !== null,
-    // An archived Workspace is read-only, so it never starts a conversation.
+    // An archived Board is read-only, so it never starts a conversation.
     createTicket:
       props.createTicket === true && pageData.canOperate && selectedProject?.archivedAt == null,
     awaitingTicketId: selection.awaitingTicketId,
@@ -867,7 +715,7 @@ function WorkbenchPageWorkspace(
           role="status"
           className="border-b border-border px-4 py-3 text-sm text-muted-foreground"
         >
-          This Workspace is archived. Planning is read-only. Linked Threads remain available.
+          This Board is archived. Planning is read-only. Linked Threads remain available.
           <Button
             variant="ghost"
             size="xs"
@@ -877,14 +725,12 @@ function WorkbenchPageWorkspace(
             }}
             disabled={pending || !props.workspaceActions.canArchive}
           >
-            <RotateCcwIcon /> Restore Workspace
+            <RotateCcwIcon /> Restore Board
           </Button>
         </div>
       ) : null}
       {workItemView.kind === "ticket" ? (
         <WorkbenchPageTicketDetail {...props} />
-      ) : workItemView.kind === "epic" ? (
-        <WorkbenchPageEpicDetail {...props} />
       ) : (
         <WorkbenchPageBoard
           {...props}
@@ -1025,45 +871,23 @@ function WorkbenchPageTicketDialogs(
   const { query } = pageData;
   const { selectedProject } = selection;
 
-  const {
-    ticketDialogOpen,
-    ticketDialogEpicId,
-    epicDialogOpen,
-    submitTicket,
-    submitEpic,
-    openEpicDialog,
-    handleTicketDialogOpenChange,
-    handleEpicDialogOpenChange,
-  } = dialogs;
-  const { linkedT3Projects, activeProjectEpics } = boardData;
+  const { ticketDialogOpen, submitTicket, handleTicketDialogOpenChange } = dialogs;
+  const { linkedT3Projects } = boardData;
 
   const pending = pendingAction !== null;
   if (selectedProject?.archivedAt != null) return null;
   return (
     <>
       {selectedProject ? (
-        <WorkbenchEpicDialog
-          open={epicDialogOpen}
-          pending={pending}
-          disabled={!pageData.canOperate}
-          error={error ?? query.error}
-          onOpenChange={handleEpicDialogOpenChange}
-          onCreate={submitEpic}
-        />
-      ) : null}
-      {selectedProject ? (
         <WorkbenchTicketDialog
-          key={`${selectedProject.id}:${ticketDialogEpicId ?? "no-epic"}`}
+          key={selectedProject.id}
           open={ticketDialogOpen}
           linkedProjects={linkedT3Projects}
-          epics={activeProjectEpics}
-          initialEpicId={ticketDialogEpicId}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
           onOpenChange={handleTicketDialogOpenChange}
           onCreate={submitTicket}
-          onCreateEpic={openEpicDialog}
         />
       ) : null}
     </>
@@ -1099,7 +923,7 @@ function WorkbenchPageContent(
           </EmptyMedia>
           <EmptyTitle>Connect an environment</EmptyTitle>
           <EmptyDescription>
-            Workbench Workspaces and Tickets belong to the active T3 environment.
+            Workbench Boards and Tickets belong to the active T3 environment.
           </EmptyDescription>
         </EmptyHeader>
       </Empty>
@@ -1138,18 +962,18 @@ function WorkbenchPageNoWorkspace(
           </EmptyMedia>
           <EmptyTitle>
             {props.pageData.snapshot?.projects.length
-              ? "No active Workbench Workspaces"
-              : "Create your first Workbench Workspace"}
+              ? "No active Boards"
+              : "Create your first Board"}
           </EmptyTitle>
           <EmptyDescription>
             {props.pageData.snapshot?.projects.length
-              ? "Open Archived Workspaces in the sidebar to inspect or restore one, or create a new Workspace."
-              : "Group tickets around the repositories and native Agent Threads that deliver them."}
+              ? "Open Archived Boards in the sidebar to inspect or restore one, or create a new Board."
+              : "Group tickets around the repositories and native Threads that deliver them."}
           </EmptyDescription>
         </EmptyHeader>
         <EmptyContent>
           <Button disabled={!props.pageData.canOperate} onClick={openWorkspaceDialog}>
-            <PlusIcon /> Create Workspace
+            <PlusIcon /> Create Board
           </Button>
         </EmptyContent>
       </Empty>

@@ -76,8 +76,6 @@ const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
   fields: {
     title: "Explain failures",
     markdown: "## Goal\nExplain worktree failures",
-    kind: "story" as const,
-    epicId: null,
     repositoryProjectIds: [second],
   },
   createdAt: DateTime.formatIso(now),
@@ -246,9 +244,7 @@ const policyLayer = (
             Effect.succeedSome({
               id: WorkbenchTicketId.make("draft"),
               projectId: WorkbenchProjectId.make("tools"),
-              epicId: null,
               title: "Explain failures",
-              kind: "story" as const,
               markdown: "## Goal\nExplain worktree failures",
               repositoryProjectIds: [second],
               status: "in_progress" as const,

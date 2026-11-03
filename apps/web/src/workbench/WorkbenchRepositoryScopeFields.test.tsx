@@ -118,7 +118,7 @@ const labelledButton = (label: string) => {
   return result;
 };
 const repositoryList = () =>
-  document.querySelector('[aria-label="Work area repositories"]')?.textContent ?? "";
+  document.querySelector('[aria-label="Ticket repositories"]')?.textContent ?? "";
 const addRepository = async (label: string) => {
   await act(async () => button("Add repository").click());
   const option = [...document.querySelectorAll<HTMLElement>('[role="option"]')].find(

@@ -4,57 +4,24 @@ import {
   type OrchestrationV2ThreadShell,
   type ThreadId,
   type WorkbenchAssignment,
-  type WorkbenchEpic,
   type WorkbenchSnapshot,
   type WorkbenchTicket,
   type WorkbenchTicketGeneratedSummary,
   type WorkbenchTicketId,
-  type WorkbenchTicketKind,
   type WorkbenchTicketStatus,
 } from "@t3tools/contracts";
 
-export const WORKBENCH_TICKET_KINDS = [
-  "story",
-  "bug",
-] as const satisfies ReadonlyArray<WorkbenchTicketKind>;
-
-export const WORKBENCH_TICKET_KIND_LABELS: Record<WorkbenchTicketKind, string> = {
-  story: "Story",
-  bug: "Bug",
-};
-
-const WORKBENCH_TICKET_TEMPLATES: Record<WorkbenchTicketKind, string> = {
-  story: [
-    "## Goal",
-    "",
-    "## Work",
-    "",
-    "## Acceptance criteria",
-    "",
-    "## Non-goals",
-    "",
-    "## Testing",
-  ].join("\n"),
-  bug: [
-    "## Observed behavior",
-    "",
-    "## Environment",
-    "",
-    "## Root-cause evidence",
-    "",
-    "## Proposed fix",
-    "",
-    "## Testing",
-  ].join("\n"),
-};
-
-export function getWorkbenchTicketTemplate(kind: WorkbenchTicketKind): string {
-  return WORKBENCH_TICKET_TEMPLATES[kind];
-}
-
-export function isWorkbenchTicketKind(value: unknown): value is WorkbenchTicketKind {
-  return WORKBENCH_TICKET_KINDS.some((kind) => kind === value);
-}
+export const WORKBENCH_TICKET_TEMPLATE = [
+  "## Goal",
+  "",
+  "## Work",
+  "",
+  "## Acceptance criteria",
+  "",
+  "## Non-goals",
+  "",
+  "## Testing",
+].join("\n");
 
 const WORKBENCH_TICKET_STATUSES = [
   "todo",
@@ -117,19 +84,6 @@ export function getWorkbenchTicketStatusMoves(
   currentStatus: WorkbenchTicketStatus,
 ): ReadonlyArray<WorkbenchTicketStatus> {
   return WORKBENCH_TICKET_STATUSES.filter((status) => status !== currentStatus);
-}
-
-export function getWorkbenchEpicProgress(tickets: ReadonlyArray<Pick<WorkbenchTicket, "status">>) {
-  const total = tickets.length;
-  const completed = tickets.reduce(
-    (count, ticket) => count + (ticket.status === "done" ? 1 : 0),
-    0,
-  );
-  return {
-    completed,
-    percent: total === 0 ? 0 : Math.round((completed / total) * 100),
-    total,
-  };
 }
 
 export function getWorkbenchThreadPresentation(
@@ -362,31 +316,4 @@ export function isWorkbenchThreadArchived(
   archivedThreads: ReadonlyMap<ThreadId, unknown>,
 ): boolean {
   return !liveThreads.has(threadId) && archivedThreads.has(threadId);
-}
-
-export function groupWorkbenchTicketsByEpic<
-  Ticket extends Pick<WorkbenchTicket, "epicId">,
-  Epic extends Pick<WorkbenchEpic, "id">,
->(
-  tickets: ReadonlyArray<Ticket>,
-  epics: ReadonlyArray<Epic>,
-): ReadonlyArray<{ readonly epic: Epic | null; readonly tickets: ReadonlyArray<Ticket> }> {
-  const epicsById = new Map(epics.map((epic) => [epic.id, epic]));
-  const ticketsByEpicId = new Map<string, Array<Ticket>>();
-  const unassignedTickets: Array<Ticket> = [];
-
-  for (const ticket of tickets) {
-    if (ticket.epicId === null || !epicsById.has(ticket.epicId)) {
-      unassignedTickets.push(ticket);
-      continue;
-    }
-    const epicTickets = ticketsByEpicId.get(ticket.epicId) ?? [];
-    epicTickets.push(ticket);
-    ticketsByEpicId.set(ticket.epicId, epicTickets);
-  }
-
-  const lanes = epics.map((epic) => ({ epic, tickets: ticketsByEpicId.get(epic.id) ?? [] }));
-  return unassignedTickets.length > 0
-    ? [...lanes, { epic: null, tickets: unassignedTickets }]
-    : lanes;
 }

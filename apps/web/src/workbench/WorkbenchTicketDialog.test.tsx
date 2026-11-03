@@ -3,13 +3,7 @@
 import { act, type ComponentProps } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import {
-  EnvironmentId,
-  ProjectId,
-  WorkbenchEpicId,
-  WorkbenchProjectId,
-  type WorkbenchEpic,
-} from "@t3tools/contracts";
+import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { Project } from "../types";
 import { WorkbenchTicketDialog, type WorkbenchCreateTicketDraft } from "./WorkbenchForms";
 
@@ -24,25 +18,13 @@ const project: Project = {
   createdAt: timestamp,
   updatedAt: timestamp,
 };
-const localEpic: WorkbenchEpic = {
-  id: WorkbenchEpicId.make("local-epic"),
-  projectId: WorkbenchProjectId.make("workspace-1"),
-  title: "Local Epic",
-  markdown: "",
-  archivedAt: null,
-  createdAt: timestamp,
-  updatedAt: timestamp,
-};
 const onCreate = vi.fn<(draft: WorkbenchCreateTicketDraft) => Promise<boolean>>(async () => false);
 const onOpenChange = vi.fn();
 const props: ComponentProps<typeof WorkbenchTicketDialog> = {
   open: true,
   linkedProjects: [project],
-  epics: [localEpic],
-  initialEpicId: localEpic.id,
   pending: false,
   error: null,
-  onCreateEpic: vi.fn(),
   onOpenChange,
   onCreate,
 };
@@ -102,7 +84,7 @@ const button = (text: string) => {
 };
 
 describe("Workbench Ticket creation", () => {
-  it("creates a local Ticket in the selected Epic and Repository scope", async () => {
+  it("creates a local Ticket in the selected Repository scope", async () => {
     await renderDialog();
     await submit();
     expect(onCreate).not.toHaveBeenCalled();
@@ -111,7 +93,6 @@ describe("Workbench Ticket creation", () => {
     expect(onCreate).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         title: "Fix this",
-        epicId: localEpic.id,
         repositoryProjectIds: [project.id],
       }),
     );

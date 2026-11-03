@@ -18,7 +18,7 @@ describe("Workbench Board Ticket preview", () => {
     expect(getWorkbenchBoardTicketPreview({ ticket })).toEqual({
       text: "Build a welcome checklist with setup steps. Show the next step.",
       source: "description",
-      statusLabel: "Description excerpt",
+      statusLabel: "Brief excerpt",
     });
     expect(
       getWorkbenchBoardTicketPreview({
@@ -77,7 +77,7 @@ describe("Workbench Board Ticket preview", () => {
         ticket: { markdown: "## Goal\n\n---\n\n```text\n```" },
       }),
     ).toEqual({
-      text: "Description available",
+      text: "Brief available",
       source: "description",
       statusLabel: null,
     });
@@ -86,7 +86,7 @@ describe("Workbench Board Ticket preview", () => {
         ticket: { markdown: "  \n " },
       }),
     ).toEqual({
-      text: "No description added yet",
+      text: "No brief added yet",
       source: "description",
       statusLabel: null,
     });

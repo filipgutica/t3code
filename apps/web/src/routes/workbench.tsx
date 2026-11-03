@@ -14,7 +14,6 @@ function WorkbenchRoute() {
         createTicket={search.create === "ticket"}
         initialProjectId={search.workbenchProjectId}
         initialTicketId={search.ticketId}
-        initialEpicId={search.epicId}
       />
     </SidebarInset>
   );

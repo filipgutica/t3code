@@ -23,9 +23,6 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchUpdateProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchArchiveProject]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchDeleteProject]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchCreateEpic]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchUpdateEpic]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchArchiveEpic]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchCreateTicket]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchRegenerateTicketSummary]: AuthOrchestrationOperateScope,
@@ -38,7 +35,6 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchListTicketWorktrees]: AuthOrchestrationReadScope,
   [WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchAddReference]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchRemoveReference]: AuthOrchestrationOperateScope,
 } as const satisfies Record<WorkbenchRpcMethod, AuthEnvironmentScope>;

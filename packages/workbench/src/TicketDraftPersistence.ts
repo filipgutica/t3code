@@ -133,12 +133,12 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     if (!rows[0])
       return yield* new WorkbenchOperationError({
         code: "project_not_found",
-        message: "The Workbench workspace is unavailable.",
+        message: "The Board is unavailable.",
       });
     if (rows[0].archivedAt !== null)
       return yield* new WorkbenchOperationError({
         code: "project_archived",
-        message: "Restore this Workbench workspace before preparing a ticket.",
+        message: "Restore this Board before preparing a Ticket.",
       });
     const links = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
       FROM workbench_project_links WHERE workbench_project_id = ${projectId} ORDER BY position`;
@@ -173,18 +173,8 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     if (new Set(selected).size !== selected.length || selected.some((id) => !linked.includes(id))) {
       return yield* new WorkbenchOperationError({
         code: "repository_not_linked",
-        message: "Choose repositories linked to this Workbench workspace.",
+        message: "Choose repositories linked to this Board.",
       });
-    }
-    if (draft.fields.epicId !== null) {
-      const epics =
-        yield* sql`SELECT epic_id FROM workbench_epics WHERE epic_id = ${draft.fields.epicId}
-        AND workbench_project_id = ${draft.projectId} AND archived_at IS NULL`;
-      if (epics.length === 0)
-        return yield* new WorkbenchOperationError({
-          code: "epic_project_mismatch",
-          message: "Choose an active Epic from this Workbench workspace.",
-        });
     }
     for (const id of selected) {
       const project = yield* native.findProject(id);
@@ -274,7 +264,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         if (linked[0] === undefined || Option.isNone(project) || linked[0] !== anchor) {
           return yield* new WorkbenchOperationError({
             code: "linked_project_not_repository",
-            message: "This workspace needs an available repository before planning can begin.",
+            message: "This Board needs an available repository before planning can begin.",
           });
         }
         if (project.value.workspaceRoot !== validatedRoots.get(linked[0])) {
@@ -307,8 +297,6 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           fields: {
             title: "",
             markdown: "",
-            kind: "story",
-            epicId: null,
             repositoryProjectIds: [],
           },
           createdAt,
@@ -549,10 +537,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           readonly title: string;
           readonly markdown: string;
           readonly anchor: ProjectId;
-          readonly epicId: WorkbenchTicketDraft["fields"]["epicId"];
-          readonly kind: WorkbenchTicketDraft["fields"]["kind"];
-        }>`SELECT title, markdown,
-        primary_t3_project_id AS "anchor", epic_id AS "epicId", kind FROM workbench_tickets
+        }>`SELECT title, markdown, primary_t3_project_id AS "anchor" FROM workbench_tickets
         WHERE ticket_id = ${draft.id} AND deleted_at IS NULL`;
         const ticket = tickets[0];
         if (ticket) {
@@ -565,8 +550,6 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
               ...draft.fields,
               title: ticket.title,
               markdown: ticket.markdown,
-              epicId: ticket.epicId,
-              kind: ticket.kind,
               repositoryProjectIds: ids,
             },
             planningRepositoryProjectIds: ids,

@@ -173,7 +173,7 @@ export function WorkbenchTicketDescriptionEditor({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
           <Label className="shrink-0" id={labelId} htmlFor={mode === "markdown" ? id : undefined}>
-            Description
+            Brief
           </Label>
           {updatedBy !== null ? (
             <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />

@@ -30,8 +30,6 @@ const timestamp = "2026-10-30T00:00:00.000Z";
 const ticket = (id: string): WorkbenchTicket => ({
   id: WorkbenchTicketId.make(id),
   projectId,
-  epicId: null,
-  kind: "story",
   title: "Saved title",
   markdown: "Saved description",
   repositoryProjectIds: [repositoryId],
@@ -57,7 +55,6 @@ const snapshot = (
     },
   ],
   tickets,
-  epics: [],
   assignments: [],
   references: [],
   threadRecaps: [],
@@ -116,7 +113,6 @@ it("keeps pre-hydration filters, then clears a removed repository without restor
   const preferences = {
     repositoryId,
     searchText: "welcome",
-    groupMode: "epic" as const,
     attentionMode: "attention" as const,
     mobileColumnId: "todo",
   };

@@ -38,7 +38,7 @@ import {
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchSidebarThreadRowData } from "./WorkbenchSidebarThreadRow.logic";
-import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
+import { WorkbenchTicketIcon } from "./WorkbenchTicketMetadata";
 import {
   WorkbenchThreadExecutionStatus,
   WorkbenchThreadExecutionStatusIcon,
@@ -182,10 +182,10 @@ function PickerArchived({
   );
 }
 
-/** A ticket's kind, or the draft mark for a Thread with no ticket yet. */
+/** A ticket mark, or the draft mark for a Thread with no ticket yet. */
 function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTicket | null }) {
   return ticket ? (
-    <WorkbenchTicketKindIcon kind={ticket.kind} />
+    <WorkbenchTicketIcon />
   ) : (
     <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
   );

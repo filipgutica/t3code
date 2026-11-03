@@ -17,7 +17,6 @@ import type {
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
-  WorkbenchEpic,
   WorkbenchProjectId,
   WorkbenchTicket,
   WorkbenchTicketId,
@@ -27,10 +26,8 @@ import { workbenchTicketIssueReferences } from "@t3tools/contracts";
 import {
   ArrowRightIcon,
   BotIcon,
-  ChevronDownIcon,
   FolderGit2Icon,
   LayoutDashboardIcon,
-  Layers3Icon,
   LoaderCircleIcon,
   MoreHorizontalIcon,
   PlusIcon,
@@ -74,7 +71,6 @@ import {
   SelectItem,
 } from "../components/ui/select";
 import { Button } from "../components/ui/button";
-import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
 import { ToggleGroup, Toggle } from "../components/ui/toggle-group";
 import { cn } from "../lib/utils";
 import {
@@ -98,15 +94,10 @@ import {
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
   getWorkbenchTicketSummaryActionLabel,
-  groupWorkbenchTicketsByEpic,
   isWorkbenchThreadArchived,
 } from "./workbench.logic";
 import { getWorkbenchBoardTicketPreview } from "./workbenchBoardTicketPreview";
-import {
-  WorkbenchEpicBadge,
-  WorkbenchTicketTypeBadge,
-  WorkbenchTicketCopyMenuItems,
-} from "./WorkbenchTicketMetadata";
+import { WorkbenchTicketCopyMenuItems } from "./WorkbenchTicketMetadata";
 import { WorkbenchDraftTickets } from "./WorkbenchDraftTickets";
 import { WorkbenchReferenceBadge } from "./WorkbenchReferences";
 import {
@@ -135,9 +126,6 @@ type WorkbenchTicketBoardProps = {
   readonly projectId: WorkbenchProjectId;
   readonly tickets: ReadonlyArray<WorkbenchTicket>;
   readonly drafts?: ReadonlyArray<WorkbenchConversationDraft>;
-  readonly epics: ReadonlyArray<WorkbenchEpic>;
-  readonly groupMode: "none" | "epic";
-  readonly viewControls: ReactNode;
   /** Floats over the board's lower-right corner; the board leaves room to scroll past it. */
   readonly floatingChat?: ReactNode;
   readonly selectedTicketId: WorkbenchTicketId | null;
@@ -154,7 +142,6 @@ type WorkbenchTicketBoardProps = {
   readonly pendingAction: string | null;
   readonly pendingTicketIds: ReadonlySet<WorkbenchTicketId>;
   readonly onSelect: (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => void;
-  readonly onSelectEpic: (projectId: WorkbenchProjectId, epicId: WorkbenchEpic["id"]) => void;
   readonly onMove: (ticket: WorkbenchTicket, status: WorkbenchTicketStatus) => void;
   readonly onRegenerateSummary: (ticket: WorkbenchTicket) => void;
   readonly onOpenThread: (ticket: WorkbenchTicket, threadId?: ThreadId) => void;
@@ -189,7 +176,6 @@ export function WorkbenchTicketBoard(props: WorkbenchTicketBoardProps) {
     ...props,
     wideBoard,
     columns: data.columns,
-    swimlanes: data.swimlanes,
   });
   const board = { ...props, ...data, ...drag };
   return (
@@ -216,8 +202,8 @@ function WorkbenchTicketBoardContent({
   drag: ReturnType<typeof useWorkbenchBoardDrag>;
   board: WorkbenchBoardContext;
 }) {
-  const { environmentId, tickets, groupMode, epics, onCreateTicket } = props;
-  const { search, visibleTickets, columns, swimlanes } = data;
+  const { environmentId, tickets, onCreateTicket } = props;
+  const { search, visibleTickets, columns } = data;
   const {
     sensors,
     dropTargets,
@@ -252,7 +238,6 @@ function WorkbenchTicketBoardContent({
       >
         {renderWorkbenchBoardControls({
           search,
-          viewControls: props.viewControls,
           attentionMode: data.attentionMode,
           setAttentionMode: data.setAttentionMode,
           attentionCoverage: data.attentionCoverage,
@@ -322,15 +307,14 @@ function WorkbenchTicketBoardContent({
                   </div>
                 ))}
               </div>
-              {swimlanes.map((swimlane) => renderWorkbenchBoardSwimlane({ swimlane, board }))}
+              {renderWorkbenchBoardColumns(board)}
             </div>
           </div>
 
           {tickets.length === 0 &&
           (props.drafts?.length ?? 0) === 0 &&
           !search.query &&
-          data.repositoryId === null &&
-          !(groupMode === "epic" && epics.length > 0) ? (
+          data.repositoryId === null ? (
             <div className="absolute inset-0 z-10 flex flex-col items-center overflow-auto scrollbar-gutter-both bg-background/45 p-6 backdrop-blur-xs">
               <div className="my-auto w-full max-w-sm shrink-0 rounded-xl border border-border bg-background shadow-lg/10">
                 <Empty className="min-h-72">
@@ -340,7 +324,7 @@ function WorkbenchTicketBoardContent({
                     </EmptyMedia>
                     <EmptyTitle>Plan the first piece of work</EmptyTitle>
                     <EmptyDescription>
-                      Tickets keep delivery context, status, and the native Agent Thread connected.
+                      Tickets keep delivery context, status, and their native Threads connected.
                     </EmptyDescription>
                   </EmptyHeader>
                   <EmptyContent>
@@ -372,7 +356,6 @@ type WorkbenchBoardContext = Pick<
   | "threadRestoreDisabled"
   | "environmentId"
   | "projectId"
-  | "groupMode"
   | "selectedTicketId"
   | "repositoriesById"
   | "assignmentsByTicket"
@@ -384,7 +367,6 @@ type WorkbenchBoardContext = Pick<
   | "pendingAction"
   | "pendingTicketIds"
   | "onSelect"
-  | "onSelectEpic"
   | "onMove"
   | "onRegenerateSummary"
   | "onOpenThread"
@@ -395,112 +377,45 @@ type WorkbenchBoardContext = Pick<
   activeTicket: WorkbenchTicket | undefined;
   canDrop: (
     ticket: WorkbenchTicket,
-    target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpic["id"] | null },
+    target: { columnId: string; status: WorkbenchTicketStatus },
   ) => boolean;
   agentStatesByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchThreadExecutionStatusData>;
   attentionMode: WorkbenchAttentionMode;
   attentionReasonsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlyArray<string>>;
   threadCounts: ReadonlyMap<WorkbenchTicketId, number>;
-  epicsById: ReadonlyMap<WorkbenchEpic["id"], WorkbenchEpic>;
 };
 
-function renderWorkbenchBoardSwimlane({
-  swimlane,
-  board,
-}: {
-  swimlane: { epic: WorkbenchEpic | null; tickets: ReadonlyArray<WorkbenchTicket> };
-  board: WorkbenchBoardContext;
-}) {
-  const {
-    projectId,
-    groupMode,
-    onSelectEpic,
-    columns,
-    visibleColumnId,
-    dragDisabled,
-    activeTicket,
-    canDrop,
-  } = board;
-  const laneTicketIds = new Set(swimlane.tickets.map((ticket) => ticket.id));
-  const laneKey = groupMode === "epic" ? (swimlane.epic?.id ?? "no-epic") : "all-tickets";
+function renderWorkbenchBoardColumns(board: WorkbenchBoardContext) {
+  const { columns, visibleColumnId, dragDisabled, activeTicket, canDrop } = board;
   return (
-    <Collapsible
-      key={laneKey}
-      defaultOpen
-      render={
-        <section
-          aria-label={
-            groupMode === "epic" ? `${swimlane.epic?.title ?? "No Epic"} swimlane` : "All Tickets"
+    <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(17rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
+      {columns.map((column) => (
+        <WorkbenchDropColumn
+          key={column.id}
+          id={column.id}
+          label={`${column.title} Tickets`}
+          statusId={column.id}
+          disabled={
+            dragDisabled ||
+            (activeTicket !== undefined &&
+              !canDrop(activeTicket, { columnId: column.id, status: column.status }))
           }
-        />
-      }
-      className="min-w-0"
-    >
-      {groupMode === "epic" ? (
-        <header className="mb-2 flex items-center gap-2 border-b border-border/40 py-1">
-          <CollapsibleTrigger className="group flex min-w-0 flex-1 items-center gap-2 rounded-sm px-2 py-2 text-left outline-none hover:bg-muted/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
-            <ChevronDownIcon className="size-3.5 shrink-0 -rotate-90 text-muted-foreground transition-transform group-data-panel-open:rotate-0 motion-reduce:transition-none" />
-            <Layers3Icon className="size-3.5 shrink-0 text-muted-foreground" />
-            <h3 className="min-w-0 truncate text-sm font-semibold">
-              {swimlane.epic?.title ?? "No Epic"}
-            </h3>
-            <span className="text-xs text-foreground tabular-nums">{swimlane.tickets.length}</span>
-            {swimlane.epic?.archivedAt ? <Badge variant="outline">Archived</Badge> : null}
-          </CollapsibleTrigger>
-          {swimlane.epic ? (
-            <Button
-              variant="ghost"
-              size="xs"
-              onClick={() => onSelectEpic(projectId, swimlane.epic!.id)}
-            >
-              View Epic <ArrowRightIcon data-icon="inline-end" />
-            </Button>
-          ) : null}
-        </header>
-      ) : null}
-      <CollapsiblePanel>
-        <div className="grid min-w-0 grid-cols-1 gap-3 @min-[48rem]/board:auto-cols-[minmax(17rem,1fr)] @min-[48rem]/board:grid-flow-col @min-[48rem]/board:grid-cols-none">
-          {columns.map((column) => {
-            const laneTickets = column.tickets.filter((ticket) => laneTicketIds.has(ticket.id));
-            return (
-              <WorkbenchDropColumn
-                key={column.id}
-                id={JSON.stringify([swimlane.epic?.id ?? null, column.id])}
-                label={`${column.title} Tickets`}
-                statusId={column.id}
-                disabled={
-                  dragDisabled ||
-                  (activeTicket !== undefined &&
-                    !canDrop(activeTicket, {
-                      columnId: column.id,
-                      status: column.status,
-                      epicId: swimlane.epic?.id ?? null,
-                    }))
-                }
-                className={cn(
-                  "min-w-0 flex-col rounded-xl @min-[48rem]/board:flex",
-                  column.id === visibleColumnId ? "flex" : "hidden",
-                )}
-              >
-                <div className="flex min-h-0 flex-1 flex-col gap-2 p-1.5">
-                  {laneTickets.map((ticket) => renderWorkbenchBoardTicket({ ticket, board }))}
-                  {laneTickets.length === 0 ? (
-                    <p
-                      className={cn(
-                        "py-3 text-center text-xs text-muted-foreground",
-                        groupMode === "epic" && "@min-[48rem]/board:sr-only",
-                      )}
-                    >
-                      No tickets in {column.title}
-                    </p>
-                  ) : null}
-                </div>
-              </WorkbenchDropColumn>
-            );
-          })}
-        </div>
-      </CollapsiblePanel>
-    </Collapsible>
+          className={cn(
+            "min-w-0 flex-col rounded-xl @min-[48rem]/board:flex",
+            column.id === visibleColumnId ? "flex" : "hidden",
+          )}
+        >
+          <div className="flex min-h-0 flex-1 flex-col gap-2 p-1.5">
+            {column.tickets.map((ticket) => renderWorkbenchBoardTicket({ ticket, board }))}
+            {column.tickets.length === 0 ? (
+              <p className="py-3 text-center text-xs text-muted-foreground">
+                No tickets in {column.title}
+              </p>
+            ) : null}
+          </div>
+        </WorkbenchDropColumn>
+      ))}
+    </div>
   );
 }
 
@@ -656,8 +571,6 @@ function useWorkbenchBoardData({
   assignments,
   threadsById,
   archivedThreadsById,
-  groupMode,
-  epics,
 }: Pick<
   WorkbenchTicketBoardProps,
   | "environmentId"
@@ -667,8 +580,6 @@ function useWorkbenchBoardData({
   | "assignments"
   | "threadsById"
   | "archivedThreadsById"
-  | "groupMode"
-  | "epics"
 >) {
   const scope = { environmentId, projectId };
   const search = useWorkbenchTicketSearch(scope);
@@ -719,13 +630,6 @@ function useWorkbenchBoardData({
     return counts;
   })();
   const columns = getWorkbenchBoardColumns(visibleTickets);
-  const swimlanes =
-    groupMode === "epic"
-      ? groupWorkbenchTicketsByEpic(visibleTickets, epics).filter(
-          (lane) => (!search.query && repositoryId === null) || lane.tickets.length > 0,
-        )
-      : [{ epic: null, tickets: visibleTickets }];
-  const epicsById = new Map(epics.map((epic) => [epic.id, epic]));
 
   return {
     search,
@@ -741,8 +645,6 @@ function useWorkbenchBoardData({
     agentStatesByTicket,
     threadCounts,
     columns,
-    swimlanes,
-    epicsById,
   };
 }
 
@@ -760,7 +662,6 @@ function getWorkbenchBoardTicketPresentation({
     pendingAction,
     threadLookupReady,
     repositoriesById,
-    epicsById,
     agentStatesByTicket,
     referencesByTicket,
   } = board;
@@ -788,7 +689,6 @@ function getWorkbenchBoardTicketPresentation({
     id,
     title: repositoriesById.get(id)?.title ?? "Repository unavailable",
   }));
-  const epic = ticket.epicId ? epicsById.get(ticket.epicId) : undefined;
   const references = getTicketReferences(referencesByTicket, ticket.id);
   const summary = getWorkbenchBoardTicketPreview({ ticket, jira: hasJiraReference(references) });
   const issues = workbenchTicketIssueReferences(references);
@@ -802,7 +702,6 @@ function getWorkbenchBoardTicketPresentation({
     threadActionPending,
     threadActionLabel,
     repositories,
-    epic,
     summary,
     issues,
   };
@@ -811,8 +710,8 @@ function getWorkbenchBoardTicketPresentation({
 function renderWorkbenchBoardTicketMetadata(
   presentation: ReturnType<typeof getWorkbenchBoardTicketPresentation>,
 ) {
-  const { ticket, board, repositories, epic, summary, issues } = presentation;
-  const { pendingTicketIds, groupMode, onSelect, projectId } = board;
+  const { ticket, board, repositories, summary, issues } = presentation;
+  const { pendingTicketIds, onSelect, projectId } = board;
   return (
     <div className="mt-2 flex min-w-0 flex-col gap-2 text-xs text-foreground">
       {pendingTicketIds.has(ticket.id) ? <span role="status">Saving status…</span> : null}
@@ -823,10 +722,6 @@ function renderWorkbenchBoardTicketMetadata(
         {issues.length > BOARD_CARD_ISSUE_LIMIT ? (
           <Badge variant="outline">+{issues.length - BOARD_CARD_ISSUE_LIMIT}</Badge>
         ) : null}
-        <WorkbenchTicketTypeBadge kind={ticket.kind} />
-        {groupMode === "none" && epic ? (
-          <WorkbenchEpicBadge className="min-w-0 max-w-full" title={epic.title} />
-        ) : null}
       </div>
       <Tooltip>
         <TooltipTrigger
@@ -835,7 +730,7 @@ function renderWorkbenchBoardTicketMetadata(
               type="button"
               data-workbench-opens-ticket=""
               onClick={() => onSelect(projectId, ticket.id)}
-              aria-label={`Ticket ${summary.source === "description" ? "description" : "summary"}: ${summary.text}`}
+              aria-label={`Ticket ${summary.source === "description" ? "brief" : "summary"}: ${summary.text}`}
               className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
               tabIndex={0}
             />
@@ -934,26 +829,17 @@ function useWorkbenchBoardDrag({
   projectId,
   environmentId,
   tickets,
-  groupMode,
   pending,
   readOnly,
   pendingTicketIds,
   onMove,
   columns,
-  swimlanes,
   wideBoard,
 }: Pick<
   WorkbenchTicketBoardProps,
-  | "projectId"
-  | "environmentId"
-  | "tickets"
-  | "groupMode"
-  | "pending"
-  | "pendingTicketIds"
-  | "onMove"
-  | "readOnly"
+  "projectId" | "environmentId" | "tickets" | "pending" | "pendingTicketIds" | "onMove" | "readOnly"
 > &
-  Pick<ReturnType<typeof useWorkbenchBoardData>, "columns" | "swimlanes"> & {
+  Pick<ReturnType<typeof useWorkbenchBoardData>, "columns"> & {
     wideBoard: boolean;
   }) {
   const { view, setView } = useWorkbenchBoardView({ environmentId, projectId });
@@ -966,25 +852,18 @@ function useWorkbenchBoardDrag({
   const [activeTicketId, setActiveTicketId] = useState<WorkbenchTicketId | null>(null);
   const activeTicket = tickets.find((ticket) => ticket.id === activeTicketId);
   const dragDisabled = readOnly === true || !wideBoard || pending;
-  const dropTargets = new Map(
-    swimlanes.flatMap((lane) =>
-      columns.map(
-        (column) =>
-          [
-            JSON.stringify([lane.epic?.id ?? null, column.id]),
-            {
-              columnId: column.id,
-              title: column.title,
-              status: column.status,
-              epicId: lane.epic?.id ?? null,
-            },
-          ] as const,
-      ),
-    ),
+  const dropTargets = new Map<
+    string,
+    { columnId: string; title: string; status: WorkbenchTicketStatus }
+  >(
+    columns.map((column) => [
+      column.id,
+      { columnId: column.id, title: column.title, status: column.status },
+    ]),
   );
   const canDrop = (
     ticket: WorkbenchTicket,
-    target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpic["id"] | null },
+    target: { columnId: string; status: WorkbenchTicketStatus },
   ) =>
     !dragDisabled &&
     !pendingTicketIds.has(ticket.id) &&
@@ -994,7 +873,6 @@ function useWorkbenchBoardDrag({
         column.tickets.some((candidate) => candidate.id === ticket.id),
       )?.id,
       target,
-      groupByEpic: groupMode === "epic",
       pending,
     });
   const handleDragEnd = ({ active, over }: DragEndEvent) => {
@@ -1240,7 +1118,6 @@ function renderWorkbenchBoardSearch({
 }
 
 function renderWorkbenchBoardControls({
-  viewControls,
   attentionMode,
   setAttentionMode,
   attentionCoverage,
@@ -1269,10 +1146,7 @@ function renderWorkbenchBoardControls({
   | "visibleTickets"
   | "columns"
 > &
-  Pick<
-    WorkbenchTicketBoardProps,
-    "viewControls" | "tickets" | "repositoryProjectIds" | "repositoriesById"
-  > &
+  Pick<WorkbenchTicketBoardProps, "tickets" | "repositoryProjectIds" | "repositoriesById"> &
   Pick<ReturnType<typeof useWorkbenchBoardDrag>, "visibleColumnId" | "setSelectedColumnId">) {
   return (
     <>
@@ -1282,7 +1156,7 @@ function renderWorkbenchBoardControls({
           {renderWorkbenchAttentionModeControl(attentionMode, setAttentionMode)}
         </div>
         <div
-          aria-label="Board filters and grouping"
+          aria-label="Board filters"
           className="grid min-w-0 grid-cols-1 items-center gap-2 @min-[22rem]/board-controls:grid-cols-[minmax(0,1fr)_auto] @min-[42rem]/board-controls:grid-cols-[minmax(0,1fr)_auto_auto]"
           role="group"
         >
@@ -1295,7 +1169,6 @@ function renderWorkbenchBoardControls({
             repositoryProjectIds={repositoryProjectIds}
             repositoriesById={repositoriesById}
           />
-          {viewControls}
         </div>
         {renderWorkbenchBoardStatus({
           attentionMode,

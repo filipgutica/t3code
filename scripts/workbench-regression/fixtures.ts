@@ -30,7 +30,7 @@ const workbenchUrlFor = (environmentId: string, path: string): string => {
 };
 
 export const waitForWorkbench = async (page: Page) => {
-  await expect(page.getByRole("list", { name: "Workbench Workspaces", exact: true })).toBeVisible({
+  await expect(page.getByRole("list", { name: "Boards", exact: true })).toBeVisible({
     timeout: 60_000,
   });
 };

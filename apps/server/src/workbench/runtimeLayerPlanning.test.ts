@@ -130,8 +130,6 @@ const draft = {
   fields: {
     title: "Plan a change",
     markdown: "## Goal\nInspect the repository",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [projectId],
   },
   planningRepositoryProjectIds: [projectId],

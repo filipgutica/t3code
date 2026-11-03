@@ -61,8 +61,6 @@ const draft: WorkbenchSidebarDraft = {
   fields: {
     title: "A draft",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt: "2026-10-13T00:00:00.000Z",

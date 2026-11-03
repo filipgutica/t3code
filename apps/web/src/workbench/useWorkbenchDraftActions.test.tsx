@@ -47,8 +47,6 @@ const draft = (id: string, revision = 0): WorkbenchConversationDraft => ({
   fields: {
     title: id,
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt: "2026-10-13T00:00:00.000Z",

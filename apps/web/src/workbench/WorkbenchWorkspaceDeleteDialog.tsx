@@ -12,7 +12,6 @@ import {
 export function WorkbenchWorkspaceDeleteDialog({
   workspace,
   ticketCount,
-  epicCount,
   pending,
   canDelete,
   error,
@@ -21,7 +20,6 @@ export function WorkbenchWorkspaceDeleteDialog({
 }: {
   workspace: WorkbenchProject;
   ticketCount: number;
-  epicCount: number;
   pending: boolean;
   canDelete: boolean;
   error: string | null;
@@ -39,10 +37,10 @@ export function WorkbenchWorkspaceDeleteDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {workspace.title}?</AlertDialogTitle>
           <AlertDialogDescription>
-            Permanently remove this Workspace, {ticketCount} Ticket{ticketCount === 1 ? "" : "s"},{" "}
-            and {epicCount} Epic{epicCount === 1 ? "" : "s"}. Native Projects, Threads, Git
-            worktrees, branches, commits, and Jira issues are retained. You can remove retained
-            worktrees separately. This cannot be undone.
+            Permanently remove this Board and its {ticketCount} Ticket
+            {ticketCount === 1 ? "" : "s"}. Native Projects, Threads, Git worktrees, branches,
+            commits, and linked issues are retained. You can remove retained worktrees separately.
+            This cannot be undone.
           </AlertDialogDescription>
           {error ? (
             <p role="alert" className="text-sm text-destructive-foreground">
@@ -68,7 +66,7 @@ export function WorkbenchWorkspaceDeleteDialog({
               if (!pending && canDelete) void onDelete();
             }}
           >
-            {pending ? "Deleting Workspace…" : "Delete Workspace"}
+            {pending ? "Deleting Board…" : "Delete Board"}
           </Button>
         </AlertDialogFooter>
       </AlertDialogPopup>

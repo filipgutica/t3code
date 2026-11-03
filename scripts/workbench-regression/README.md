@@ -31,7 +31,7 @@ real GitHub CLI. Provider responses remain scripted.
 
 | Area        | Current browser coverage                                                                                                       |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| Planning    | Workspace creation/rename, Ticket editing/status/archive/restore/delete, Epic membership/progress, routes and narrow layout    |
+| Planning    | Board creation/rename, Ticket editing/status/archive/restore/delete, routes and narrow layout                                  |
 | Provider    | Ticket instruction with brief and worktrees sent to a native Thread, completed turn, summary failure/retry, retained worktrees |
 | Live GitHub | Existing public PR linking/unlinking and detail tabs                                                                           |
 

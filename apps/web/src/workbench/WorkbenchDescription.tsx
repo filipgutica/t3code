@@ -88,8 +88,7 @@ export function WorkbenchDescription({
 }) {
   const opener = useWorkbenchReferenceOpener();
   const content = workbenchDescriptionMarkdown(markdown, jira);
-  if (!content.trim())
-    return <p className="text-sm text-muted-foreground">No description added yet.</p>;
+  if (!content.trim()) return <p className="text-sm text-muted-foreground">No brief added yet.</p>;
   return (
     <div className={workbenchDescriptionProseClassName}>
       <DescriptionOpenerContext value={opener}>

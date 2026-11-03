@@ -4,7 +4,6 @@ import {
   ProviderInstanceId,
   ThreadId,
   WorkbenchAssignmentId,
-  WorkbenchEpicId,
   WorkbenchOperationError,
   WorkbenchProjectId,
   WorkbenchTicketId,
@@ -82,7 +81,6 @@ describe("WorkbenchStore", () => {
           id: ticketId,
           projectId: workspaceId,
           title: "Plan work",
-          kind: "story",
           markdown: "Plan",
           repositoryProjectIds: [projectId],
           createdAt,
@@ -117,7 +115,6 @@ describe("WorkbenchStore", () => {
           id: workspaceId,
           expectedRevision: 0,
           expectedTicketCount: 1,
-          expectedEpicCount: 0,
           deletedAt: createdAt,
         });
         expect(yield* deleteTicket.pipe(Effect.flip)).toMatchObject({ code: "ticket_draft_busy" });
@@ -205,7 +202,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Original title",
-        kind: "story",
         markdown: "Original description",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -286,7 +282,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Assignment guard",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -400,7 +395,6 @@ describe("WorkbenchStore", () => {
           id: ticketId,
           projectId: workspaceId,
           title: "Unlink assignment",
-          kind: "story",
           markdown: "Keep the native Thread available for relinking.",
           repositoryProjectIds: [projectId],
           createdAt,
@@ -628,7 +622,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId,
         title: "Prepare all repositories",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [primaryProjectId, secondaryProjectId],
         createdAt,
@@ -728,125 +721,6 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
-  it.effect("persists Epics and enforces Ticket-to-Workspace integrity", () =>
-    Effect.gen(function* () {
-      const sql = yield* SqlClient.SqlClient;
-      const store = yield* WorkbenchStore;
-      const linkedProjectId = ProjectId.make("t3-project-epic");
-      const workspaceId = WorkbenchProjectId.make("workbench-project-epic");
-      const otherWorkspaceId = WorkbenchProjectId.make("workbench-project-other");
-      const epicId = WorkbenchEpicId.make("epic-1");
-      const createdAt = "2026-09-03T12:00:00.000Z";
-
-      yield* sql`
-        INSERT INTO projection_projects (
-          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
-        ) VALUES (
-          ${linkedProjectId}, 'T3 Code', '/tmp/t3code', '[]', ${createdAt}, ${createdAt}, NULL
-        )
-      `;
-      yield* store.createProject({
-        id: workspaceId,
-        title: "Agent Workbench",
-        linkedProjectIds: [linkedProjectId],
-        createdAt,
-      });
-      yield* store.createProject({
-        id: otherWorkspaceId,
-        title: "Another Workspace",
-        linkedProjectIds: [linkedProjectId],
-        createdAt,
-      });
-      yield* store.createEpic({
-        id: epicId,
-        projectId: workspaceId,
-        title: "Native planning",
-        markdown: "Keep planning connected to execution.",
-        createdAt,
-      });
-      yield* store.createTicket({
-        id: WorkbenchTicketId.make("ticket-with-epic"),
-        projectId: workspaceId,
-        epicId,
-        title: "Create Epic swimlanes",
-        kind: "story",
-        markdown: "",
-        repositoryProjectIds: [linkedProjectId],
-        createdAt,
-      });
-      const mismatchedEpic = yield* Effect.flip(
-        store.createTicket({
-          id: WorkbenchTicketId.make("ticket-wrong-workspace"),
-          projectId: otherWorkspaceId,
-          epicId,
-          title: "Invalid Epic link",
-          kind: "story",
-          markdown: "",
-          repositoryProjectIds: [linkedProjectId],
-          createdAt,
-        }),
-      );
-      yield* store.updateEpic({
-        id: epicId,
-        title: "Native planning and execution",
-        markdown: "Keep planning and execution connected.",
-        updatedAt: "2026-09-03T12:01:00.000Z",
-      });
-      yield* store.archiveEpic({
-        id: epicId,
-        archivedAt: "2026-09-03T12:02:00.000Z",
-      });
-      const archivedEpicTicket = yield* store.updateTicket({
-        id: WorkbenchTicketId.make("ticket-with-epic"),
-        expectedRevision: 0,
-        title: "Create Epic swimlanes",
-        markdown: "Existing Tickets remain editable after their Epic is archived.",
-        status: "todo",
-        blocked: false,
-        updatedAt: "2026-09-03T12:02:30.000Z",
-      });
-      const unlinkedTicket = yield* store.updateTicket({
-        id: WorkbenchTicketId.make("ticket-with-epic"),
-        expectedRevision: 1,
-        epicId: null,
-        title: "Create Epic swimlanes",
-        markdown: "Existing Tickets can be removed from an archived Epic.",
-        status: "todo",
-        blocked: false,
-        updatedAt: "2026-09-03T12:02:45.000Z",
-      });
-      const archivedEpic = yield* Effect.flip(
-        store.createTicket({
-          id: WorkbenchTicketId.make("ticket-archived-epic"),
-          projectId: workspaceId,
-          epicId,
-          title: "Cannot join archived Epic",
-          kind: "bug",
-          markdown: "",
-          repositoryProjectIds: [linkedProjectId],
-          createdAt: "2026-09-03T12:03:00.000Z",
-        }),
-      );
-      const snapshot = yield* store.getSnapshot;
-
-      expect(snapshot.epics).toEqual([
-        expect.objectContaining({
-          id: epicId,
-          projectId: workspaceId,
-          title: "Native planning and execution",
-          archivedAt: "2026-09-03T12:02:00.000Z",
-        }),
-      ]);
-      expect(snapshot.tickets).toEqual([
-        expect.objectContaining({ id: "ticket-with-epic", epicId: null }),
-      ]);
-      expect(archivedEpicTicket.epicId).toBe(epicId);
-      expect(unlinkedTicket.epicId).toBeNull();
-      expect(mismatchedEpic.code).toBe("epic_project_mismatch");
-      expect(archivedEpic.code).toBe("epic_archived");
-    }).pipe(Effect.provide(TestLayer)),
-  );
-
   it.effect("retains Workspace repositories when Ticket scope changes", () =>
     Effect.gen(function* () {
       const sql = yield* SqlClient.SqlClient;
@@ -874,7 +748,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId,
         title: "Retain repository worktrees",
-        kind: "story",
         markdown: "Existing worktrees remain available after scope edits.",
         repositoryProjectIds: [primaryProjectId],
         createdAt,
@@ -1061,7 +934,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId,
         title: "Create the first Ticket flow",
-        kind: "story",
         markdown: "Keep the native T3 Thread experience.",
         repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         createdAt,
@@ -1070,7 +942,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         expectedRevision: 0,
         title: "Create the first Ticket flow",
-        kind: "bug",
         markdown: "Keep the native T3 Thread experience.",
         repositoryProjectIds: [secondaryProjectId, linkedProjectId],
         status: "todo",
@@ -1154,7 +1025,6 @@ describe("WorkbenchStore", () => {
         projectId,
         title: "Another Ticket",
         markdown: "",
-        kind: "story",
         repositoryProjectIds: [secondaryProjectId],
         createdAt,
       });
@@ -1183,7 +1053,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         expectedRevision: 2,
         title: "Create the first Ticket flow",
-        kind: "bug",
         markdown: "Keep the native T3 Thread experience.",
         repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         status: "in_progress",
@@ -1197,7 +1066,6 @@ describe("WorkbenchStore", () => {
       expect(snapshot.projects[0]?.linkedProjectIds).toEqual([linkedProjectId, secondaryProjectId]);
       expect(snapshot.tickets.find((ticket) => ticket.id === ticketId)).toMatchObject({
         id: ticketId,
-        kind: "bug",
         repositoryProjectIds: [linkedProjectId, secondaryProjectId],
         status: "in_progress",
         blocked: false,
@@ -1258,7 +1126,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId,
         title: "Keep Assignment repository context stable",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [primaryProjectId],
         createdAt,
@@ -1278,7 +1145,6 @@ describe("WorkbenchStore", () => {
               id: ticketId,
               expectedRevision: 0,
               title: "Keep Assignment repository context stable",
-              kind: "story",
               markdown: "",
               repositoryProjectIds: [nextPrimaryProjectId],
               status: "todo",
@@ -1363,7 +1229,6 @@ describe("WorkbenchStore", () => {
           id: WorkbenchTicketId.make("ticket-1"),
           projectId,
           title: "Invalid Ticket",
-          kind: "story",
           markdown: "",
           repositoryProjectIds: [ProjectId.make("unlinked-project")],
           createdAt,
@@ -1400,7 +1265,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId,
         title: "Ticket",
-        kind: "bug",
         markdown: "",
         repositoryProjectIds: [linkedProjectId],
         createdAt,
@@ -1494,7 +1358,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Race release",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -1606,7 +1469,6 @@ describe("WorkbenchStore", () => {
               id: ticketId,
               projectId: workspaceId,
               title: "Outer transaction ticket",
-              kind: "story",
               markdown: "",
               repositoryProjectIds: [projectId],
               createdAt,
@@ -1691,7 +1553,6 @@ describe("WorkbenchStore", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Release live assignment",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -1781,7 +1642,6 @@ describe("WorkbenchStore", () => {
         id: localTicketId,
         projectId: workbenchProjectId,
         title: "Local lifecycle Ticket",
-        kind: "story",
         markdown: "Keep this local.",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -1790,7 +1650,6 @@ describe("WorkbenchStore", () => {
         id: otherTicketId,
         projectId: workbenchProjectId,
         title: "Other Ticket",
-        kind: "bug",
         markdown: "Keep this too.",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -2120,8 +1979,6 @@ describe("WorkbenchStore", () => {
       expect(snapshot.tickets).toEqual([
         expect.objectContaining({
           id: "ticket-v1",
-          epicId: null,
-          kind: "story",
           repositoryProjectIds: ["repository-v1"],
           status: "in_progress",
         }),
@@ -2134,7 +1991,6 @@ describe("WorkbenchStore", () => {
           supersededAt: null,
         }),
       ]);
-      expect(snapshot.epics).toEqual([]);
 
       yield* Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;

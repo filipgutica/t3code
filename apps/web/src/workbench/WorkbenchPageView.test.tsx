@@ -15,7 +15,6 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type WorkbenchSnapshot,
@@ -26,7 +25,7 @@ import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { makeThreadFixture } from "../test-fixtures";
 import type { Project } from "../types";
 import { WorkbenchPageView } from "./WorkbenchPageView";
-import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
@@ -69,6 +68,7 @@ const workspace = {
   id: WorkbenchProjectId.make("workspace"),
   title: "Delivery",
   linkedProjectIds: [repository.id],
+  revision: 0,
   archivedAt: null,
   createdAt: timestamp,
   updatedAt: timestamp,
@@ -76,10 +76,8 @@ const workspace = {
 const ticket: WorkbenchTicket = {
   id: WorkbenchTicketId.make("ticket"),
   projectId: workspace.id,
-  epicId: null,
   title: "Ship the release",
   markdown: "Release checklist",
-  kind: "story",
   repositoryProjectIds: [repository.id],
   status: "todo",
   blocked: false,
@@ -115,8 +113,6 @@ const conversationDraft = (
   fields: {
     title: "",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt: timestamp,
@@ -160,7 +156,6 @@ const snapshot: WorkbenchSnapshot = {
   references: [],
   projects: [workspace],
   tickets: [ticket],
-  epics: [],
   assignments: [assignment],
   threadRecaps: [],
   ticketWorkspaces: [],
@@ -199,8 +194,6 @@ function Harness({
   conversation,
   deletedThread = false,
   archivedAssignedThread = false,
-  epicState,
-  epicLifecycleSupported,
 }: {
   canOperate?: boolean;
   workspaceState?: "active" | "archived" | "deleted";
@@ -217,8 +210,6 @@ function Harness({
   conversation?: ConversationMode;
   deletedThread?: boolean;
   archivedAssignedThread?: boolean;
-  epicState?: "active" | "archived";
-  epicLifecycleSupported?: boolean;
 }) {
   const { currentWorkspace, selectedProject } = workspaceFixture(workspaceState);
   const {
@@ -245,9 +236,6 @@ function Harness({
   const tickets = [ticket];
   const currentSnapshot = {
     ...snapshot,
-    ...(epicLifecycleSupported === undefined
-      ? {}
-      : { supportsEpicLifecycle: epicLifecycleSupported }),
     projects: [currentWorkspace],
     tickets,
     references,
@@ -292,32 +280,17 @@ function Harness({
     setSelectedProjectId: noop,
     selectedTicketId,
     setSelectedTicketId: noop,
-    selectedEpicId: null,
-    setSelectedEpicId: noop,
     setAwaitingProjectId: noop,
     setAwaitingTicketId: noop,
-    setAwaitingEpicId: noop,
     awaitingSelectedProject: false,
     selectedProject,
-    selectedEpic: epicState
-      ? {
-          id: WorkbenchEpicId.make("epic"),
-          projectId: workspace.id,
-          title: "Local Epic",
-          markdown: "",
-          archivedAt: epicState === "archived" ? timestamp : null,
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }
-      : null,
     selectedTicket,
     updateRouteSelection: idle,
-    updateEpicRouteSelection: idle,
     closeWorkItem: noop,
     openWorkspaceDialog: noop,
     handleWorkspaceDialogOpenChange: noop,
   };
-  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
+  const boardData = getWorkbenchBoardData({ pageData, selection });
   const props: PageProps = {
     environmentId,
     createWorkspace: false,
@@ -342,24 +315,15 @@ function Harness({
       editWorkspaceOpen: dialog === "workspace",
       setEditWorkspaceOpen: noop,
       ticketDialogOpen: dialog === "create",
-      ticketDialogEpicId: null,
-      epicDialogOpen: false,
       submitProject: success,
       saveWorkspace: success,
       submitTicket: success,
-      saveEpicContent: success,
-      canArchiveEpic: true,
-      setEpicArchived: success,
-      submitEpic: success,
       openTicketDialog: noop,
-      conversationEpicId: null,
       openTicketConversation: noop,
       closeTicketConversation: noop,
       openCreatedTicket: noop,
       openDraftThread: noop,
-      openEpicDialog: noop,
       handleTicketDialogOpenChange: noop,
-      handleEpicDialogOpenChange: noop,
     },
     ticketActions: {
       repositoryScopeDraft: null,
@@ -448,46 +412,45 @@ function button(label: string, options?: { optional: true }) {
 
 it("suspends planning on archive and restores its availability", async () => {
   await render();
-  expect(button("New Ticket").disabled).toBe(false);
+  expect(button("New ticket").disabled).toBe(false);
   await render({ workspaceState: "archived" });
-  expect(button("New Ticket").disabled).toBe(true);
+  expect(button("New ticket").disabled).toBe(true);
   expect(document.body.textContent).toContain("Planning is read-only");
-  expect(button("Restore Workspace").disabled).toBe(false);
+  expect(button("Restore Board").disabled).toBe(false);
   await render();
-  expect(button("New Ticket").disabled).toBe(false);
+  expect(button("New ticket").disabled).toBe(false);
 });
 
 it("shows navigation failure after deletion removes the last selected Workspace", async () => {
-  const error =
-    "Workspace deleted, but Workbench could not open another Workspace. Navigation failed.";
+  const error = "Board deleted, but Workbench could not open another Board. Navigation failed.";
   await render({ workspaceState: "deleted", error });
-  expect(document.body.textContent).toContain("No active Workbench Workspaces");
+  expect(document.body.textContent).toContain("No active Boards");
   expect(document.body.textContent).toContain(error);
   expect(document.body.textContent).not.toContain("Retry");
-  expect(button("Create Workspace").disabled).toBe(false);
+  expect(button("Create Board").disabled).toBe(false);
 });
 
 it.each([
   {
     workspaceState: "active",
     grants: { archive: true, remove: true },
-    action: "Archive Workspace",
+    action: "Archive Board",
   },
   {
     workspaceState: "archived",
     grants: { archive: true, remove: true },
-    action: "Restore Workspace",
+    action: "Restore Board",
   },
   {
     workspaceState: "archived",
     grants: { archive: false, remove: false },
-    action: "Restore Workspace",
+    action: "Restore Board",
   },
 ] as const)(
   "keeps lifecycle actions discoverable with appropriate grants ($action, $grants)",
   async ({ action, ...props }) => {
     await render(props);
-    await act(async () => button("Workspace actions").click());
+    await act(async () => button("Board actions").click());
     const item = (label: string) => {
       const found = [...document.querySelectorAll<HTMLElement>('[role="menuitem"]')].find(
         (candidate) => candidate.textContent?.trim() === label,
@@ -496,10 +459,10 @@ it.each([
       return found;
     };
     expect(item(action).getAttribute("aria-disabled") === "true").toBe(!props.grants.archive);
-    expect(item("Delete Workspace…").getAttribute("aria-disabled") === "true").toBe(
+    expect(item("Delete Board…").getAttribute("aria-disabled") === "true").toBe(
       !props.grants.remove,
     );
-    expect(item("Edit Workspace").getAttribute("aria-disabled") === "true").toBe(
+    expect(item("Edit Board").getAttribute("aria-disabled") === "true").toBe(
       props.workspaceState === "archived",
     );
   },
@@ -528,21 +491,6 @@ it("keeps linked native Threads openable in an archived Workspace", async () => 
   await act(async () => openThread.click());
   expectThreadShownInChat();
 });
-
-it.each(["active", "archived"] as const)(
-  "hides %s Epic lifecycle actions until the host advertises support",
-  async (epicState) => {
-    await render({ epicState });
-    expect(button("Actions for Local Epic", { optional: true })).toBeNull();
-    await render({ epicState, epicLifecycleSupported: false });
-    expect(button("Actions for Local Epic", { optional: true })).toBeNull();
-    await render({ epicState, epicLifecycleSupported: true });
-    await act(async () => button("Actions for Local Epic").click());
-    expect(document.querySelector('[role="menu"]')?.textContent).toContain(
-      epicState === "archived" ? "Restore Epic" : "Archive Epic",
-    );
-  },
-);
 
 it("shows the deleted assignment and a visible replacement action in Ticket detail", async () => {
   await render({ detail: true, deletedThread: true });
@@ -611,10 +559,10 @@ it("opens create=ticket in the Board chat", async () => {
   expect(document.querySelector("article")).not.toBeNull();
 });
 
-it("shows a draft on the board while New Ticket remains available", async () => {
+it("shows a draft on the board while New ticket remains available", async () => {
   await render({ conversation: "resume" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
-  expect(button("New Ticket").disabled).toBe(false);
+  expect(button("New ticket").disabled).toBe(false);
   expect(button("Open draft Untitled draft").disabled).toBe(false);
   expect(document.body.textContent).toContain("Draft");
 });
@@ -648,9 +596,9 @@ it("tells the conversation when the host predates conversation drafts", async ()
 
 it("disables board mutations without operate permission and restores them when granted", async () => {
   await render({ canOperate: false });
-  expect(button("New Ticket").disabled).toBe(true);
+  expect(button("New ticket").disabled).toBe(true);
   await render({ canOperate: true });
-  expect(button("New Ticket").disabled).toBe(false);
+  expect(button("New ticket").disabled).toBe(false);
 });
 
 it("shows a Ticket's issue Reference in read-only Ticket detail and hides it once removed", async () => {
@@ -677,7 +625,7 @@ it("blocks saving an already open Workspace dialog after permission is revoked",
 
 it("disables Workspace creation for a read-only session with no selected Workspace", async () => {
   await render({ workspaceState: "deleted", canOperate: false });
-  expect(button("Create Workspace").disabled).toBe(true);
+  expect(button("Create Board").disabled).toBe(true);
 });
 
 it.each([false, true])(
@@ -726,7 +674,7 @@ it.each([false, true])(
 it("does not start a fresh planning conversation through the URL without operate permission", async () => {
   await render({ conversation: "create", canOperate: false });
   expect(document.querySelector("[data-conversation]")).toBeNull();
-  expect(button("New Ticket").disabled).toBe(true);
+  expect(button("New ticket").disabled).toBe(true);
 });
 
 it("disables Ticket Thread mutations when permission is revoked and restores them when granted", async () => {

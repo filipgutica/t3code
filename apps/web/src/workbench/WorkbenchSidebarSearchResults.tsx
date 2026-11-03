@@ -4,7 +4,7 @@ import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "../components/u
 import type { WorkbenchSidebarSearchResult } from "./workbenchSidebarSearch.logic";
 
 const RESULT_KINDS = {
-  workspace: { label: "Workspace", Icon: BlocksIcon },
+  workspace: { label: "Board", Icon: BlocksIcon },
   ticket: { label: "Ticket", Icon: BookOpenIcon },
   thread: { label: "Thread", Icon: MessageSquareIcon },
   draft: { label: "Draft", Icon: FilePenLineIcon },

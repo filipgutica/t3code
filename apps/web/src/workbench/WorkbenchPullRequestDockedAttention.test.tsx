@@ -20,6 +20,7 @@ import { expect, it, vi } from "vite-plus/test";
 
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import {
   useOpenWorkbenchPullRequest,
   WorkbenchPullRequestPreviewProvider,
@@ -45,19 +46,18 @@ const snapshot: WorkbenchSnapshot = {
       id: workspaceId,
       title: "Workspace",
       linkedProjectIds: [projectId],
+      archivedAt: null,
+      revision: 0,
       createdAt: timestamp,
       updatedAt: timestamp,
     },
   ],
-  epics: [],
   tickets: [
     {
       id: ticketId,
       projectId: workspaceId,
       title: "Review invitations",
-      kind: "story",
       markdown: "",
-      epicId: null,
       repositoryProjectIds: [],
       status: "in_progress",
       blocked: false,
@@ -106,16 +106,9 @@ const shells: EnvironmentThreadShell[] = [
   }),
 ];
 vi.mock("@tanstack/react-router", () => ({
-  useLocation: () => ({
-    pathname: "/local/thread/reading",
-    href: "/local/thread/reading?workbench=true",
-  }),
-  useSearch: () => ({ workbench: true }),
-  useParams: ({
-    select,
-  }: {
-    select: (params: { environmentId: string; threadId: string }) => unknown;
-  }) => select({ environmentId: "local", threadId: "reading" }),
+  useLocation: () => ({ pathname: "/workbench", href: "/workbench" }),
+  useSearch: () => ({}),
+  useParams: ({ select }: { select: (params: Record<string, string>) => unknown }) => select({}),
 }));
 vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
 vi.mock("../state/environments", () => ({ usePrimaryEnvironmentId: () => environmentId }));
@@ -191,6 +184,8 @@ it("clears resolved discussion attention after closing the docked PR without a m
   };
   native.stage(target, input);
   const threadRef = scopeThreadRef(environmentId, threadId);
+  // On the Ticket page, the floating chat's Thread owns the docked panel.
+  useWorkbenchFloatingChatStore.setState({ shownThread: threadRef });
   let renderer: ReactTestRenderer | undefined;
   try {
     await act(() => {
@@ -244,6 +239,7 @@ it("clears resolved discussion attention after closing the docked PR without a m
     await act(() => renderer?.unmount());
     native.registry.dispose();
     useRightPanelStore.setState({ byThreadKey: {} });
+    useWorkbenchFloatingChatStore.setState({ shownThread: null });
     vi.unstubAllGlobals();
   }
 });

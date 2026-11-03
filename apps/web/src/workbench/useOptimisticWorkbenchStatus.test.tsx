@@ -27,9 +27,7 @@ const makeTicket = (
 ): WorkbenchTicket => ({
   id,
   projectId,
-  epicId: null,
   title: id,
-  kind: "story",
   markdown: "",
   repositoryProjectIds: [],
   status,

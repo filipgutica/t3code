@@ -1,7 +1,8 @@
-import { parseJiraIssueUrl } from "@t3tools/contracts";
+import { WorkbenchTicketDraft, parseWorkbenchReferenceUrl } from "@t3tools/contracts";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { describe, expect, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
 import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
@@ -332,7 +333,7 @@ describe("ensureWorkbenchSchema", () => {
             expect(ticket.url).toBeNull();
           } else {
             expect(ticket.url).toBe(browse(ticket.key));
-            expect(parseJiraIssueUrl(ticket.url ?? "")?.key).toBe(ticket.key);
+            expect(parseWorkbenchReferenceUrl(ticket.url ?? "")?.label).toBe(ticket.key);
           }
         }
         // Issues that had left every selected sprint stay out of the active Board.
@@ -548,6 +549,142 @@ describe("ensureWorkbenchSchema", () => {
         yield* ensureWorkbenchSchema;
         expect(yield* readReferences).toEqual(references);
         expect(withoutProvenance(yield* dumpTables)).toEqual(before);
+      }),
+    ),
+  );
+
+  it.effect("preserves v23 Ticket and draft Epic links and drops draft type fields once", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 24`;
+        yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+          VALUES ('workspace', 'Workspace', ${now}, ${now})`;
+        // The parser normalizes the stored host, so this matches an existing Reference URL.
+        yield* sql`INSERT INTO workbench_epics (epic_id, workbench_project_id, title, markdown,
+            created_at, updated_at, jira_issue_key, jira_issue_url)
+          VALUES ('epic', 'workspace', 'Onboarding', '', ${now}, ${now}, 'ORBIT-10',
+              'https://ACME.atlassian.net/browse/ORBIT-10'),
+            ('unlinked', 'workspace', 'Quiet', '', ${now}, ${now}, NULL, NULL)`;
+        yield* sql`UPDATE workbench_epics SET archived_at = ${now} WHERE epic_id = 'epic'`;
+        yield* sql`INSERT INTO workbench_tickets (ticket_id, workbench_project_id, epic_id,
+            title, markdown, primary_t3_project_id, status, blocked, revision, created_at, updated_at)
+          VALUES ('ticket-appends', 'workspace', 'epic', 'Later Ticket', 'Brief', 'native',
+              'todo', 0, 4, ${later}, ${later}),
+            ('ticket-duplicate', 'workspace', 'epic', 'Already linked', '', 'native',
+              'done', 0, 2, ${later}, ${later}),
+            ('ticket-unlinked', 'workspace', 'unlinked', 'No Epic URL', '', 'native',
+              'todo', 0, 0, ${later}, ${later}),
+            ('ticket-no-epic', 'workspace', NULL, 'No Epic', '', 'native',
+              'todo', 0, 0, ${later}, ${later})`;
+        const readTickets = sql`SELECT * FROM workbench_tickets ORDER BY ticket_id`;
+        const ticketsBefore = yield* readTickets;
+        const draftPayload = (id: string, epicId: string | null) => ({
+          id,
+          projectId: "workspace",
+          threadId: `thread-${id}`,
+          anchorProjectId: "native",
+          modelSelection: { instanceId: "codex", model: "gpt-5" },
+          revision: 4,
+          phase: "draft",
+          fields: {
+            title: `Draft ${id}`,
+            markdown: "Brief",
+            kind: "bug",
+            epicId,
+            repositoryProjectIds: ["native"],
+          },
+          updatedByThreadId: `thread-${id}`,
+          progress: "- [x] Plan",
+          createdAt: later,
+          updatedAt: later,
+        });
+        const drafts = [
+          draftPayload("appends", "epic"),
+          draftPayload("duplicate", "epic"),
+          draftPayload("shares", "epic"),
+          draftPayload("no-epic", null),
+          draftPayload("unlinked", "unlinked"),
+          draftPayload("missing", "gone"),
+        ];
+        for (const draft of drafts) {
+          yield* sql`INSERT INTO workbench_ticket_drafts (draft_id, workbench_project_id,
+              thread_id, phase, revision, payload_json)
+            VALUES (${draft.id}, 'workspace', ${draft.threadId}, 'draft', 4,
+              ${JSON.stringify(draft)})`;
+        }
+        yield* sql`INSERT INTO workbench_references (ticket_id, url, title, added_by_thread_id,
+            position, created_at)
+          VALUES ('appends', 'https://github.com/acme/app/issues/1', NULL, NULL, 0, ${now}),
+            ('appends', 'https://github.com/acme/app/issues/2', 'Two', 'thread-appends', 1, ${now}),
+            ('duplicate', ${browse("ORBIT-10")}, 'Mine', NULL, 0, ${now}),
+            ('ticket-appends', 'https://github.com/acme/app/issues/3', 'Plan', NULL, 0, ${now}),
+            ('ticket-duplicate', ${browse("ORBIT-10")}, 'Keep mine', 'thread-ticket', 0, ${now})`;
+        const readReferences = sql`SELECT ticket_id AS "ticketId", url, title,
+            added_by_thread_id AS "addedByThreadId", position, created_at AS "createdAt"
+          FROM workbench_references ORDER BY ticket_id, position`;
+        const readDrafts = sql<{
+          readonly id: string;
+          readonly phase: string;
+          readonly revision: number;
+          readonly payload: string;
+        }>`SELECT draft_id AS id, phase, revision, payload_json AS payload
+          FROM workbench_ticket_drafts ORDER BY draft_id`;
+
+        yield* ensureWorkbenchSchema;
+
+        const epicReference = (ticketId: string, position: number) => ({
+          ticketId,
+          url: browse("ORBIT-10"),
+          title: "ORBIT-10 Onboarding",
+          addedByThreadId: null,
+          position,
+          createdAt: later,
+        });
+        const references = yield* readReferences;
+        expect(references).toEqual([
+          expect.objectContaining({ ticketId: "appends", position: 0, title: null }),
+          expect.objectContaining({ ticketId: "appends", position: 1, title: "Two" }),
+          epicReference("appends", 2),
+          expect.objectContaining({ ticketId: "duplicate", position: 0, title: "Mine" }),
+          epicReference("shares", 0),
+          expect.objectContaining({ ticketId: "ticket-appends", position: 0, title: "Plan" }),
+          epicReference("ticket-appends", 1),
+          expect.objectContaining({
+            ticketId: "ticket-duplicate",
+            position: 0,
+            title: "Keep mine",
+            addedByThreadId: "thread-ticket",
+          }),
+        ]);
+        expect(yield* readTickets).toEqual(ticketsBefore);
+        const decodeDraft = Schema.decodeUnknownEffect(Schema.fromJsonString(WorkbenchTicketDraft));
+        const migrated = yield* readDrafts;
+        expect(migrated.map(({ id, phase, revision }) => ({ id, phase, revision }))).toEqual(
+          drafts
+            .map(({ id }) => ({ id, phase: "draft", revision: 4 }))
+            .toSorted((a, b) => a.id.localeCompare(b.id)),
+        );
+        for (const row of migrated) {
+          const original = drafts.find((draft) => draft.id === row.id)!;
+          const { kind: _kind, epicId: _epicId, ...fields } = original.fields;
+          expect(JSON.parse(row.payload)).toEqual({ ...original, fields });
+          expect(yield* decodeDraft(row.payload)).toMatchObject({
+            id: row.id,
+            fields,
+            progress: "- [x] Plan",
+          });
+        }
+        expect(
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 24`,
+        ).toHaveLength(1);
+        yield* expectForeignKeysIntact;
+
+        yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 24`;
+        yield* ensureWorkbenchSchema;
+        expect(yield* readReferences).toEqual(references);
+        expect(yield* readDrafts).toEqual(migrated);
       }),
     ),
   );

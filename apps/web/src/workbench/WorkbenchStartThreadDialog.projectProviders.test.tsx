@@ -77,8 +77,6 @@ const ticket: WorkbenchTicket = {
   projectId: WorkbenchProjectId.make("workspace"),
   title: "Test",
   markdown: "",
-  kind: "story",
-  epicId: null,
   repositoryProjectIds: [first, second],
   status: "todo",
   blocked: false,

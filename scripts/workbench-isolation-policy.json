@@ -84,12 +84,6 @@
       "reason": "Install the Workbench host provider below existing startup and toast gates."
     },
     {
-      "source": "apps/web/src/routes/_chat.$environmentId.$threadId.tsx",
-      "target": "apps/web/src/workbench/workbenchNavigation",
-      "symbols": ["parseWorkbenchThreadSearch"],
-      "reason": "Preserve the typed Workbench deep-link search on the native Thread route."
-    },
-    {
       "source": "packages/contracts/src/clientRpcPermissions.ts",
       "target": "packages/contracts/src/workbenchRpcPermissions",
       "symbols": ["WORKBENCH_CLIENT_GUARDED_RPC_SCOPES"],
