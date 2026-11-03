@@ -16,6 +16,7 @@ import { useId, useState, type ReactNode } from "react";
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
+import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
@@ -54,10 +55,13 @@ export const workbenchThreadTitle = (
 /** Marks content an agent Thread wrote, such as "Added by Planning". */
 export function WorkbenchProvenanceBadge({ text }: { readonly text: string }) {
   return (
-    <Badge variant="outline" className="max-w-full">
-      <BotIcon />
-      <span className="truncate">{text}</span>
-    </Badge>
+    <Tooltip>
+      <TooltipTrigger render={<Badge variant="outline" className="min-w-0 max-w-72 shrink" />}>
+        <BotIcon aria-hidden />
+        <span className="truncate">{text}</span>
+      </TooltipTrigger>
+      <TooltipPopup>{text}</TooltipPopup>
+    </Tooltip>
   );
 }
 
