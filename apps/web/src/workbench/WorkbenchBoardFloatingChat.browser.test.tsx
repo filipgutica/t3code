@@ -13,13 +13,20 @@ import {
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import * as Cause from "effect/Cause";
-import { useState } from "react";
+import { useState, type ComponentProps } from "react";
+import { useLocation } from "@tanstack/react-router";
+import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { fakeTimers, render } from "../../test/render";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { makeThreadFixture } from "../test-fixtures";
+import { WorkbenchPageView } from "./WorkbenchPageView";
+import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
+import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
+import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
@@ -31,17 +38,27 @@ vi.mock("../state/use-atom-command", () => ({
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@effect/atom-react")>()),
   useAtomValue: () => true,
+  useAtomRefresh: () => () => {},
 }));
 vi.mock("./state", () => {
   const command = (name: string) => ({ name, permissionAtom: () => name });
   return {
     workbenchEnvironment: {
+      createProject: command("createProject"),
+      updateProject: command("updateProject"),
+      createEpic: command("createEpic"),
+      updateEpic: command("updateEpic"),
+      archiveEpic: command("archiveEpic"),
+      createTicket: command("createTicket"),
       beginTicketDraft: command("begin"),
       updateTicketDraft: command("update"),
       promoteTicketDraft: command("promote"),
       startTicketDraftWork: command("start"),
       discardTicketDraft: command("discard"),
+      discardTicketDraftInBatch: command("discardBatch"),
       readSnapshot: command("read"),
+      snapshot: () => null,
+      ticketPreparations: () => null,
       addReference: command("addReference"),
       removeReference: command("removeReference"),
     },
@@ -155,21 +172,49 @@ type BeginInput = { readonly id: WorkbenchTicketId; readonly threadId: ThreadId 
 function Harness(props: {
   readonly initialDrafts?: ReadonlyArray<WorkbenchTicketDraft>;
   readonly onSnapshot: (add: (input: BeginInput) => void) => void;
+  readonly requestedDraftId?: WorkbenchTicketId;
+  readonly repositories?: boolean;
+  readonly missingThreadIds?: ReadonlyArray<ThreadId>;
   readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
   readonly onNewTicketThread?: (ticket: WorkbenchTicket) => void;
 }) {
   const [drafts, setDrafts] = useState(props.initialDrafts ?? []);
+  const [request, setRequest] = useState<{
+    id: WorkbenchTicketId | null;
+    draft: WorkbenchTicketDraft | null;
+  } | null>(
+    props.requestedDraftId
+      ? {
+          id: props.requestedDraftId,
+          draft: props.initialDrafts?.find((draft) => draft.id === props.requestedDraftId) ?? null,
+        }
+      : null,
+  );
   props.onSnapshot((input) =>
     setDrafts((current) => [...current, draft(input.id, input.threadId, "")]),
   );
+  const linkedProjects = props.repositories
+    ? [
+        {
+          id: repositoryId,
+          environmentId,
+          title: "Orbit Web",
+          workspaceRoot: "/repos/orbit-web",
+          defaultModelSelection: null,
+          scripts: [],
+          createdAt,
+          updatedAt: createdAt,
+        },
+      ]
+    : [];
   const threadIds = ["first", "second", ...drafts.map((candidate) => candidate.threadId as string)];
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
       workspace={workspace}
       providers={[]}
-      linkedProjects={[]}
+      linkedProjects={linkedProjects}
       tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
       referencesByTicket={
         new Map([
@@ -189,19 +234,183 @@ function Harness(props: {
       }
       assignments={[assignment("first", "ticket-a"), assignment("second", "ticket-b")]}
       drafts={drafts}
-      threadsById={new Map(threadIds.map((id) => [ThreadId.make(id), liveThread(id)]))}
+      threadsById={
+        new Map(
+          threadIds
+            .filter((id) => !props.missingThreadIds?.includes(ThreadId.make(id)))
+            .map((id) => [ThreadId.make(id), liveThread(id)]),
+        )
+      }
       archivedThreadsById={new Map()}
       createContext={{
-        linkedProjects: [],
+        linkedProjects,
         epics: [],
       }}
       canStartDrafts
+      draftRequest={request}
+      onNewDraft={() => setRequest({ id: null, draft: null })}
+      onDraftPrepared={(value) => setRequest({ id: value.id, draft: value })}
+      onDraftClosed={() => setRequest(null)}
+      onCreateManually={() => {}}
       refreshSnapshot={() => {}}
-      onOpenDraft={props.onOpenDraft ?? (() => {})}
+      onOpenDraft={(id) => {
+        props.onOpenDraft?.(id);
+        setRequest({ id, draft: drafts.find((draft) => draft.id === id) ?? null });
+      }}
       onCreateEpic={() => {}}
       onOpenThread={props.onOpenThread ?? (() => {})}
       onNewTicketThread={props.onNewTicketThread ?? (() => {})}
       newTicketThreadDisabled={false}
+    />
+  );
+}
+
+const headerDraft = draft("header-draft", "header-planning", "Plan exports");
+const headerRepository = {
+  id: repositoryId,
+  environmentId,
+  title: "Orbit Web",
+  workspaceRoot: "/repos/orbit-web",
+  defaultModelSelection: null,
+  scripts: [],
+  createdAt,
+  updatedAt: createdAt,
+};
+const headerTicket = ticket("ticket-a", "Refunds");
+const headerAssignment = assignment("first", "ticket-a");
+const headerSnapshot = {
+  projects: [workspace],
+  tickets: [headerTicket],
+  ticketDrafts: [headerDraft],
+  assignments: [headerAssignment],
+  references: [],
+  epics: [],
+  reservedThreadIds: [],
+  threadRecaps: [],
+  ticketWorkspaces: [],
+};
+const noop = () => {};
+const idle = async () => {};
+const success = async () => true;
+
+function HeaderDraftPage() {
+  const search = parseWorkbenchSearch(useLocation().search);
+  const selection = useWorkbenchPageSelection({
+    environmentId,
+    initialProjectId: search.workbenchProjectId,
+    initialTicketId: search.ticketId,
+    initialEpicId: search.epicId,
+    snapshot: headerSnapshot,
+    tickets: headerSnapshot.tickets,
+    pendingAction: null,
+    setError: noop,
+  });
+  const pageData: ComponentProps<typeof WorkbenchPageView>["pageData"] = {
+    canOperate: true,
+    referencesByTicket: new Map(),
+    projects: [headerRepository],
+    repositoriesById: new Map([[repositoryId, headerRepository]]),
+    providers: [],
+    keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+    availableEditors: [],
+    query: {
+      resultIdentity: {},
+      dataUpdatedAt: 0,
+      data: headerSnapshot,
+      error: null,
+      failure: null,
+      isPending: false,
+      isSuccess: true,
+      refresh: noop,
+    },
+    refreshWorkbenchSnapshot: noop,
+    ticketDrafts: new Map(),
+    clearTicketDraft: noop,
+    snapshot: headerSnapshot,
+    snapshotProjects: headerSnapshot.projects,
+    optimisticStatus: {
+      tickets: headerSnapshot.tickets,
+      pendingTicketIds: new Set(),
+      begin: () => false as const,
+      succeed: noop,
+      fail: noop,
+    },
+    threadsById: new Map(
+      ["first", headerDraft.threadId].map((id) => [ThreadId.make(id), liveThread(id)]),
+    ),
+    archivedThreadsById: new Map(),
+    existingThreadIds: new Set([ThreadId.make("first"), headerDraft.threadId]),
+    reservedThreadIds: new Set(),
+    assignmentsByTicket: new Map([[headerTicket.id, headerAssignment]]),
+    threadLookupReady: true,
+    threadLookupError: null,
+    refreshArchivedThreads: noop,
+    refreshThreadLookup: noop,
+  };
+  const dialogs = useWorkbenchPageDialogs({
+    environmentId,
+    snapshot: headerSnapshot,
+    projects: pageData.projects,
+    canOperate: true,
+    selection,
+    setError: noop,
+    setPendingAction: noop,
+  });
+  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
+  return (
+    <WorkbenchPageView
+      environmentId={environmentId}
+      createWorkspace={false}
+      createTicket={search.create === "ticket"}
+      error={null}
+      pendingAction={null}
+      setError={noop}
+      pageData={pageData}
+      selection={selection}
+      dialogs={dialogs}
+      boardData={boardData}
+      workspaceActions={{
+        canArchive: true,
+        canDelete: true,
+        deletion: null,
+        deletedProjectIds: new Set(),
+        setArchived: idle,
+        requestDeletion: noop,
+        removeWorkspace: idle,
+        closeDeletion: noop,
+      }}
+      ticketActions={{
+        repositoryScopeDraft: null,
+        editRepositories: noop,
+        changeRepositoryScope: noop,
+        cancelRepositoryScope: noop,
+        clearRepositoryScope: noop,
+        acceptSavedRepositoryScope: noop,
+        saveRepositories: success,
+        workspacePreparationFailure: null,
+        changeTicket: noop,
+        setTicketArchived: success,
+        removeTicket: success,
+        resetTicketWorkspace: success,
+        ticketForBoardAction: (value) => value,
+        saveTicketContent: async () => false as const,
+        regenerateSummary: idle,
+      }}
+      threadActions={{
+        startThreadRequest: null,
+        setStartThreadRequest: noop,
+        attachThreadTicket: null,
+        setAttachThreadTicket: noop,
+        openAssignedThread: idle,
+        requestTicketThread: noop,
+        requestNewThread: noop,
+        requestReplacementThread: noop,
+        deleteAssignedThread: idle,
+        attachExistingThread: idle,
+        startSelectedThread: idle,
+        getActiveThreadRepository: () => undefined,
+        unlinkThread: idle,
+      }}
     />
   );
 }
@@ -416,10 +625,9 @@ it("repeats a failed begin with the same ids instead of starting a second draft"
   await using screen = await render(<Harness onSnapshot={onSnapshot} />);
 
   await beginDraft(screen);
-  await userEvent.click(threadMenu(screen));
-  const retry = screen.getByRole("menuitem", { name: "New ticket draft" });
-  await expect.element(retry).not.toHaveAttribute("aria-disabled");
-  await userEvent.click(retry);
+  await expect.element(screen.getByRole("alert")).toHaveTextContent("Lost reply");
+  await expect.element(screen.getByRole("button", { name: "Create manually" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
 
   const [failed, retried] = mocks.begin.mock.calls.map(([call]) => call.input as BeginInput);
   expect(retried).toEqual(failed);
@@ -437,7 +645,6 @@ it("keeps a draft's conversation read-only with the draft's actions, and ticket 
     />,
   );
   await pickThread(screen, /Plan exports/);
-  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect
     .element(screen.getByRole("textbox", { name: "Composer for draft-thread" }))
     .toHaveAttribute("readonly");
@@ -465,7 +672,6 @@ it("edits a draft's title in its card and shows the full brief above the convers
   }));
   await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
   await pickThread(screen, /Plan exports/);
-  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   const card = screen.getByRole("group", { name: "Ticket draft" });
   await expect.element(card.getByText("Export refunds")).toBeVisible();
   await expect.element(card.getByText("Email the CSV")).not.toBeInTheDocument();
@@ -510,7 +716,6 @@ it("starts a draft's card collapsed in a short chat, still saying why it can't b
     />,
   );
   await pickThread(screen, /Plan exports/);
-  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   const card = screen.getByRole("group", { name: "Ticket draft" });
   await expect.element(card.getByRole("textbox", { name: "Title" })).not.toBeInTheDocument();
   await expect.element(card.getByRole("button", { name: "Create ticket" })).toBeDisabled();
@@ -534,7 +739,7 @@ it.each([
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
 
-it("opens ticket Threads, including settled ones, as Threads and drafts as drafts", async () => {
+it("opens the full native Thread only when explicitly requested", async () => {
   const { onSnapshot } = await setup();
   const onOpenDraft = vi.fn();
   const onOpenThread = vi.fn();
@@ -550,6 +755,157 @@ it("opens ticket Threads, including settled ones, as Threads and drafts as draft
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("first");
   await pickThread(screen, /Plan exports/);
+  onOpenDraft.mockClear();
   await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
-  expect(onOpenDraft).toHaveBeenCalledWith("draft");
+  expect(onOpenThread).toHaveBeenCalledWith("draft-thread");
+  expect(onOpenDraft).not.toHaveBeenCalled();
+});
+
+it("opens an old draft URL in the Board chat despite a previous Thread pick", async () => {
+  const { onSnapshot } = await setup();
+  useWorkbenchFloatingChatStore.setState({
+    pickedThreads: {
+      [`${environmentId}:board:${projectId}`]: {
+        threadId: ThreadId.make("second"),
+        settledAt: null,
+      },
+    },
+  });
+  const requested = draft("old-draft", "old-thread", "Plan exports");
+  await using screen = await render(
+    <Harness initialDrafts={[requested]} requestedDraftId={requested.id} onSnapshot={onSnapshot} />,
+  );
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for old-thread" }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for second" }))
+    .not.toBeInTheDocument();
+  expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it("requires a repository choice in the card before creating the Ticket", async () => {
+  const { onSnapshot } = await setup();
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  mocks.otherCommand.mockImplementation(
+    async ({ input }: { input: { fields: WorkbenchTicketDraft["fields"] } }) => ({
+      _tag: "Success",
+      value: { ...planned, fields: input.fields, revision: 1 },
+    }),
+  );
+  await using screen = await render(
+    <Harness initialDrafts={[planned]} repositories onSnapshot={onSnapshot} />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await expect.element(card.getByRole("button", { name: "Create ticket" })).toBeDisabled();
+  await userEvent.click(card.getByText("Orbit Web", { exact: true }));
+  await expect.element(card.getByRole("button", { name: "Create ticket" })).toBeEnabled();
+});
+
+it("keeps a pending draft start alive while the chat is collapsed", async () => {
+  const { succeed, onSnapshot } = await setup();
+  let complete: () => Promise<void> = async () => {};
+  mocks.begin.mockImplementation(
+    (args) =>
+      new Promise((resolve) => {
+        complete = async () => resolve(await succeed(args));
+      }),
+  );
+  await using screen = await render(<Harness onSnapshot={onSnapshot} />);
+  await beginDraft(screen);
+  await userEvent.click(screen.getByRole("button", { name: "Collapse board chat" }));
+  await complete();
+  const input = mocks.begin.mock.calls[0]?.[0].input as BeginInput;
+  await expect
+    .element(screen.getByRole("textbox", { name: `Composer for ${input.threadId}` }))
+    .toBeVisible();
+  expect(mocks.begin).toHaveBeenCalledOnce();
+});
+
+it("keeps failed title edits until the user explicitly leaves without saving", async () => {
+  const { onSnapshot } = await setup();
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  mocks.otherCommand.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("Save unavailable")),
+  });
+  await using screen = await render(
+    <Harness initialDrafts={[planned]} requestedDraftId={planned.id} onSnapshot={onSnapshot} />,
+    { router: "/workbench" },
+  );
+  const title = screen.getByRole("textbox", { name: "Title", exact: true });
+  await userEvent.fill(title, "Keep these edits");
+  await userEvent.click(screen.getByRole("button", { name: "Collapse board chat" }));
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await expect.element(title).toHaveValue("Keep these edits");
+  await pickThread(screen, /Thread second/);
+  await expect.element(title).toHaveValue("Keep these edits");
+  void screen.router!.navigate({ to: "/" });
+  await expect.element(page.getByRole("alertdialog")).toBeVisible();
+  page.getByRole("button", { name: "Stay", exact: true }).element().focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
+  expect(screen.router!.state.location.pathname).toBe("/workbench");
+  await expect.element(title).toHaveValue("Keep these edits");
+  void screen.router!.navigate({ to: "/" });
+  await expect.element(page.getByRole("button", { name: "Leave without saving" })).toBeVisible();
+  page.getByRole("button", { name: "Leave without saving" }).element().focus();
+  await userEvent.keyboard("{Enter}");
+  await vi.waitFor(() => expect(screen.router!.state.location.pathname).toBe("/"));
+});
+
+it("retries interrupted discard even when the native planning Thread is gone", async () => {
+  const { onSnapshot } = await setup();
+  const interrupted = {
+    ...draft("discarding-draft", "missing-thread", "Plan exports"),
+    phase: "discarding" as const,
+  };
+  mocks.otherCommand.mockResolvedValue({ _tag: "Success", value: undefined });
+  await using screen = await render(
+    <Harness
+      initialDrafts={[interrupted]}
+      requestedDraftId={interrupted.id}
+      missingThreadIds={[interrupted.threadId]}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  const retry = screen.getByRole("button", { name: "Retry discard" });
+  await expect.element(retry).toBeVisible();
+  await userEvent.click(retry);
+  await expect.element(retry).not.toBeInTheDocument();
+  expect(mocks.otherCommand).toHaveBeenCalledWith({
+    environmentId,
+    input: { id: interrupted.id, expectedRevision: interrupted.revision },
+  });
+  expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it("keeps a failed draft edit when the real Board header starts New Ticket", async () => {
+  await setup();
+  useWorkbenchFloatingChatStore.setState({
+    pickedThreads: {
+      [`${environmentId}:board:${projectId}`]: {
+        threadId: ThreadId.make("first"),
+        settledAt: null,
+      },
+    },
+  });
+  mocks.otherCommand.mockResolvedValue({
+    _tag: "Failure",
+    cause: Cause.fail(new Error("Save unavailable")),
+  });
+  await using screen = await render(<HeaderDraftPage />, {
+    router: `/workbench?workbenchProjectId=${projectId}&ticketId=${headerDraft.id}`,
+  });
+  const title = screen.getByRole("textbox", { name: "Title", exact: true });
+  await userEvent.fill(title, "Preserve the header edit");
+  await userEvent.click(screen.getByRole("button", { name: "New Ticket", exact: true }));
+  await expect.element(page.getByRole("alertdialog")).toBeVisible();
+  page.getByRole("button", { name: "Stay", exact: true }).element().focus();
+  await userEvent.keyboard("{Enter}");
+  await expect.element(page.getByRole("alertdialog")).not.toBeInTheDocument();
+  await expect.element(title).toHaveValue("Preserve the header edit");
+  expect(screen.router!.state.location.search.ticketId).toBe(headerDraft.id);
+  expect(mocks.begin).not.toHaveBeenCalled();
 });

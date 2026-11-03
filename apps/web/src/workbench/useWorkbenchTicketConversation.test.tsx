@@ -219,6 +219,8 @@ describe("useTicketDraftBegin", () => {
       });
       expect(harness.refreshSnapshot).toHaveBeenCalledOnce();
       expect(harness.onDraft).not.toHaveBeenCalled();
+      await harness.rerender({ modelSelection: { ...modelSelection } });
+      expect(commands.begin).toHaveBeenCalledOnce();
       await harness.retry();
       const [first, second] = commands.begin.mock.calls.map(([call]) => call.input);
       expect(second.id).toBe(first.id);

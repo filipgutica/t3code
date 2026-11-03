@@ -111,14 +111,13 @@ export const canDiscardConversationDraft = ({
 }) => (phase === "creating" || phase === "draft" || phase === "promoting") && !ticketExists;
 
 export type WorkbenchWorkItemView =
-  | { readonly kind: "conversation"; readonly draft: WorkbenchConversationDraft | null }
+  | { readonly kind: "draft"; readonly draft: WorkbenchConversationDraft | null }
   | { readonly kind: "ticket" }
   | { readonly kind: "epic" }
   | { readonly kind: "board" };
 
 /**
- * Chooses the Workspace's main-content view. `create=ticket` stays in the URL while the
- * conversation is open so reload and history resume it; a saved ticket opens its own page.
+ * Draft routes keep the Board visible and request its chat; saved tickets open their page.
  */
 export const resolveWorkbenchWorkItemView = ({
   snapshot,
@@ -142,14 +141,14 @@ export const resolveWorkbenchWorkItemView = ({
     selectedTicketId === null
       ? null
       : getConversationDraftForTicket(snapshot, selectedTicketId, ticketExists);
-  if (planning?.projectId === workspaceId) return { kind: "conversation", draft: planning };
+  if (planning?.projectId === workspaceId) return { kind: "draft", draft: planning };
   if (selectedTicketId !== null && selectedTicketId === awaitingTicketId && !ticketExists) {
-    return { kind: "conversation", draft: null };
+    return { kind: "draft", draft: null };
   }
   if (selectedTicketId !== null && ticketExists) return { kind: "ticket" };
   if (hasSelectedEpic) return { kind: "epic" };
   if (createTicket && workspaceId !== null) {
-    return { kind: "conversation", draft: null };
+    return { kind: "draft", draft: null };
   }
   return { kind: "board" };
 };

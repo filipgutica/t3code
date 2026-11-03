@@ -140,10 +140,10 @@ describe("resolveWorkbenchWorkItemView", () => {
         snapshot: makeSnapshot([draft]),
         createTicket: true,
       }),
-    ).toEqual({ kind: "conversation", draft: null });
+    ).toEqual({ kind: "draft", draft: null });
     expect(
       resolveWorkbenchWorkItemView({ ...base, snapshot: makeSnapshot([]), createTicket: true }),
-    ).toEqual({ kind: "conversation", draft: null });
+    ).toEqual({ kind: "draft", draft: null });
   });
 
   it("keeps an accepted begin in the conversation while its snapshot arrives", () => {
@@ -154,7 +154,7 @@ describe("resolveWorkbenchWorkItemView", () => {
         selectedTicketId: ticketId,
         awaitingTicketId: ticketId,
       }),
-    ).toEqual({ kind: "conversation", draft: null });
+    ).toEqual({ kind: "draft", draft: null });
   });
 
   it("resumes the selected draft instead of another draft in the same workspace", () => {
@@ -166,7 +166,7 @@ describe("resolveWorkbenchWorkItemView", () => {
         snapshot: makeSnapshot([first, second]),
         selectedTicketId: ticketId,
       }),
-    ).toEqual({ kind: "conversation", draft: second });
+    ).toEqual({ kind: "draft", draft: second });
   });
 
   it("returns to the board when the conversation is closed", () => {
@@ -206,7 +206,7 @@ describe("resolveWorkbenchWorkItemView", () => {
           selectedTicketId: ticketId,
           ticketExists: false,
         }),
-      ).toEqual({ kind: "conversation", draft });
+      ).toEqual({ kind: "draft", draft });
     }
   });
 

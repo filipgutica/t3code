@@ -75,7 +75,6 @@ import {
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
-import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
@@ -482,7 +481,6 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
     ) : null;
   return (
     <>
-      {planning ? <div className="shrink-0 border-b border-border">{planningThread()}</div> : null}
       <WorkbenchTicketDetail
         key={selectedTicket.id}
         environmentId={environmentId}
@@ -506,6 +504,20 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
           planning
             ? {
                 threadIds: new Set([planning.threadId]),
+                row: (
+                  <div className="px-3 pb-3">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        useWorkbenchFloatingChatStore.getState().expand(planning.threadId)
+                      }
+                    >
+                      Planning · No work area yet
+                    </Button>
+                    {planningThread()}
+                  </div>
+                ),
                 render: (_threadId, conversation) => planningThread(conversation),
               }
             : undefined
@@ -624,50 +636,13 @@ function WorkbenchPageEpicDetail(
   );
 }
 
-function WorkbenchPageConversation(
-  props: WorkbenchPageTicketDetailProps & { readonly draft: WorkbenchConversationDraft | null },
-) {
-  const { pageData, selection, dialogs, boardData, environmentId, draft } = props;
-  const { selectedProject, selectedTicket } = selection;
-  if (environmentId === null || selectedProject === null) return null;
-  return (
-    <WorkbenchTicketConversation
-      environmentId={environmentId}
-      workspace={selectedProject}
-      draft={draft}
-      requestedDraftId={selection.selectedTicketId}
-      // Resuming from the board selects no ticket, yet an interrupted Create ticket may have saved one.
-      ticket={selectedTicket ?? pageData.snapshot?.tickets.find((t) => t.id === draft?.id) ?? null}
-      draftsSupported={supportsConversationDrafts(pageData.snapshot)}
-      providers={pageData.providers}
-      linkedProjects={boardData.linkedT3Projects}
-      references={draft ? getTicketReferences(pageData.referencesByTicket, draft.id) : []}
-      threadsById={pageData.threadsById}
-      archivedThreadsById={pageData.archivedThreadsById}
-      epics={boardData.activeProjectEpics}
-      initialEpicId={dialogs.conversationEpicId}
-      refreshSnapshot={pageData.refreshWorkbenchSnapshot}
-      onClose={dialogs.closeTicketConversation}
-      onCreateManually={() =>
-        dialogs.openTicketDialog(draft ? draft.fields.epicId : dialogs.conversationEpicId)
-      }
-      onCreateEpic={dialogs.openEpicDialog}
-      onDraftPrepared={dialogs.openCreatedTicket}
-      onTicketCreated={(created) => {
-        dialogs.openCreatedTicket(created);
-        // The ticket's page continues this conversation in its floating chat.
-        useWorkbenchFloatingChatStore.getState().expand(created.threadId);
-      }}
-      onDiscarded={dialogs.closeTicketConversation}
-      onWorkStarted={dialogs.openDraftThread}
-      // A saved ticket opens its own page once the snapshot holds it.
-      onShowTicketDetails={pageData.refreshWorkbenchSnapshot}
-    />
-  );
-}
-
 function WorkbenchPageBoard(
-  props: Pick<
+  props: {
+    readonly draftRequest: {
+      readonly id: WorkbenchTicketId | null;
+      readonly draft: WorkbenchConversationDraft | null;
+    } | null;
+  } & Pick<
     WorkbenchPageViewProps,
     | "boardData"
     | "dialogs"
@@ -701,15 +676,7 @@ function WorkbenchPageBoard(
     assignmentsByTicket,
     threadLookupReady,
   } = pageData;
-  const {
-    setSelectedTicketId,
-    setSelectedEpicId,
-    setAwaitingTicketId,
-    setAwaitingEpicId,
-    selectedProject,
-    updateRouteSelection,
-    updateEpicRouteSelection,
-  } = selection;
+  const { selectedProject, updateRouteSelection, updateEpicRouteSelection } = selection;
 
   const { openTicketConversation } = dialogs;
   const { projectTickets, projectEpics, boardGroupModeForView, repositoriesReady } = boardData;
@@ -718,10 +685,6 @@ function WorkbenchPageBoard(
   const pending = pendingAction !== null;
   if (environmentId === null || selectedProject === null) return null;
   const selectTicket = (projectId: WorkbenchProjectId, ticketId: WorkbenchTicketId) => {
-    setAwaitingTicketId(null);
-    setAwaitingEpicId(null);
-    setSelectedEpicId(null);
-    setSelectedTicketId(ticketId);
     void updateRouteSelection(projectId, ticketId);
   };
   return (
@@ -751,7 +714,13 @@ function WorkbenchPageBoard(
               pendingAction={pendingAction}
               environmentId={environmentId}
               workspace={selectedProject}
-              onOpenDraft={(draftId) => selectTicket(selectedProject.id, draftId)}
+              onOpenDraft={(draftId) => {
+                const draft = snapshot?.ticketDrafts?.find((item) => item.id === draftId);
+                if (draft) useWorkbenchFloatingChatStore.getState().expand(draft.threadId);
+                selectTicket(selectedProject.id, draftId);
+              }}
+              draftRequest={props.draftRequest}
+              dialogs={dialogs}
               onCreateEpic={dialogs.openEpicDialog}
             />
           }
@@ -770,10 +739,6 @@ function WorkbenchPageBoard(
           pendingTicketIds={optimisticStatus.pendingTicketIds}
           onSelect={selectTicket}
           onSelectEpic={(projectId, epicId) => {
-            setAwaitingTicketId(null);
-            setAwaitingEpicId(null);
-            setSelectedTicketId(null);
-            setSelectedEpicId(epicId);
             void updateEpicRouteSelection(projectId, epicId);
           }}
           onMove={(ticket, status) => {
@@ -803,10 +768,13 @@ function WorkbenchPageBoardChat({
   workspace,
   onOpenDraft,
   onCreateEpic,
+  draftRequest,
+  dialogs,
 }: Pick<
   WorkbenchPageViewProps,
-  "pageData" | "boardData" | "threadActions" | "ticketActions" | "pendingAction"
+  "pageData" | "boardData" | "threadActions" | "ticketActions" | "pendingAction" | "dialogs"
 > & {
+  readonly draftRequest: Parameters<typeof WorkbenchPageBoard>[0]["draftRequest"];
   readonly environmentId: EnvironmentId;
   readonly workspace: NonNullable<WorkbenchPageViewProps["selection"]["selectedProject"]>;
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
@@ -834,6 +802,14 @@ function WorkbenchPageBoardChat({
       }
       refreshSnapshot={pageData.refreshWorkbenchSnapshot}
       onOpenDraft={onOpenDraft}
+      draftRequest={draftRequest}
+      initialEpicId={dialogs.conversationEpicId}
+      onNewDraft={dialogs.openTicketConversation}
+      onDraftPrepared={dialogs.openCreatedTicket}
+      onDraftClosed={dialogs.closeTicketConversation}
+      onCreateManually={() =>
+        dialogs.openTicketDialog(draftRequest?.draft?.fields.epicId ?? dialogs.conversationEpicId)
+      }
       onCreateEpic={onCreateEpic}
       onOpenThread={(threadId) => void threadActions.openAssignedThread(threadId)}
       onNewTicketThread={(ticket) =>
@@ -903,14 +879,19 @@ function WorkbenchPageWorkspace(
           </Button>
         </div>
       ) : null}
-      {workItemView.kind === "conversation" ? (
-        <WorkbenchPageConversation {...props} draft={workItemView.draft} />
-      ) : workItemView.kind === "ticket" ? (
+      {workItemView.kind === "ticket" ? (
         <WorkbenchPageTicketDetail {...props} />
       ) : workItemView.kind === "epic" ? (
         <WorkbenchPageEpicDetail {...props} />
       ) : (
-        <WorkbenchPageBoard {...props} />
+        <WorkbenchPageBoard
+          {...props}
+          draftRequest={
+            workItemView.kind === "draft"
+              ? { id: selection.selectedTicketId, draft: workItemView.draft }
+              : null
+          }
+        />
       )}
     </div>
   );

@@ -107,6 +107,9 @@ function PickerThreadItem({
               <span className={cn("min-w-0 flex-1 truncate", selected && "font-medium")}>
                 {title}
               </span>
+              {thread.planning ? (
+                <span className="text-2xs text-muted-foreground">Planning</span>
+              ) : null}
               {status ? (
                 <span
                   className={cn(
@@ -269,6 +272,7 @@ function PickerTriggerContent({
             ? selected.title
             : getWorkbenchFloatingChatPickerRow(selected, false).title}
       </span>
+      {selected?.planning ? <span className="text-2xs text-muted-foreground">Planning</span> : null}
       {selected?.status ? (
         <WorkbenchThreadExecutionStatus
           compact

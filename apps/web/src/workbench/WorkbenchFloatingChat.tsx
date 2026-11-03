@@ -105,6 +105,8 @@ export interface WorkbenchFloatingChatProps {
   /** The board's new Thread on the showing Thread's ticket; null when it has none. */
   readonly ticketThread?: WorkbenchFloatingChatTicketThread | null;
   readonly planning?: WorkbenchFloatingChatPlanning | undefined;
+  /** Startup or recovery before a draft has a native Thread shell. */
+  readonly draftStart?: ReactNode;
 }
 
 export interface WorkbenchFloatingChatTicketThread {
@@ -119,6 +121,7 @@ export interface WorkbenchFloatingChatTicketThread {
  */
 export interface WorkbenchFloatingChatPlanning {
   readonly threadIds: ReadonlySet<ThreadId>;
+  readonly row?: ReactNode;
   readonly render: (threadId: ThreadId, conversation: ReactNode) => ReactNode;
 }
 
@@ -317,6 +320,7 @@ function FloatingChatBody({
   copy,
   label,
   selected,
+  draftStart,
   hasHistory,
   expanded,
   mounted,
@@ -332,6 +336,7 @@ function FloatingChatBody({
   readonly environmentId: EnvironmentId;
   readonly copy: ChatCopy;
   readonly label: string;
+  readonly draftStart?: ReactNode;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
@@ -345,6 +350,7 @@ function FloatingChatBody({
   readonly newThreadDisabled: boolean;
   readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }) {
+  if (draftStart) return <div hidden={!expanded}>{draftStart}</div>;
   if (selected === null) {
     return (
       <FloatingChatEmpty
@@ -621,6 +627,7 @@ function useFloatingChatLayout(
   mode: WorkbenchFloatingChatMode,
   /** The page shows the Thread's terminal and toggles, which the mounted conversation renders. */
   keepMounted: boolean,
+  hasDraftStart: boolean,
 ) {
   const threadRef = threadId === null ? null : scopeThreadRef(environmentId, threadId);
   const { open, maximized } = useWorkbenchThreadPanel(threadRef);
@@ -638,7 +645,7 @@ function useFloatingChatLayout(
       ? () => useRightPanelStore.getState().close(threadRef)
       : null;
   const launcher = mode === "launcher" || closeSheet !== null;
-  const expanded = !launcher && mode === "expanded" && threadId !== null;
+  const expanded = !launcher && mode === "expanded" && (threadId !== null || hasDraftStart);
   return {
     launcher,
     expanded,
@@ -740,7 +747,16 @@ function FloatingChatHeader({
           }
         />
       )}
-      {selected === null ? null : (
+      {selected === null ? (
+        chatProps.draftStart ? (
+          <FloatingChatToggle
+            copy={copy}
+            expanded={expanded}
+            buttonRef={toggleRef}
+            onToggle={onToggle}
+          />
+        ) : null
+      ) : (
         <FloatingChatThreadActions
           environmentId={chatProps.environmentId}
           threadId={selected.threadId}
@@ -867,7 +883,8 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
     environmentId,
     selectedThreadId,
     mode,
-    hosts.controlsHost !== null,
+    hosts.controlsHost !== null || boardDraftShown,
+    Boolean(props.draftStart),
   );
   useCollapseOnPageClick(expanded, composerFocus.release);
   const [detailsHandle] = useState(PopoverCreateHandle);
@@ -915,6 +932,7 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
           onNewThread={onNewThread}
           newThreadDisabled={newThreadDisabled}
           planning={props.planning}
+          draftStart={props.draftStart}
         />
       </FloatingChatFrame>
     </>
