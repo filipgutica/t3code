@@ -31,7 +31,9 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await page.getByRole("option", { name: "Bug", exact: true }).click();
   await draft.getByRole("checkbox", { name: /^Beacon CLI / }).click();
   await draft.getByRole("button", { name: "Create ticket", exact: true }).click();
-  await expect(draft).not.toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Regression Epic child", exact: true }),
+  ).toBeVisible();
   const child = (await snapshot(demo)).tickets.find((t) => t.title === "Regression Epic child");
   if (!child) throw new Error("Created child was not persisted");
   expect(child.epicId).toBe(epic.id);
