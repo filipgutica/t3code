@@ -77,7 +77,7 @@ import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoa
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
-import { WorkbenchPageRow } from "./WorkbenchPagePanel";
+import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { getTicketReferences } from "./workbenchReferences.logic";
 import {
@@ -173,6 +173,7 @@ function WorkbenchBoardHeader(
   const { setEditWorkspaceOpen, openTicketDialog, openTicketConversation, openEpicDialog } =
     dialogs;
   const { projectTickets, linkedT3Projects } = boardData;
+  const controlsHostRef = useWorkbenchControlsHostRef();
 
   if (selectedProject === null) return null;
   const readOnly = selectedProject.archivedAt != null;
@@ -263,6 +264,11 @@ function WorkbenchBoardHeader(
           </Menu>
         </div>
       </div>
+      <div
+        ref={controlsHostRef}
+        data-workbench-chat-controls=""
+        className="flex shrink-0 self-start"
+      />
     </WorkspacePageHeader>
   );
 }

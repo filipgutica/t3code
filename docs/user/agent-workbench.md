@@ -140,8 +140,8 @@ earlier conversations available.
 
 Selecting a Thread on a Ticket shows it in the Ticket's chat. Choose **Open full
 Thread** in the chat for the regular Thread page, and use its Board or Ticket links to
-return. The terminal and side panel buttons at the top right of the Ticket open the
-chat Thread's terminal and side panel without leaving the page. The command palette also offers **Open
+return. The terminal and side panel buttons at the top right of the Board and of each
+Ticket open the chat Thread's terminal and side panel without leaving the page. The command palette also offers **Open
 Workbench**, **New Ticket** for the current Workspace, and **Back to Ticket** from a
 linked Thread.
 
@@ -165,6 +165,8 @@ Ticket's Threads. Use it to follow and answer agents without leaving the page.
   the command palette. Drag the chat's left edge, top edge, or top-left corner to
   resize it. Clicking elsewhere on the page collapses the chat; select it to expand it
   again with your message intact.
+- Opening a Ticket from the Board keeps the chat on the same Thread when that Thread
+  is on the Ticket. Otherwise the chat collapses and shows the Ticket's Thread.
 - **Settle Thread** in the chat's header settles the open Thread and shows the
   Ticket's next one. Open a settled Thread from the menu to **Un-settle** it.
 

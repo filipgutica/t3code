@@ -19,9 +19,10 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const { openPullRequest, panelClick, pageComposer } = vi.hoisted(() => ({
+const { openPullRequest, panelClick, chatMount, pageComposer } = vi.hoisted(() => ({
   openPullRequest: vi.fn(),
   panelClick: vi.fn(),
+  chatMount: vi.fn(),
   // The page's shared composer handle, which the command palette focuses when it closes.
   pageComposer: { current: null },
 }));
@@ -64,6 +65,7 @@ vi.mock("../components/ChatView", async () => {
       useEffect(() => {
         if (request !== null) ref.current?.focus();
       }, [request]);
+      useEffect(() => chatMount(props.threadId), [props.threadId]);
       return (
         <>
           {panelOpen && panelHost
@@ -97,10 +99,13 @@ const setup = () => {
     focusRequest: { id: 0, threadId: null },
     pageChat: null,
     shownThread: null,
+    pickedThreads: {},
+    boardHandoff: null,
   });
   useRightPanelStore.setState({ byThreadKey: {}, userActionRevisionByThreadKey: {} });
   openPullRequest.mockReset();
   panelClick.mockReset();
+  chatMount.mockReset();
 };
 
 const thread = (
@@ -671,4 +676,113 @@ it("resizes from the top-left corner and keeps the size for the next ticket", as
   await expect
     .element(screen.getByRole("region", { name: "PAY-1 chat" }))
     .toHaveStyle({ width: `${resized.width}px`, height: `${resized.height}px` });
+});
+
+/** A Board chat expanded on Thread t, as the user leaves the Board. */
+const renderBoardShowing = async (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => {
+  await using stack = new AsyncDisposableStack();
+  const screen = stack.use(
+    await render(
+      <div data-workbench-page-column="">
+        <Harness key="board" kind="board" threads={threads} />
+      </div>,
+    ),
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+  await userEvent.click(screen.getByRole("button", { name: /^Board Threads: / }));
+  await userEvent.click(screen.getByRole("menuitemradio", { name: /Thread t/ }));
+  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
+  const environment = stack.move();
+  return Object.assign(screen, { [Symbol.asyncDispose]: () => environment.disposeAsync() });
+};
+
+const ticketChat = (threads: ReadonlyArray<WorkbenchFloatingChatThread>) => (
+  <div data-workbench-page-column="">
+    <Harness key="ticket" threads={threads} primaryThreadId={ThreadId.make("p")} />
+  </div>
+);
+
+it("keeps the Board's Thread and mode when its Ticket opens", async () => {
+  setup();
+  await using screen = await renderBoardShowing([thread("a"), thread("t")]);
+  chatMount.mockReset();
+
+  await screen.rerender(ticketChat([thread("p"), thread("t")]));
+
+  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toBeVisible();
+  expect(chatMount).not.toHaveBeenCalledWith(ThreadId.make("p"));
+});
+
+it("keeps a settled Thread the Board showed when its Ticket opens", async () => {
+  setup();
+  // The Board chat showed settled Thread t, picked from its Settled section, as it unmounted.
+  useWorkbenchFloatingChatStore.setState({
+    mode: "expanded",
+    restoreMode: "expanded",
+    boardHandoff: { thread: scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("t")) },
+  });
+  const settled = { ...thread("t"), settledAt: "2026-11-02T00:00:00.000Z" };
+
+  await using screen = await render(
+    <div data-workbench-page-column="">
+      <Harness threads={[thread("p")]} settled={[settled]} primaryThreadId={ThreadId.make("p")} />
+    </div>,
+  );
+
+  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toBeVisible();
+});
+
+it("collapses, without showing it, when the opened Ticket lacks the Board's Thread", async () => {
+  setup();
+  await using screen = await renderBoardShowing([thread("a"), thread("t")]);
+  chatMount.mockReset();
+
+  await screen.rerender(ticketChat([thread("p")]));
+
+  await expect.element(screen.getByRole("button", { name: "Message Thread p…" })).toBeVisible();
+  await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toBeVisible();
+  // The Ticket's own Thread never mounted expanded, so it is not marked read.
+  expect(chatMount).not.toHaveBeenCalled();
+});
+
+it("keeps a minimized chat minimized and on the Board's Thread when its Ticket opens", async () => {
+  setup();
+  await using screen = await renderBoardShowing([thread("a"), thread("t")]);
+  await userEvent.click(screen.getByRole("button", { name: "Minimize board chat" }));
+
+  await screen.rerender(ticketChat([thread("p"), thread("t")]));
+
+  await userEvent.click(screen.getByRole("button", { name: "Show PAY-1 chat" }));
+  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
+});
+
+it("lets an explicit request to show a Thread outrank the Board's handoff", async () => {
+  setup();
+  await using screen = await renderBoardShowing([thread("a"), thread("t")]);
+  // Leaving the Board for a full-page draft, whose new Ticket asks to show its Thread.
+  await screen.rerender(<div />);
+  await act(() => useWorkbenchFloatingChatStore.getState().expand(ThreadId.make("p")));
+
+  await screen.rerender(ticketChat([thread("p")]));
+
+  await expect.element(screen.getByLabelText("Composer for p")).toBeInTheDocument();
+});
+
+it("leaves the chat expanded for a page control that opens a Ticket", async () => {
+  setup();
+  await using screen = await render(
+    <div data-workbench-page-column="">
+      <button type="button" data-workbench-opens-ticket="">
+        Open PAY-2
+      </button>
+      <Harness threads={[thread("a")]} />
+    </div>,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
+
+  await userEvent.click(screen.getByRole("button", { name: "Open PAY-2" }));
+
+  await expect.element(screen.getByLabelText("Composer for a")).toBeInTheDocument();
 });

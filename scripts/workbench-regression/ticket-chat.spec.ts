@@ -86,3 +86,66 @@ test("C1: the ticket chat embeds the Thread view, opens its terminal on the Tick
     await NodeFSP.writeFile(controlPath, original);
   }
 });
+
+test("C2: the Board opens its chat Thread's terminal and panel, and its Ticket keeps the Thread in the chat", async ({
+  page,
+  demo,
+}) => {
+  const cwdMarker = NodePath.join(demo.home, "board-terminal-cwd");
+  const worktreePath = (await demo.shellSnapshot()).threads.find(
+    (entry) => entry.id === "orbit-005-thread",
+  )?.worktreePath;
+  expect(worktreePath).toBeTruthy();
+  await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
+  const chat = ticketChat(page);
+  await chat.getByRole("button", { name: "Expand board chat", exact: true }).click();
+  await chat.getByRole("button", { name: /^Board Threads: / }).click();
+  await page
+    .getByRole("menuitemradio", { name: /Invite teammates by email/ })
+    .first()
+    .click();
+  await expect(chat.getByRole("region", { name: "Invite teammates by email" })).toBeVisible();
+
+  // The Board header opens the chat Thread's terminal on the page, in the Thread's checkout.
+  const terminalToggle = page.getByRole("button", { name: "Toggle terminal drawer", exact: true });
+  await terminalToggle.click();
+  const terminalInput = page
+    .locator('[data-terminal-owner="drawer"]')
+    .getByRole("textbox", { name: "Terminal input", exact: true });
+  // Keys typed before the new shell starts are dropped, and a partial line breaks the retry, so
+  // clear the line and type until the marker holds the Thread's worktree.
+  await expect(async () => {
+    await terminalInput.focus();
+    await terminalInput.press("Control+u");
+    await terminalInput.pressSequentially(`pwd > ${cwdMarker}`);
+    await terminalInput.press("Enter");
+    await expect
+      .poll(() => (NodeFS.existsSync(cwdMarker) ? NodeFS.readFileSync(cwdMarker, "utf8") : ""))
+      .toBe(`${NodeFS.realpathSync(worktreePath!)}\n`);
+  }).toPass();
+  await terminalToggle.click();
+  await expect(terminalInput).toBeHidden();
+  await page.locator("body").focus();
+  await page.keyboard.press("ControlOrMeta+j");
+  await expect(terminalInput).toBeVisible();
+
+  const panelToggle = page.getByRole("button", { name: "Toggle right panel", exact: true });
+  await panelToggle.click();
+  await expect(page.locator("[data-workbench-panel-host] > *").first()).toBeVisible();
+  await panelToggle.click();
+  await terminalToggle.click();
+  await expect(terminalInput).toBeHidden();
+
+  // Opening the Thread's Ticket from its card keeps the expanded chat on the same Thread. The
+  // card's left edge stays clear of the expanded chat.
+  await page
+    .locator("[data-workbench-opens-ticket]")
+    .filter({ hasText: "Invite teammates by email" })
+    .first()
+    .click({ position: { x: 12, y: 8 } });
+  await expect(page).toHaveURL((url) => url.searchParams.get("ticketId") === "orbit-005");
+  await expect(
+    chat.getByRole("button", { name: "Collapse ticket chat", exact: true }),
+  ).toBeVisible();
+  await expect(chat.getByRole("region", { name: "Invite teammates by email" })).toBeVisible();
+});

@@ -39,6 +39,14 @@ export const useWorkbenchFloatingChatStore = create<{
   readonly shownThread: ScopedThreadRef | null;
   /** The Thread the user picked in each page chat, so returning to the page shows it again. */
   readonly pickedThreads: Readonly<Record<string, WorkbenchFloatingChatPick | null>>;
+  /**
+   * The Thread the Board chat showed when it unmounted, for the next Ticket chat to keep. It
+   * outlives the Board chat, whose unmount clears `shownThread` and `pageChat` first.
+   */
+  readonly boardHandoff: { readonly thread: ScopedThreadRef | null } | null;
+  readonly setBoardHandoff: (
+    boardHandoff: { readonly thread: ScopedThreadRef | null } | null,
+  ) => void;
   readonly setPageChat: (pageChat: WorkbenchPageChat | null) => void;
   readonly setShownThread: (shownThread: ScopedThreadRef | null) => void;
   readonly pickThread: (pageChatKey: string, thread: ScopedThreadRef | null) => void;
@@ -53,6 +61,8 @@ export const useWorkbenchFloatingChatStore = create<{
   pageChat: null,
   shownThread: null,
   pickedThreads: {},
+  boardHandoff: null,
+  setBoardHandoff: (boardHandoff) => set({ boardHandoff }),
   setPageChat: (pageChat) => set({ pageChat }),
   setShownThread: (shownThread) => set({ shownThread }),
   pickThread: (pageChatKey, thread) => {
@@ -66,10 +76,12 @@ export const useWorkbenchFloatingChatStore = create<{
           };
     set((state) => ({ pickedThreads: { ...state.pickedThreads, [pageChatKey]: pick } }));
   },
+  // An explicit request to show a Thread outranks the Board's handoff.
   expand: (threadId) =>
     set((state) => ({
       mode: "expanded",
       restoreMode: "expanded",
+      boardHandoff: null,
       focusRequest: { id: state.focusRequest.id + 1, threadId: threadId ?? null },
     })),
   collapse: () => set({ mode: "collapsed", restoreMode: "collapsed" }),

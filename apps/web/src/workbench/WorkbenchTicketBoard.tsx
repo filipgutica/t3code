@@ -599,6 +599,7 @@ function WorkbenchBoardTicketTitle({
         !dragDisabled && "cursor-grab active:cursor-grabbing",
       )}
       type="button"
+      data-workbench-opens-ticket=""
       onClick={onSelect}
     >
       <Tooltip>
@@ -832,6 +833,7 @@ function renderWorkbenchBoardTicketMetadata(
           render={
             <button
               type="button"
+              data-workbench-opens-ticket=""
               onClick={() => onSelect(projectId, ticket.id)}
               aria-label={`Ticket ${summary.source === "description" ? "description" : "summary"}: ${summary.text}`}
               className="relative z-10 line-clamp-2 cursor-pointer break-words text-left text-xs text-foreground/80 outline-none focus-visible:rounded-sm focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
@@ -855,6 +857,7 @@ function renderWorkbenchBoardTicketMetadata(
           render={
             <button
               type="button"
+              data-workbench-opens-ticket=""
               onClick={() => onSelect(projectId, ticket.id)}
               aria-label={`Repositories for ${ticket.title}: ${repositories.map(({ title }) => title).join(", ")}. Open ticket`}
               className="relative z-10 flex min-w-0 max-w-full cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 self-start rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
