@@ -61,6 +61,9 @@ vi.mock("./state", () => {
       ticketPreparations: () => null,
       addReference: command("addReference"),
       removeReference: command("removeReference"),
+      acceptTicketDraftReview: command("acceptReview"),
+      undoTicketDraftReview: command("undoReview"),
+      askForTicketDraftChange: command("askForChange"),
     },
   };
 });

@@ -129,3 +129,102 @@ describe("archived Ticket content", () => {
     }
   });
 });
+
+describe("Ticket review content", () => {
+  it("loads the review base while a review is pending and drops it once the snapshot clears it", async () => {
+    const registry = AtomRegistry.make();
+    let content: ReturnType<typeof useWorkbenchTicketContent> | undefined;
+    function Consumer({ record }: { record: WorkbenchTicket }) {
+      const result = useWorkbenchTicketContent(environmentId, record);
+      useEffect(() => {
+        content = result;
+      }, [result]);
+      return null;
+    }
+    const view = (record: WorkbenchTicket) =>
+      createElement(
+        RegistryContext.Provider,
+        { value: registry },
+        createElement(Consumer, { record }),
+      );
+    const reviewed = {
+      ...ticket,
+      archivedAt: null,
+      markdown: "Agent changed the brief",
+      revision: 6,
+      reviewPending: true,
+      // Progress is omitted too, so the query keeps running after the review ends.
+      progressDone: 0,
+      progressTotal: 1,
+    };
+    const reviewBase = { title: ticket.title, markdown: "Original markdown" };
+    let root: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        root = create(view(reviewed));
+      });
+      await act(async () =>
+        registry.set(
+          ticketQuery(
+            JSON.stringify({ environmentId, input: { ticketId: ticket.id, revision: 6 } }),
+          ),
+          AsyncResult.success({ ...reviewed, reviewBase }),
+        ),
+      );
+      expect(content?.ticket).toMatchObject({ markdown: "Agent changed the brief", reviewBase });
+      // Accept bumps the revision; until it loads, the earlier base must not show as a review.
+      await act(async () => root?.update(view({ ...reviewed, revision: 7, reviewPending: false })));
+      expect(content?.ticket?.reviewBase ?? null).toBeNull();
+    } finally {
+      await act(async () => root?.unmount());
+      registry.dispose();
+    }
+  });
+
+  it("keeps a Ticket shown while the first review's base loads", async () => {
+    const registry = AtomRegistry.make();
+    let content: ReturnType<typeof useWorkbenchTicketContent> | undefined;
+    function Consumer({ record }: { record: WorkbenchTicket }) {
+      const result = useWorkbenchTicketContent(environmentId, record);
+      useEffect(() => {
+        content = result;
+      }, [result]);
+      return null;
+    }
+    const view = (record: WorkbenchTicket) =>
+      createElement(
+        RegistryContext.Provider,
+        { value: registry },
+        createElement(Consumer, { record }),
+      );
+    const active = { ...ticket, archivedAt: null, revision: 8 };
+    const edited = {
+      ...active,
+      revision: 9,
+      markdown: "Agent changed the brief",
+      reviewPending: true,
+    };
+    const reviewBase = { title: ticket.title, markdown: ticket.markdown };
+    let root: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        root = create(view(active));
+      });
+      // An agent edit starts the first review; the page must not drop to a loading state.
+      await act(async () => root?.update(view(edited)));
+      expect(content?.ticket).toMatchObject({ markdown: "Agent changed the brief" });
+      await act(async () =>
+        registry.set(
+          ticketQuery(
+            JSON.stringify({ environmentId, input: { ticketId: ticket.id, revision: 9 } }),
+          ),
+          AsyncResult.success({ ...edited, reviewBase }),
+        ),
+      );
+      expect(content?.ticket).toMatchObject({ markdown: "Agent changed the brief", reviewBase });
+    } finally {
+      await act(async () => root?.unmount());
+      registry.dispose();
+    }
+  });
+});

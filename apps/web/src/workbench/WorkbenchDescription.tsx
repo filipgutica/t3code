@@ -1,4 +1,4 @@
-import type { ElementContent } from "hast";
+import type { Element, ElementContent, Root } from "hast";
 import { createContext, lazy, Suspense, use, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -15,6 +15,50 @@ import {
 const DescriptionCodeBlock = lazy(() => import("./WorkbenchDescriptionCodeBlock"));
 
 const DescriptionOpenerContext = createContext<WorkbenchReferenceOpener | null>(null);
+
+/** A source range in the rendered Markdown, such as the blocks Ask for change rewrites. */
+export interface MarkdownSourceRange {
+  readonly start: number;
+  readonly end: number;
+}
+
+/**
+ * Puts each top-level block's Markdown source offsets on its element, which a selection reads,
+ * and marks the blocks inside `marked`. Blocks without a position, such as footnotes, get none.
+ */
+const rehypeSourceRanges =
+  ({ marked }: { readonly marked: MarkdownSourceRange | null }) =>
+  () =>
+  (tree: Root) => {
+    for (const node of tree.children) {
+      const start = node.position?.start.offset;
+      const end = node.position?.end.offset;
+      if (node.type !== "element" || start === undefined || end === undefined) continue;
+      node.properties.dataSourceStart = start;
+      node.properties.dataSourceEnd = end;
+      if (marked !== null && start >= marked.start && end <= marked.end) {
+        node.properties.dataMarked = "";
+      }
+    }
+  };
+
+/** The source attributes of a top-level block, for components that render their own wrapper. */
+export type DescriptionSourceAttributes = {
+  readonly "data-source-start"?: number;
+  readonly "data-source-end"?: number;
+  readonly "data-marked"?: string;
+};
+
+const sourceAttributes = (node: Element | undefined): DescriptionSourceAttributes => {
+  const { dataSourceStart, dataSourceEnd, dataMarked } = node?.properties ?? {};
+  return typeof dataSourceStart === "number" && typeof dataSourceEnd === "number"
+    ? {
+        "data-source-start": dataSourceStart,
+        "data-source-end": dataSourceEnd,
+        ...(typeof dataMarked === "string" ? { "data-marked": dataMarked } : {}),
+      }
+    : {};
+};
 
 const hastText = (nodes: ReadonlyArray<ElementContent>): string =>
   nodes
@@ -58,18 +102,23 @@ const descriptionComponents: Components = {
       {children}
     </DescriptionLink>
   ),
-  pre: ({ children }) => {
+  pre: ({ children, node }) => {
+    const source = sourceAttributes(node);
     const plain = (
-      <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3">{children}</pre>
+      <pre className="my-3 max-w-full overflow-x-auto rounded-md bg-muted p-3" {...source}>
+        {children}
+      </pre>
     );
     return (
       <Suspense fallback={plain}>
-        <DescriptionCodeBlock fallback={plain}>{children}</DescriptionCodeBlock>
+        <DescriptionCodeBlock fallback={plain} source={source}>
+          {children}
+        </DescriptionCodeBlock>
       </Suspense>
     );
   },
-  table: ({ children }) => (
-    <div className="my-3 max-w-full overflow-x-auto">
+  table: ({ children, node }) => (
+    <div className="my-3 max-w-full overflow-x-auto" {...sourceAttributes(node)}>
       <table className="w-full border-collapse">{children}</table>
     </div>
   ),
@@ -82,9 +131,12 @@ export const workbenchDescriptionProseClassName =
 export function WorkbenchDescription({
   markdown,
   jira = false,
+  marked = null,
 }: {
   readonly markdown: string;
   readonly jira?: boolean;
+  /** Source offsets of the blocks to mark with `data-marked`. */
+  readonly marked?: MarkdownSourceRange | null;
 }) {
   const opener = useWorkbenchReferenceOpener();
   const content = workbenchDescriptionMarkdown(markdown, jira);
@@ -92,7 +144,11 @@ export function WorkbenchDescription({
   return (
     <div className={workbenchDescriptionProseClassName}>
       <DescriptionOpenerContext value={opener}>
-        <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionComponents}>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          rehypePlugins={[rehypeSourceRanges({ marked })]}
+          components={descriptionComponents}
+        >
           {content}
         </ReactMarkdown>
       </DescriptionOpenerContext>

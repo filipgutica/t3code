@@ -21,6 +21,10 @@ const previousContent = ({
 const omitsContent = (ticket: WorkbenchTicket) =>
   ticket.markdownOmitted || (ticket.progress === undefined && ticket.progressTotal !== undefined);
 
+// The snapshot decides whether a review is pending, so an earlier revision's base never lingers.
+const reviewBaseOf = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | null) =>
+  ticket.reviewPending === true ? (loaded?.reviewBase ?? null) : null;
+
 // Summary state changes without a new revision, so take only the omitted fields from the query.
 // An edit saves the snapshot's revision, so it must also carry the snapshot's markdown.
 const withLoadedContent = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | null) => {
@@ -30,13 +34,24 @@ const withLoadedContent = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | nu
     ...live,
     markdown: markdownOmitted ? loaded.markdown : ticket.markdown,
     progress: loaded.progress ?? "",
+    reviewBase: reviewBaseOf(ticket, loaded),
   };
+};
+
+/** The Ticket to show: the snapshot's, with whatever the query loads for it. */
+const shownTicket = (ticket: WorkbenchTicket, loaded: WorkbenchTicket | null) => {
+  if (omitsContent(ticket)) return withLoadedContent(ticket, loaded);
+  return ticket.reviewPending === true
+    ? { ...ticket, reviewBase: reviewBaseOf(ticket, loaded) }
+    : ticket;
 };
 
 export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: WorkbenchTicket) {
   const omitted = omitsContent(ticket);
+  // Snapshots omit a pending review's base; the Ticket stays shown while it loads.
+  const reviewing = ticket.reviewPending === true;
   const query = useEnvironmentQuery(
-    omitted
+    omitted || reviewing
       ? workbenchEnvironment.ticket({
           environmentId,
           input: { ticketId: ticket.id, revision: ticket.revision },
@@ -56,7 +71,7 @@ export function useWorkbenchTicketContent(environmentId: EnvironmentId, ticket: 
       ? previousContent({ environmentId, ticket, content: lastContent })
       : null;
   return {
-    ticket: omitted ? withLoadedContent(ticket, query.data ?? previous) : ticket,
+    ticket: shownTicket(ticket, query.data ?? previous),
     error:
       query.error ??
       (query.isSuccess && query.data === null ? "This Ticket no longer exists." : null),

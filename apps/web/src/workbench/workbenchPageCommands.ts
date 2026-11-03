@@ -1,3 +1,5 @@
+import { WorkbenchOperationError } from "@t3tools/contracts";
+import * as Schema from "effect/Schema";
 import {
   isAtomCommandInterrupted,
   squashAtomCommandFailure,
@@ -11,6 +13,16 @@ export const failureMessage = (failure: {
   return error instanceof Error && error.message.trim().length > 0
     ? error.message
     : "The Workbench request failed.";
+};
+
+const isWorkbenchOperationError = Schema.is(WorkbenchOperationError);
+
+/** The Workbench error code of a failed command, such as `ticket_changed` for a stale revision. */
+export const failureCode = (failure: {
+  readonly cause: Parameters<typeof squashAtomCommandFailure>[0]["cause"];
+}) => {
+  const error = squashAtomCommandFailure(failure);
+  return isWorkbenchOperationError(error) ? error.code : null;
 };
 
 export const reportWorkbenchCommandFailure = <A, E>(
