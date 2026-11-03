@@ -6,12 +6,13 @@ import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { Project } from "../types";
+import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
 import { WorkbenchProgress, WorkbenchProgressChecklist } from "./WorkbenchProgress";
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { getDraftBlockedReason, WorkbenchDraftActions } from "./WorkbenchDraftActions";
-import { DraftConflictNotice } from "./WorkbenchTicketConversation";
+import { DraftConflictNotice } from "./WorkbenchDraftConflictNotice";
 import {
   WorkbenchTicketDraftFieldsForm,
   type getTicketDraftCreateState,
@@ -174,7 +175,6 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
           linkedProjects={props.linkedProjects}
           epics={props.epics}
           updatedBy={props.updatedBy}
-          brief="rendered"
           references={
             <>
               {props.draft.progress?.trim() ? (
@@ -291,6 +291,24 @@ function CompactDraftCard(props: DraftCardModeProps) {
           onChange={(event) => editor.edit({ title: event.currentTarget.value })}
           className="-mx-1.5 w-[calc(100%+0.75rem)] rounded-md border border-transparent bg-transparent px-1.5 py-0.5 text-sm font-semibold outline-none placeholder:font-normal placeholder:text-muted-foreground hover:border-border focus-visible:border-ring focus-visible:bg-background disabled:cursor-default disabled:hover:border-transparent"
         />
+        {props.createState.repositories.selectedRepositoryProjectIds.length === 0 ? (
+          <fieldset disabled={isFormDisabled(props)} className="min-w-0">
+            <WorkbenchCreateTicketRepositories
+              linkedProjects={props.linkedProjects}
+              selectedRepositoryProjectIds={
+                props.createState.repositories.selectedRepositoryProjectIds
+              }
+              setRepositoryProjectIds={(action) =>
+                props.editor.edit({
+                  repositoryProjectIds:
+                    typeof action === "function"
+                      ? action(props.editor.fields.repositoryProjectIds)
+                      : action,
+                })
+              }
+            />
+          </fieldset>
+        ) : null}
         {progress ? (
           <>
             {progress.goal ? <WorkbenchDescription markdown={progress.goal} /> : null}

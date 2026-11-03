@@ -92,7 +92,7 @@ export function WorkbenchTicketFloatingChat({
   ...props
 }: WorkbenchTicketFloatingChatProps) {
   const narrow = useMediaQuery("max-sm");
-  if (!enabled || narrow) return null;
+  if (!enabled || (narrow && !props.planning)) return null;
   return <TicketFloatingChat {...props} />;
 }
 
@@ -126,7 +126,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     ticket: { id: ticketId, key: props.ticketKey ?? null, title: ticket.title, kind: ticket.kind },
     localVisits,
   };
-  const chat = resolveWorkbenchFloatingChat({
+  const resolved = resolveWorkbenchFloatingChat({
     active: chatThreads(props.activeAssignments, props.threadsById, threadContext),
     archived: chatThreads(props.activeAssignments, props.archivedThreadsById, threadContext),
     settled: chatThreads(props.settledAssignments, props.threadsById, threadContext),
@@ -134,6 +134,16 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
     pick,
   });
   const snapshot = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
+  const markPlanning = (thread: WorkbenchFloatingChatThread) => ({
+    ...thread,
+    planning: props.planning?.threadIds.has(thread.threadId) === true,
+  });
+  const chat = {
+    ...resolved,
+    active: resolved.active.map(markPlanning),
+    settled: resolved.settled.map(markPlanning),
+    selected: resolved.selected ? markPlanning(resolved.selected) : null,
+  };
   useRefreshOnThreadActivity(
     chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,
     snapshot.refresh,

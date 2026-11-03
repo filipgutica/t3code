@@ -28,12 +28,12 @@ related Tickets. A Ticket's **work area** contains its prepared repository workt
 1. Add the repositories you need as T3 Projects.
 2. Open **Agent Workbench**, choose **Add Workspace**, select the Projects, and
    choose **Create Workspace**.
-3. Open the Workspace Board and choose **New Ticket**.
+3. Open the Workspace Board and choose **New Ticket** to start a draft in its floating chat.
 4. Describe what you want to work on in the planning conversation. Choose your
    model using the native conversation controls.
 5. As you talk, the agent fills in the draft's title, description, and
    repositories, and adds links you paste as [References](#references). You can edit
-   the title, description, and repository selection. Ask the agent to change Progress.
+   the title and repository selection. Ask the agent to change the brief or Progress.
 6. Choose **Create ticket** to save it.
 
 <picture>
@@ -58,8 +58,8 @@ sidebar. Open it to resume its conversation and saved fields. Choose **New Ticke
 to explore another idea in a separate draft. Planning conversations stay in
 Workbench until you start work.
 
-**Create manually** opens the form when you already know the requirements. To plan
-without leaving the Board, start a draft from its chat; see [Chat with Threads](#chat-with-threads).
+**Create manually** opens the form when you already know the requirements. If the
+planning conversation fails to start, choose **Retry** or **Create manually** in the chat.
 
 Creating the Ticket keeps the same conversation for further planning. Choose
 **Start work** when ready to prepare its work area and continue that Thread in the

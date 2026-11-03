@@ -36,6 +36,7 @@ export interface WorkbenchFloatingChatThread {
   readonly status: WorkbenchThreadExecutionStatus | null;
   /** A finished reply the user has not opened. */
   readonly unread: boolean;
+  readonly planning?: boolean;
   /** Null for a ticket draft that has no ticket yet. */
   readonly ticket: WorkbenchFloatingChatTicket | null;
   /** A generated summary of the Thread's latest finished run. */
@@ -92,6 +93,10 @@ export const getWorkbenchBoardChatThreads = ({
     const entry: WorkbenchFloatingChatThread = {
       threadId,
       title: title(thread),
+      planning: drafts.some(
+        (draft) =>
+          draft.threadId === threadId && (draft.phase === "planning" || draft.phase === "starting"),
+      ),
       status: getWorkbenchThreadExecutionStatus(thread),
       unread: hasWorkbenchUnreadReply(thread, localVisits),
       ticket: ticket

@@ -5,7 +5,7 @@ import { useEffect, type ReactNode } from "react";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 
-/** Preparation stays in its Workbench view even when a native Thread link is opened. */
+/** Ready planning conversations can open natively; lifecycle transitions stay in Workbench. */
 export function WorkbenchThreadPreparationGate({
   threadRef,
   children,
@@ -24,10 +24,15 @@ export function WorkbenchThreadPreparationGate({
   const preparation =
     threadRef === null || query.isPending || !query.isSuccess
       ? undefined
-      : query.data?.find((item) => item.threadId === threadRef.threadId);
+      : query.data?.find(
+          (item) =>
+            item.threadId === threadRef.threadId &&
+            item.phase !== "draft" &&
+            item.phase !== "planning",
+        );
   const navigate = useNavigate();
   const environmentId = threadRef?.environmentId;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- redirects the external router when a directly opened native Thread belongs to an unfinished Workbench preparation
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- redirects the external router when a native Thread link belongs to an active Workbench preparation transition
   useEffect(() => {
     if (!preparation || environmentId === undefined) return;
     const ticketId = preparation.ticketId ?? preparation.draftId;

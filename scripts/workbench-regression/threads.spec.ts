@@ -127,10 +127,13 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
   await expect(
     page.getByRole("button", { name: `Un-settle Thread ${nativeThread.title}`, exact: true }),
   ).not.toBeVisible();
-  expect(
-    (await demo.shellSnapshot()).threads.find((entry) => entry.id === nativeThread.id)
-      ?.settledOverride,
-  ).toBe("settled");
+  await expect
+    .poll(
+      async () =>
+        (await demo.shellSnapshot()).threads.find((entry) => entry.id === nativeThread.id)
+          ?.settledOverride,
+    )
+    .toBe("settled");
   await page.reload();
   await waitForWorkbench(page);
   await expect(settledToggle).toHaveAttribute("aria-expanded", "false");

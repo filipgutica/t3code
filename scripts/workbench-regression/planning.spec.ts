@@ -40,11 +40,9 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
-  const draft = page.getByRole("complementary", { name: "Ticket draft", exact: true });
+  const draft = page.getByRole("group", { name: "Ticket draft", exact: true });
   await draft.getByLabel("Title", { exact: true }).fill("Regression disposable ticket");
-  await draft
-    .getByLabel("Description", { exact: true })
-    .fill("Full regression description with acceptance criteria.");
+  await draft.getByRole("checkbox", { name: /^Orbit Web / }).click();
   await draft.getByRole("button", { name: "Create ticket", exact: true }).click();
   const ticketChat = page.getByRole("region", {
     name: "Regression disposable ticket chat",
