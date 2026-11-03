@@ -112,16 +112,17 @@ test("C2: the Board opens its chat Thread's terminal and panel, and its Ticket k
   const terminalInput = page
     .locator('[data-terminal-owner="drawer"]')
     .getByRole("textbox", { name: "Terminal input", exact: true });
-  // Keys typed before the new shell starts are dropped, so type until the marker appears.
+  // Keys typed before the new shell starts are dropped, and a partial line breaks the retry, so
+  // clear the line and type until the marker holds the Thread's worktree.
   await expect(async () => {
     await terminalInput.focus();
+    await terminalInput.press("Control+u");
     await terminalInput.pressSequentially(`pwd > ${cwdMarker}`);
     await terminalInput.press("Enter");
-    await expect.poll(() => NodeFS.existsSync(cwdMarker)).toBe(true);
+    await expect
+      .poll(() => (NodeFS.existsSync(cwdMarker) ? NodeFS.readFileSync(cwdMarker, "utf8") : ""))
+      .toBe(`${NodeFS.realpathSync(worktreePath!)}\n`);
   }).toPass();
-  await expect
-    .poll(() => (NodeFS.existsSync(cwdMarker) ? NodeFS.readFileSync(cwdMarker, "utf8") : ""))
-    .toBe(`${NodeFS.realpathSync(worktreePath!)}\n`);
   await terminalToggle.click();
   await expect(terminalInput).toBeHidden();
   await page.locator("body").focus();
