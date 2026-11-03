@@ -4,6 +4,7 @@ import {
   type ThreadId,
   type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { TicketDraftHost } from "@t3tools/workbench/TicketDraftHost";
 import { layer as serviceLayer } from "@t3tools/workbench/TicketDraftService";
 import * as Effect from "effect/Effect";
@@ -14,6 +15,7 @@ import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts
 
 import * as ThreadManagementService from "../orchestration-v2/ThreadManagementService.ts";
 import * as ProviderInstanceRegistry from "../provider/ProviderInstanceRegistry.ts";
+import * as ServerSettings from "../serverSettings.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 
 export { TicketDraftService } from "@t3tools/workbench/TicketDraftService";
@@ -28,6 +30,7 @@ const makeHost = Effect.gen(function* () {
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
+  const settings = yield* ServerSettings.ServerSettingsService;
   const store = yield* WorkbenchStore.WorkbenchStore;
   const ownsThread = (draft: WorkbenchTicketDraft) =>
     receipts.getByCommandId(CommandId.make(`ticket-draft:${draft.id}:create`)).pipe(
@@ -81,6 +84,7 @@ const makeHost = Effect.gen(function* () {
     }),
     createThread: Effect.fn("TicketDraftHost.createThread")(function* (draft) {
       const commandId = CommandId.make(`ticket-draft:${draft.id}:create`);
+      const currentSettings = yield* settings.getSettings.pipe(Effect.mapError(nativeFailure));
       yield* threads
         .assertProviderInstanceEnabled({
           projectId: draft.anchorProjectId,
@@ -103,7 +107,8 @@ const makeHost = Effect.gen(function* () {
           createdBy: "user",
           creationSource: "web",
           modelSelection: draft.modelSelection,
-          runtimeMode: "full-access",
+          runtimeMode: resolveProjectSettings(currentSettings, draft.anchorProjectId).settings
+            .defaultRuntimeMode,
           interactionMode: "default",
           branch: null,
           worktreePath: null,

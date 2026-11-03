@@ -230,74 +230,81 @@ const layerPersistedPlanningTest = makeLayerTest(
   ),
 );
 
-it.effect("uses native project enablement for planning creation, retries and turns", () =>
-  Effect.gen(function* () {
-    const threads = yield* ThreadManagement.ThreadManagementService;
-    const settings = yield* ServerSettings.ServerSettingsService;
-    const providers = yield* Providers.ProviderInstanceRegistry;
-    const creatingDraft = { ...draft, phase: "creating" as const };
-    const drafts = yield* TicketDraftService.TicketDraftService.pipe(
-      Effect.provide(
-        TicketDraftService.layer.pipe(
-          Layer.provide(
-            Layer.mock(WorkbenchStore)({
-              beginTicketDraft: () => Effect.succeed(creatingDraft),
-              transitionTicketDraft: () => Effect.succeed({ ...draft, phase: "draft" as const }),
-            }),
+it.effect.each(["environment", "project"] as const)(
+  "uses %s runtime defaults and native project enablement for planning creation, retries and turns",
+  (source) =>
+    Effect.gen(function* () {
+      const threads = yield* ThreadManagement.ThreadManagementService;
+      const settings = yield* ServerSettings.ServerSettingsService;
+      const providers = yield* Providers.ProviderInstanceRegistry;
+      const creatingDraft = { ...draft, phase: "creating" as const };
+      const drafts = yield* TicketDraftService.TicketDraftService.pipe(
+        Effect.provide(
+          TicketDraftService.layer.pipe(
+            Layer.provide(
+              Layer.mock(WorkbenchStore)({
+                beginTicketDraft: () => Effect.succeed(creatingDraft),
+                transitionTicketDraft: () => Effect.succeed({ ...draft, phase: "draft" as const }),
+              }),
+            ),
+            Layer.provide(Layer.mock(TicketWorkspaceService)({})),
           ),
-          Layer.provide(Layer.mock(TicketWorkspaceService)({})),
         ),
-      ),
-    );
-    const beginInput = {
-      id: draft.id,
-      projectId: draft.projectId,
-      threadId: draft.threadId,
-      modelSelection,
-    };
-    const setEnabled = (enabled: boolean) =>
-      settings.updateSettings({
-        projectSettingsOverrides: {
-          [projectId]: { providerInstances: { [instanceId]: { enabled } } },
-        },
-      });
-    yield* setEnabled(false);
-    const deniedCreation = yield* drafts.begin(beginInput).pipe(Effect.flip);
-    assert.equal(deniedCreation.code, "ticket_draft_invalid");
-    assert.isNull(yield* threads.getThreadShell(draft.threadId));
-    yield* setEnabled(true);
-    yield* drafts.begin(beginInput);
-    const created = yield* threads.getThreadShell(draft.threadId);
-    assert.equal(created?.projectId, projectId);
-    // MCP authorization reads the stored mode; plan mode would refuse sends to sibling Threads.
-    assert.equal(created?.interactionMode, "default");
-    yield* setEnabled(false);
-    yield* settings.updateSettings({
-      providerInstances: { [instanceId]: { driver: instance.driverKind, enabled: false } },
-    });
-    const disabledProvider = vi
-      .spyOn(providers, "getInstance")
-      .mockReturnValue(Effect.succeed({ ...instance, enabled: false }));
-    yield* Effect.addFinalizer(() => Effect.sync(() => disabledProvider.mockRestore()));
-    // Simulate retry after native create committed but the draft transition did not.
-    yield* drafts.begin(beginInput);
-    assert.deepEqual(yield* threads.getThreadShell(draft.threadId), created);
-    const deniedTurn = yield* threads
-      .dispatch({
-        type: "message.dispatch",
-        commandId: CommandId.make("dispatch:disabled-planning"),
+      );
+      const beginInput = {
+        id: draft.id,
+        projectId: draft.projectId,
         threadId: draft.threadId,
-        messageId: MessageId.make("message:disabled-planning"),
-        text: "Inspect the change",
-        attachments: [],
-        dispatchMode: { type: "start_immediately" },
-        createdBy: "user",
-        creationSource: "web",
-      })
-      .pipe(Effect.flip);
-    assert.equal(deniedTurn._tag, "ThreadManagementProviderInstanceDisabledError");
-    assert.deepEqual((yield* threads.getThreadRecords(draft.threadId, ["runs"])).runs, []);
-  }).pipe(Effect.provide(layerTest)),
+        modelSelection,
+      };
+      const setEnabled = (enabled: boolean) =>
+        settings.updateSettings({
+          defaultRuntimeMode: source === "environment" ? "auto" : "full-access",
+          projectSettingsOverrides: {
+            [projectId]: {
+              providerInstances: { [instanceId]: { enabled } },
+              ...(source === "project" ? { defaultRuntimeMode: "auto" as const } : {}),
+            },
+          },
+        });
+      yield* setEnabled(false);
+      const deniedCreation = yield* drafts.begin(beginInput).pipe(Effect.flip);
+      assert.equal(deniedCreation.code, "ticket_draft_invalid");
+      assert.isNull(yield* threads.getThreadShell(draft.threadId));
+      yield* setEnabled(true);
+      yield* drafts.begin(beginInput);
+      const created = yield* threads.getThreadShell(draft.threadId);
+      assert.equal(created?.projectId, projectId);
+      assert.equal(created?.runtimeMode, "auto");
+      // MCP authorization reads the stored mode; plan mode would refuse sends to sibling Threads.
+      assert.equal(created?.interactionMode, "default");
+      yield* setEnabled(false);
+      yield* settings.updateSettings({
+        providerInstances: { [instanceId]: { driver: instance.driverKind, enabled: false } },
+      });
+      const disabledProvider = vi
+        .spyOn(providers, "getInstance")
+        .mockReturnValue(Effect.succeed({ ...instance, enabled: false }));
+      yield* Effect.addFinalizer(() => Effect.sync(() => disabledProvider.mockRestore()));
+      // Simulate retry after native create committed but the draft transition did not.
+      yield* drafts.begin(beginInput);
+      assert.deepEqual(yield* threads.getThreadShell(draft.threadId), created);
+      const deniedTurn = yield* threads
+        .dispatch({
+          type: "message.dispatch",
+          commandId: CommandId.make("dispatch:disabled-planning"),
+          threadId: draft.threadId,
+          messageId: MessageId.make("message:disabled-planning"),
+          text: "Inspect the change",
+          attachments: [],
+          dispatchMode: { type: "start_immediately" },
+          createdBy: "user",
+          creationSource: "web",
+        })
+        .pipe(Effect.flip);
+      assert.equal(deniedTurn._tag, "ThreadManagementProviderInstanceDisabledError");
+      assert.deepEqual((yield* threads.getThreadRecords(draft.threadId, ["runs"])).runs, []);
+    }).pipe(Effect.provide(layerTest)),
 );
 
 it.effect("starts a follow-up queued behind a planning turn without checkpoints", () =>
