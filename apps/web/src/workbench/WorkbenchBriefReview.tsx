@@ -12,15 +12,17 @@ type BriefReview = ReturnType<typeof useWorkbenchBriefReview>;
 
 /** The header action that asks for a change to the whole brief. */
 export function WorkbenchBriefAskButton({
-  ask,
+  briefReview,
   variant,
   unavailableReason = null,
 }: {
-  readonly ask: BriefReview["askForChange"];
+  readonly briefReview: BriefReview;
   readonly variant: "outline" | "ghost";
   /** Why Ask for change cannot run here; the button is then disabled and says so on hover. */
   readonly unavailableReason?: string | null;
 }) {
+  const ask = briefReview.askForChange;
+  if (!briefReview.permitted.ask) return null;
   const button = (
     <Button
       size="xs"

@@ -56,12 +56,20 @@ export function WorkbenchMarkdownReview({
   readonly review: MarkdownReview;
   readonly jira?: boolean;
 }) {
+  const withDefinitions = (source: string) =>
+    review.definitions ? `${source}\n\n${review.definitions}` : source;
   return (
     <div className="min-w-0 space-y-3">
       {review.entries.map((entry) => {
         switch (entry.kind) {
           case "unchanged":
-            return <WorkbenchDescription key={entry.key} markdown={entry.source} jira={jira} />;
+            return (
+              <WorkbenchDescription
+                key={entry.key}
+                markdown={withDefinitions(entry.source)}
+                jira={jira}
+              />
+            );
           case "changed":
             return (
               <div key={entry.key} className={changedBlockClassName}>
@@ -75,7 +83,7 @@ export function WorkbenchMarkdownReview({
                 key={entry.key}
                 className={cn(wholeBlockClassName, "bg-success/8 no-underline dark:bg-success/16")}
               >
-                <WorkbenchDescription markdown={entry.block.source} jira={jira} />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} jira={jira} />
               </ins>
             );
           case "removed":
@@ -87,7 +95,7 @@ export function WorkbenchMarkdownReview({
                   "bg-destructive/8 text-muted-foreground decoration-destructive/70 dark:bg-destructive/16",
                 )}
               >
-                <WorkbenchDescription markdown={entry.block.source} jira={jira} />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} jira={jira} />
               </del>
             );
         }

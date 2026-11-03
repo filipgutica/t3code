@@ -83,10 +83,16 @@ function DraftBriefView({
         ) : null}
         <span className="flex-1" />
         {markdown.trim() ? (
-          <WorkbenchBriefAskButton ask={briefReview.askForChange} variant="ghost" />
+          <WorkbenchBriefAskButton briefReview={briefReview} variant="ghost" />
         ) : null}
       </div>
-      {review ? <WorkbenchReviewBar review={review} className="rounded-lg px-3 py-2" /> : null}
+      {review ? (
+        <WorkbenchReviewBar
+          review={review}
+          permitted={briefReview.permitted}
+          className="rounded-lg px-3 py-2"
+        />
+      ) : null}
       <WorkbenchBriefBody
         briefReview={briefReview}
         markdown={markdown}

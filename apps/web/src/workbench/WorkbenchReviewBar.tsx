@@ -12,10 +12,13 @@ type MarkdownReviewState = NonNullable<ReturnType<typeof useMarkdownReview>["rev
  */
 export function WorkbenchReviewBar({
   review,
+  permitted,
   disabled = false,
   className,
 }: {
   readonly review: MarkdownReviewState;
+  /** A connection that may not run Undo or Accept sees the review without them. */
+  readonly permitted: { readonly accept: boolean; readonly undo: boolean };
   readonly disabled?: boolean;
   readonly className?: string;
 }) {
@@ -60,23 +63,27 @@ export function WorkbenchReviewBar({
             <EyeIcon /> Show diff
           </Button>
         )}
-        <Button
-          size="xs"
-          type="button"
-          variant="outline"
-          disabled={disabled || pending !== null}
-          onClick={review.undo}
-        >
-          <Undo2Icon /> Undo
-        </Button>
-        <Button
-          size="xs"
-          type="button"
-          disabled={disabled || pending !== null}
-          onClick={review.accept}
-        >
-          <CheckIcon /> Accept
-        </Button>
+        {permitted.undo ? (
+          <Button
+            size="xs"
+            type="button"
+            variant="outline"
+            disabled={disabled || pending !== null}
+            onClick={review.undo}
+          >
+            <Undo2Icon /> Undo
+          </Button>
+        ) : null}
+        {permitted.accept ? (
+          <Button
+            size="xs"
+            type="button"
+            disabled={disabled || pending !== null}
+            onClick={review.accept}
+          >
+            <CheckIcon /> Accept
+          </Button>
+        ) : null}
       </div>
     </div>
   );

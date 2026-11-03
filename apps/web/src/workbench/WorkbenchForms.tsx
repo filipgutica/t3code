@@ -1877,7 +1877,7 @@ function WorkbenchTicketDescriptionPanel({
           <div className="flex shrink-0 items-center gap-2">
             {ticket.markdown.trim() ? (
               <WorkbenchBriefAskButton
-                ask={briefReview.askForChange}
+                briefReview={briefReview}
                 variant="outline"
                 unavailableReason={
                   descriptionUsesJiraMarkup(ticket.markdown, jira)
@@ -1901,6 +1901,7 @@ function WorkbenchTicketDescriptionPanel({
       {review && !editing ? (
         <WorkbenchReviewBar
           review={review}
+          permitted={briefReview.permitted}
           disabled={pending}
           className="border-b border-border/50 px-4 py-2"
         />

@@ -1,3 +1,4 @@
+import { useAtomValue } from "@effect/atom-react";
 import type {
   EnvironmentId,
   WorkbenchReviewBase,
@@ -21,6 +22,13 @@ const UNDO_CONFLICT =
 
 type Result = AtomCommandResult<unknown, unknown>;
 
+/** Which of the review's commands this connection may run; a read-only one still sees the diff. */
+type BriefReviewPermissions = {
+  readonly ask: boolean;
+  readonly accept: boolean;
+  readonly undo: boolean;
+};
+
 const reviewOutcome = (result: Result, action: "accept" | "undo"): MarkdownReviewOutcome => {
   if (result._tag === "Success") return { kind: "done" };
   const code = failureCode(result);
@@ -39,6 +47,7 @@ export function useWorkbenchBriefReview({
   reviewBase,
   reviewable,
   askable,
+  permitted,
   accept,
   undo,
   ask,
@@ -50,6 +59,7 @@ export function useWorkbenchBriefReview({
   readonly reviewable: boolean;
   /** False where rendered offsets would not match the saved text, such as Jira wiki markup. */
   readonly askable: boolean;
+  readonly permitted: BriefReviewPermissions;
   readonly accept: () => Promise<Result>;
   readonly undo: () => Promise<Result>;
   readonly ask: (request: MarkdownAskRequest) => Promise<Result>;
@@ -63,7 +73,7 @@ export function useWorkbenchBriefReview({
   });
   const askForChange = useMarkdownAskForChange({
     markdown,
-    enabled: reviewable && askable,
+    enabled: reviewable && askable && permitted.ask,
     onAsk: async (request) => {
       const result = await ask(request);
       return result._tag === "Success" || isAtomCommandInterrupted(result)
@@ -71,7 +81,7 @@ export function useWorkbenchBriefReview({
         : failureMessage(result);
     },
   });
-  return { ...review, askForChange };
+  return { ...review, askForChange, permitted };
 }
 
 /**
@@ -95,6 +105,11 @@ export function useWorkbenchTicketBriefReview({
   const accept = useAtomCommand(workbenchEnvironment.acceptTicketReview, options);
   const undo = useAtomCommand(workbenchEnvironment.undoTicketReview, options);
   const ask = useAtomCommand(workbenchEnvironment.askForTicketChange, options);
+  const permitted = {
+    ask: useAtomValue(workbenchEnvironment.askForTicketChange.permissionAtom(environmentId)),
+    accept: useAtomValue(workbenchEnvironment.acceptTicketReview.permissionAtom(environmentId)),
+    undo: useAtomValue(workbenchEnvironment.undoTicketReview.permissionAtom(environmentId)),
+  };
   const target = { id: ticket.id, expectedRevision: ticket.revision };
   const briefReview = useWorkbenchBriefReview({
     title: ticket.title,
@@ -102,6 +117,7 @@ export function useWorkbenchTicketBriefReview({
     reviewBase: ticket.reviewBase,
     reviewable: !localEdit && !archived,
     askable: !descriptionUsesJiraMarkup(ticket.markdown, jira),
+    permitted,
     accept: () => accept({ environmentId, input: target }),
     undo: () => undo({ environmentId, input: target }),
     ask: (request) => ask({ environmentId, input: { ...target, ...request } }),
@@ -132,6 +148,13 @@ export function useWorkbenchDraftBriefReview({
   const accept = useAtomCommand(workbenchEnvironment.acceptTicketDraftReview, options);
   const undo = useAtomCommand(workbenchEnvironment.undoTicketDraftReview, options);
   const ask = useAtomCommand(workbenchEnvironment.askForTicketDraftChange, options);
+  const permitted = {
+    ask: useAtomValue(workbenchEnvironment.askForTicketDraftChange.permissionAtom(environmentId)),
+    accept: useAtomValue(
+      workbenchEnvironment.acceptTicketDraftReview.permissionAtom(environmentId),
+    ),
+    undo: useAtomValue(workbenchEnvironment.undoTicketDraftReview.permissionAtom(environmentId)),
+  };
   const settle = (result: AtomCommandResult<WorkbenchTicketDraft, unknown>) => {
     if (result._tag === "Success") onDraft(result.value);
     return result;
@@ -144,6 +167,7 @@ export function useWorkbenchDraftBriefReview({
     reviewable,
     // The draft card renders its brief without Jira markup.
     askable: true,
+    permitted,
     accept: async () => settle(await accept({ environmentId, input: target() })),
     undo: async () => settle(await undo({ environmentId, input: target() })),
     ask: async (request) =>

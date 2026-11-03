@@ -214,6 +214,11 @@ export interface MarkdownReview {
   readonly changedBlocks: number;
   /** The block kind when exactly one block changed. */
   readonly onlyChangedKind: MarkdownBlock["kind"] | null;
+  /**
+   * The current text's link and footnote definitions. Each entry renders as its own document,
+   * so one needs these appended to resolve a reference whose definition is in another block.
+   */
+  readonly definitions: string;
 }
 
 /**
@@ -296,6 +301,10 @@ export function diffMarkdownBlocks(base: string, current: string): MarkdownRevie
     entries,
     changedBlocks: changedKinds.length,
     onlyChangedKind: changedKinds.length === 1 ? changedKinds[0]! : null,
+    definitions: currentBlocks
+      .filter((block) => block.kind === "definition" || block.kind === "footnoteDefinition")
+      .map((block) => block.source)
+      .join("\n\n"),
   };
 }
 

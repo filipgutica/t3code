@@ -11,22 +11,36 @@ import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 import { render } from "../../test/render";
-import { WorkbenchBriefBody } from "./WorkbenchBriefReview";
+import { WorkbenchBriefAskButton, WorkbenchBriefBody } from "./WorkbenchBriefReview";
 import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 import { WorkbenchReviewBar } from "./WorkbenchReviewBar";
 import { useWorkbenchTicketBriefReview } from "./useWorkbenchBriefReview";
 
-const mocks = vi.hoisted(() => ({ accept: vi.fn(), undo: vi.fn(), ask: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  accept: vi.fn(),
+  undo: vi.fn(),
+  ask: vi.fn(),
+  readOnly: false,
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: { readonly name: "accept" | "undo" | "ask" }) => mocks[command.name],
 }));
-vi.mock("./state", () => ({
-  workbenchEnvironment: {
-    acceptTicketReview: { name: "accept" },
-    undoTicketReview: { name: "undo" },
-    askForTicketChange: { name: "ask" },
-  },
-}));
+vi.mock("./state", async () => {
+  const { Atom } = await import("effect/reactivity");
+  const allowed = Atom.make(true);
+  const denied = Atom.make(false);
+  const command = (name: "accept" | "undo" | "ask") => ({
+    name,
+    permissionAtom: () => (mocks.readOnly ? denied : allowed),
+  });
+  return {
+    workbenchEnvironment: {
+      acceptTicketReview: command("accept"),
+      undoTicketReview: command("undo"),
+      askForTicketChange: command("ask"),
+    },
+  };
+});
 
 const environmentId = EnvironmentId.make("environment");
 const goal = "Help a new team finish setup.";
@@ -50,14 +64,22 @@ const reviewBase = {
 };
 const succeeded = AsyncResult.success(ticket);
 
-function setup() {
+function setup({ readOnly = false } = {}) {
+  mocks.readOnly = readOnly;
   mocks.accept.mockReset();
   mocks.undo.mockReset();
   mocks.ask.mockReset();
 }
 
 /** The Ticket page's brief: the badge, the review bar, and the brief or its diff. */
-function TicketBrief({ record }: { readonly record: WorkbenchTicket }) {
+function TicketBrief({
+  record,
+  askButton = false,
+}: {
+  readonly record: WorkbenchTicket;
+  /** The header's whole-brief Ask for change, which shares the pill's name. */
+  readonly askButton?: boolean;
+}) {
   const briefReview = useWorkbenchTicketBriefReview({
     environmentId,
     ticket: record,
@@ -72,7 +94,10 @@ function TicketBrief({ record }: { readonly record: WorkbenchTicket }) {
         pressed={briefReview.diffShown}
         onToggle={briefReview.review?.toggleDiff}
       />
-      {briefReview.review ? <WorkbenchReviewBar review={briefReview.review} /> : null}
+      {askButton ? <WorkbenchBriefAskButton briefReview={briefReview} variant="outline" /> : null}
+      {briefReview.review ? (
+        <WorkbenchReviewBar review={briefReview.review} permitted={briefReview.permitted} />
+      ) : null}
       <WorkbenchBriefBody briefReview={briefReview} markdown={record.markdown} jira={false} />
     </>
   );
@@ -177,4 +202,34 @@ it("keeps the pill through the rest of the triple-click that opened it", async (
   await expect
     .element(page.getByText("Rewrites the outlined paragraph", { exact: false }))
     .toBeVisible();
+});
+
+it("shows a read-only connection the diff without Ask for change, Undo, or Accept", async () => {
+  setup({ readOnly: true });
+  await using screen = await render(<TicketBrief record={{ ...ticket, reviewBase }} askButton />);
+  const removed = screen.getByText("Someone who comes back has to start over.");
+  await expect.element(removed).toBeVisible();
+  // The diff offers no selection, so hide it to reach the brief Ask for change would select in.
+  await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(removed).not.toBeInTheDocument();
+  await userEvent.tripleClick(screen.getByText(goal), { position: { x: 8, y: 8 } });
+  await expect
+    .element(page.getByRole("button", { name: "Ask for change" }))
+    .not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await expect.element(page.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+});
+
+it("resolves a reference link in the diff whose definition is in another block", async () => {
+  setup();
+  const definition = "[spec]: https://acme.example/spec";
+  const markdown = `Read the [spec] first.\n\n${why}\n\n${definition}`;
+  const record = {
+    ...ticket,
+    markdown,
+    reviewBase: { title: ticket.title, markdown: markdown.replace(why, goal) },
+  };
+  await using screen = await render(<TicketBrief record={record} />);
+  await expect.element(screen.getByRole("region", { name: "Review changes" })).toBeVisible();
+  await expect.element(screen.getByRole("link", { name: "spec" })).toBeVisible();
 });
