@@ -17,7 +17,11 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
     page.getByRole("heading", { name: "Add a team settings page", exact: true }),
   ).toBeVisible();
   await expect(page.getByText("Not prepared", { exact: true }).first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(0);
+  const preparedCheckouts = page
+    .getByRole("list", { name: "Worktrees", exact: true })
+    .getByRole("listitem")
+    .filter({ has: page.getByText("Prepared", { exact: true }) });
+  await expect(preparedCheckouts).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("unprepared.png"), fullPage: true });
   const before = await snapshot(demo);
   await page.getByRole("button", { name: "Prepare work area", exact: true }).click();
@@ -58,7 +62,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await addRepository.click();
   await orbitApi.click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
+  await expect(preparedCheckouts).toHaveCount(2);
   const extended = (await snapshot(demo)).ticketWorkspaces.find(
     (candidate) => candidate.ticketId === "orbit-007",
   )!;
@@ -86,7 +90,7 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   await orbitWeb.click();
   await page.getByRole("button", { name: "Save changes", exact: true }).click();
   await expect(retainedWorktrees).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "Choose editor", exact: true })).toHaveCount(2);
+  await expect(preparedCheckouts).toHaveCount(2);
   const restored = (await snapshot(demo)).ticketWorkspaces.find(
     (candidate) => candidate.ticketId === "orbit-007",
   )!;
@@ -96,7 +100,12 @@ test("prepare without a thread, extend context, and reuse retained worktrees", a
   ).toBe(original.worktreePath);
   expect(await NodeFSP.readFile(marker, "utf8")).toBe("Keep this local work.\n");
   expect((await snapshot(demo)).assignments).toEqual(before.assignments);
-  await page.getByRole("button", { name: "Choose editor", exact: true }).first().click();
+  // Row actions show on hover.
+  await preparedCheckouts.first().hover();
+  await preparedCheckouts
+    .first()
+    .getByRole("button", { name: "Choose editor", exact: true })
+    .click();
   await expect(page.getByRole("menu")).toBeVisible();
   await expect(page.getByRole("menu").locator("kbd")).toHaveCount(0);
   await page.keyboard.press("Escape");
