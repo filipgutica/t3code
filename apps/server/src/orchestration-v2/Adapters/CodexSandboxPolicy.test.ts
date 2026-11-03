@@ -286,10 +286,16 @@ describe("Codex read-only sandbox integration", () => {
         const nativeThreadId = `native-${scenario}`;
         const endpoint = "http://127.0.0.1:43123/mcp";
         const authorization = "Bearer readonly-protocol-token";
-        const t3Server = {
+        const t3Connection = {
           url: endpoint,
           tool_timeout_sec: 3900,
           http_headers: { Authorization: authorization },
+        };
+        const t3Server = { ...t3Connection, disabled_tools: ["t3_thread_wait"] };
+        const t3DirectServer = {
+          ...t3Connection,
+          enabled_tools: ["t3_thread_wait"],
+          omit_tools_from: ["code_mode", "deferred"],
         };
         const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
         if (nativeMcp)
@@ -331,10 +337,14 @@ describe("Codex read-only sandbox integration", () => {
                     jira: { enabled: false },
                     "github.external": { enabled: false },
                     "t3-code": nativeMcp ? t3Server : { enabled: false },
+                    ...(nativeMcp ? { "t3-code-direct": t3DirectServer } : {}),
                   },
                 }
               : nativeMcp
-                ? { "mcp_servers.t3-code": t3Server }
+                ? {
+                    "mcp_servers.t3-code": t3Server,
+                    "mcp_servers.t3-code-direct": t3DirectServer,
+                  }
                 : {}),
           },
         };

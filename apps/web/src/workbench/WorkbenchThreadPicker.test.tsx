@@ -13,7 +13,9 @@ const state = vi.hoisted(() => ({
   link: vi.fn(),
 }));
 vi.mock("../state/entities", () => ({
-  useThreadShells: () => state.threads,
+  useVisibleThreadShells: () => state.threads,
+  useAnyEnvironmentHiding: () => false,
+  useEnvironmentThreadRefs: () => [],
   useThreadShell: () => null,
   useProjects: () => [],
   useServerConfigs: () =>
