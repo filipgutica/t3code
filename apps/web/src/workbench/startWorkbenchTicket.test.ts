@@ -1,6 +1,7 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/threads";
 import {
+  DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
   ProjectId,
   ProviderInstanceId,
@@ -14,6 +15,7 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
@@ -111,6 +113,7 @@ function makeDependencies(events: string[]) {
       events.push("open-thread");
     },
     resolveModelSelection: () => modelSelection,
+    resolveRuntimeMode: () => "auto" as const,
     makeThreadId: () => threadId,
     makeAssignmentId: () => assignmentId,
     now: () => createdAt,
@@ -194,6 +197,15 @@ describe("coordinateWorkbenchTicketStart", () => {
       { ...startInput(), projects: [project, secondaryProject] },
       {
         ...makeDependencies(events),
+        resolveRuntimeMode: (repository) =>
+          resolveProjectSettings(
+            {
+              ...DEFAULT_SERVER_SETTINGS,
+              defaultRuntimeMode: "full-access",
+              projectSettingsOverrides: { [secondaryId]: { defaultRuntimeMode: "auto" } },
+            },
+            repository.id,
+          ).settings.defaultRuntimeMode,
         updateTicket: async ({ input }) => {
           expect(input).toMatchObject({
             id: ticket.id,
@@ -217,6 +229,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     expect(events.slice(0, 2)).toEqual(["save-repositories", "prepare-workspace"]);
     expect(createdThreadInput).toMatchObject({
       projectId: secondaryId,
+      runtimeMode: "auto",
       worktreePath: "/worktrees/ticket-one/api",
     });
   });
@@ -386,6 +399,7 @@ describe("coordinateWorkbenchTicketStart", () => {
       branch: "workbench/ticket-one",
       worktreePath: "/worktrees/ticket-one/t3code",
       modelSelection: selectedModel,
+      runtimeMode: "auto",
     });
     expect(events).toEqual([
       "prepare-workspace",
@@ -494,7 +508,10 @@ describe("coordinateWorkbenchTicketStart", () => {
     );
 
     expect(result).toEqual({ state: "opened", threadId });
-    expect(createdThreadInput).toMatchObject({ modelSelection: selectedModel });
+    expect(createdThreadInput).toMatchObject({
+      modelSelection: selectedModel,
+      runtimeMode: "auto",
+    });
     expect(createdAssignmentInput).toMatchObject({
       ticketId: ticket.id,
       threadId,

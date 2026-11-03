@@ -4,6 +4,7 @@ import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import type {
   EnvironmentId,
   ModelSelection,
+  RuntimeMode,
   ProjectId,
   ThreadId,
   WorkbenchAssignment,
@@ -15,7 +16,6 @@ import type {
   WorkbenchTicketWorkspace,
   WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
-import { DEFAULT_RUNTIME_MODE } from "@t3tools/contracts";
 
 import { DEFAULT_INTERACTION_MODE } from "../types";
 import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
@@ -117,6 +117,7 @@ interface StartWorkbenchTicketDependencies {
   readonly waitForThread: (threadId: ThreadId) => Promise<void>;
   readonly openThread: (threadId: ThreadId) => Promise<void>;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
+  readonly resolveRuntimeMode: (project: EnvironmentProject) => RuntimeMode;
   readonly makeThreadId: () => ThreadId;
   readonly makeAssignmentId: () => WorkbenchAssignmentId;
   readonly now: () => string;
@@ -269,7 +270,7 @@ export async function coordinateWorkbenchTicketStart(
       projectId: project.id,
       title: input.ticket.title,
       modelSelection,
-      runtimeMode: DEFAULT_RUNTIME_MODE,
+      runtimeMode: dependencies.resolveRuntimeMode(project),
       interactionMode: DEFAULT_INTERACTION_MODE,
       branch: checkout.branchName,
       worktreePath: checkout.worktreePath,

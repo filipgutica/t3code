@@ -14,6 +14,7 @@ import {
   type WorkbenchTicket,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
 import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
@@ -164,6 +165,12 @@ export function useStartWorkbenchTicket({
             waitForThread: (threadId) =>
               waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
             openThread,
+            resolveRuntimeMode: (project) => {
+              const settings =
+                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
+                DEFAULT_SERVER_SETTINGS;
+              return resolveProjectSettings(settings, project.id).settings.defaultRuntimeMode;
+            },
             resolveModelSelection: (project) => {
               const settings =
                 appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
