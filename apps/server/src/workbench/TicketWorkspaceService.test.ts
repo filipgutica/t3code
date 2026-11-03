@@ -1243,13 +1243,15 @@ describe("TicketWorkspaceService", () => {
       const secondary = fixture.repositories[1]!;
       const workspaceDirectory = path.dirname(primary.worktreePath);
       const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-outside-" });
-      yield* fixture.git(primary.sourcePath, [
-        "worktree",
-        "add",
-        "-b",
-        "pr-x",
-        path.join(workspaceDirectory, "pr-x"),
-      ]);
+      for (const name of ["pr-x", "..pr-dots"]) {
+        yield* fixture.git(primary.sourcePath, [
+          "worktree",
+          "add",
+          "-b",
+          name.replace(/^\.+/, ""),
+          path.join(workspaceDirectory, name),
+        ]);
+      }
       yield* fixture.git(primary.sourcePath, [
         "worktree",
         "add",
@@ -1276,6 +1278,7 @@ describe("TicketWorkspaceService", () => {
       expect(
         worktrees.map((worktree) => [worktree.projectId, path.basename(worktree.path)]),
       ).toEqual([
+        [primaryProjectId, "..pr-dots"],
         [primaryProjectId, "pr-x"],
         [secondaryProjectId, "pr-y"],
       ]);
@@ -1301,6 +1304,9 @@ describe("TicketWorkspaceService", () => {
         path.join(workspaceDirectory, "pr-dirty", "notes.txt"),
         "untracked work",
       );
+      const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-alias-" });
+      const alias = path.join(outside, "workspace-alias");
+      yield* fileSystem.symlink(workspaceDirectory, alias);
 
       yield* Effect.gen(function* () {
         yield* fixture.seed;
@@ -1317,7 +1323,8 @@ describe("TicketWorkspaceService", () => {
           threadId: activeThreadId,
           projectId: primaryProjectId,
           createdAt,
-          worktreePath: listed.get("pr-used")!,
+          // The Thread recorded the worktree through a symlinked directory.
+          worktreePath: path.join(alias, "pr-used"),
           archivedAt: createdAt,
         });
 

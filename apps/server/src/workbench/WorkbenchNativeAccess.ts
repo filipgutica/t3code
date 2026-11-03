@@ -156,6 +156,18 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     isRepository,
     findThread,
     hasThreadAtWorktreePath,
+    listThreadWorktreePaths: SqlSchema.findAll({
+      Request: Schema.Void,
+      Result: Schema.Struct({ worktreePath: Schema.String }),
+      execute: () => sql`
+        SELECT DISTINCT json_extract(payload_json, '$.worktreePath') AS "worktreePath"
+        FROM orchestration_v2_projection_threads
+        WHERE deleted_at IS NULL AND json_extract(payload_json, '$.worktreePath') IS NOT NULL
+      `,
+    })(undefined).pipe(
+      Effect.map((rows) => rows.map((row) => row.worktreePath)),
+      Effect.mapError(persistenceError),
+    ),
     findStartingRun: Effect.fn("WorkbenchNativeAccess.findStartingRun")((threadId) =>
       findStartingRunRow({ threadId }).pipe(Effect.mapError(persistenceError)),
     ),

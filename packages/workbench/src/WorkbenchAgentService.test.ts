@@ -93,6 +93,7 @@ const makeTestLayer = ({
                   : Option.none(),
             ),
           hasThreadAtWorktreePath: () => Effect.succeed(false),
+          listThreadWorktreePaths: Effect.succeed([]),
           findStartingRun: () => Effect.succeedNone,
           contextMarker: () => Effect.succeed(0),
           findRun: () => Effect.succeedNone,

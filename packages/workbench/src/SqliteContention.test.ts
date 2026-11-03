@@ -64,6 +64,7 @@ const withStore = <A, E>({
             ),
           findThread: () => Effect.succeedNone,
           hasThreadAtWorktreePath: () => Effect.succeed(false),
+          listThreadWorktreePaths: Effect.succeed([]),
           findStartingRun: () => Effect.succeedNone,
           contextMarker: () => Effect.succeed(0),
           findRun: () => Effect.succeedNone,

@@ -1332,7 +1332,10 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           const canonical = yield* canonicalizePath(worktreePath);
           const relative = path.relative(directory, canonical);
           const insideDirectory =
-            relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+            relative !== "" &&
+            relative !== ".." &&
+            !relative.startsWith(`..${path.sep}`) &&
+            !path.isAbsolute(relative);
           if (!insideDirectory || canonical === sourceRoot || prepared.has(canonical)) continue;
           worktrees.push({ projectId, path: worktreePath });
         }
@@ -1376,13 +1379,16 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           message: "The worktree's repository is unavailable.",
         });
       }
-      yield* ensureNoActiveAssignment({
-        snapshot: yield* store.getSnapshot,
-        ticketId: ticket.id,
-        message:
-          "A Thread works in this worktree. Delete that Thread, including an archived one, before removing the worktree.",
-        worktreePaths: [worktree.path],
-      });
+      // Threads may record the worktree through a symlinked path, so compare real paths.
+      for (const threadWorktreePath of yield* store.listThreadWorktreePaths) {
+        if ((yield* canonicalizePath(threadWorktreePath)) === requested) {
+          return yield* new WorkbenchOperationError({
+            code: "ticket_workspace_in_use",
+            message:
+              "A Thread works in this worktree. Delete that Thread, including an archived one, before removing the worktree.",
+          });
+        }
+      }
       const status = yield* inspectWorktree({
         worktreePath: worktree.path,
         label: `the worktree at ${worktree.path}`,
