@@ -123,10 +123,16 @@ jobs:
           RELEASE_VERSION: ${{ inputs.version }}
           PREVIOUS_TAG: ${{ inputs.previous_tag }}
           METADATA_JSON: ${{ inputs.metadata_json }}
+          RELEASE_MODE: ${{ inputs.release_mode }}
+          SIGN_MACOS: ${{ inputs.sign_macos }}
         run: |
           set -euo pipefail
           if [[ "$GITHUB_REPOSITORY" != filipgutica/t3code ]]; then exit 1; fi
           case "$RELEASE_CHANNEL" in latest|nightly) ;; *) echo "Unknown release channel" >&2; exit 1 ;; esac
+          if [[ "$RELEASE_MODE" == release && "$SIGN_MACOS" != true ]]; then
+            echo "Normal releases require signed and notarized macOS builds." >&2
+            exit 1
+          fi
           sha="$(git rev-parse HEAD)"
           if [[ "$RELEASE_CHANNEL" == nightly ]]; then tag="workbench-daily-v$RELEASE_VERSION"; else tag="workbench-v$RELEASE_VERSION"; fi
           metadata="$METADATA_JSON"
@@ -566,6 +572,11 @@ jobs:
           SIGN_MACOS: ${{ inputs.sign_macos }}
         run: |
           set -euo pipefail
+          releases="$RUNNER_TEMP/workbench-releases.json"
+          gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
+          if [[ "$(jq -r '[.[][] | select(.tag_name == env.RELEASE_TAG)][0].draft' "$releases")" == true ]]; then
+            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
           args=(
             --method POST
             "/repos/$GITHUB_REPOSITORY/releases/generate-notes"
@@ -589,9 +600,6 @@ jobs:
           if [[ "$(jq -r '.draft' "$existing")" == false ]]; then
             echo "$RELEASE_TAG is already published."
             exit 0
-          fi
-          if [[ "$(jq -r '.draft' "$existing")" == true ]]; then
-            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
           fi
           prerelease=false; latest=true
           if [[ "$RELEASE_CHANNEL" == nightly || "${{ inputs.release_mode }}" == unsigned-preview ]]; then prerelease=true; latest=false; fi

@@ -12,7 +12,7 @@ const workflow = NodeFS.readFileSync(
 );
 const step = (name: string) => {
   const body = workflow
-    .split(`name: ${name}\n`)[1]
+    .slice(workflow.lastIndexOf(`name: ${name}\n`))
     ?.split(/\n      - /)[0]
     ?.split("        run: |\n")[1];
   if (!body) throw new Error(`Missing release step: ${name}`);
@@ -42,18 +42,36 @@ const ciRun = (path: string, conclusion = "success", source = sha, status = "com
 });
 const write = (root: string, name: string, value: unknown) =>
   NodeFS.writeFileSync(NodePath.join(root, name), JSON.stringify(value));
-const run = (root: string, name: string, preamble: string, env: Record<string, string> = {}) =>
-  NodeChildProcess.spawnSync("bash", ["-e", "-o", "pipefail", "-c", `${preamble}\n${step(name)}`], {
-    cwd: root,
-    encoding: "utf8",
-    env: {
-      ...process.env,
-      RUNNER_TEMP: root,
-      GITHUB_REPOSITORY: "filipgutica/t3code",
-      RELEASE_SHA: sha,
-      ...env,
+const run = (
+  root: string,
+  name: string | string[],
+  preamble: string,
+  env: Record<string, string> = {},
+) =>
+  NodeChildProcess.spawnSync(
+    "bash",
+    [
+      "-e",
+      "-o",
+      "pipefail",
+      "-c",
+      `${preamble}\n${(typeof name === "string" ? [name] : name)
+        .sort((a, b) => workflow.indexOf(`name: ${a}\n`) - workflow.indexOf(`name: ${b}\n`))
+        .map(step)
+        .join("\n")}`,
+    ],
+    {
+      cwd: root,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        RUNNER_TEMP: root,
+        GITHUB_REPOSITORY: "filipgutica/t3code",
+        RELEASE_SHA: sha,
+        ...env,
+      },
     },
-  });
+  );
 const ciPreamble = `
   gh() {
     case "$*" in
@@ -87,6 +105,33 @@ it("records the automatic upstream event in stable release notes", () => {
   expect(result.status, result.stderr).toBe(0);
   expect(result.stdout).toContain(`<!-- workbench-daily: ${metadata} -->`);
 });
+
+it.each([
+  ["release", "false", 1],
+  ["release", "true", 0],
+  ["unsigned-preview", "false", 0],
+  ["build-only", "false", 0],
+])("resolves mode %s with signing %s (exit %s)", (mode, signed, status) =>
+  fixture((root) => {
+    const result = run(
+      root,
+      "Resolve release metadata",
+      'git() { printf "%s\\n" "$RELEASE_SHA"; }',
+      {
+        RELEASE_MODE: mode!,
+        SIGN_MACOS: signed!,
+        RELEASE_CHANNEL: "latest",
+        RELEASE_VERSION: "0.5.0",
+        PREVIOUS_TAG: "",
+        METADATA_JSON: "",
+        GITHUB_RUN_ID: "123",
+        GITHUB_OUTPUT: NodePath.join(root, "outputs"),
+      },
+    );
+    expect(result.status, result.stderr).toBe(status);
+    if (status !== 0) expect(result.stderr).toContain("require signed and notarized macOS builds");
+  }),
+);
 
 it("admits a release when both named CI workflows passed on the exact commit", () =>
   fixture((root) => {
@@ -144,7 +189,14 @@ it.each([
       NodeFS.mkdirSync(assets);
       const bytes = "built installer bytes";
       NodeFS.writeFileSync(NodePath.join(assets, "installer.zip"), bytes);
-      NodeFS.writeFileSync(NodePath.join(root, "workbench-release-notes.md"), "release notes");
+      NodeFS.mkdirSync(NodePath.join(root, "scripts/lib"), { recursive: true });
+      for (const file of ["workbench-release-notes.ts", "lib/workbench-release-notes.ts"]) {
+        NodeFS.copyFileSync(
+          NodePath.join(import.meta.dirname, file),
+          NodePath.join(root, "scripts", file),
+        );
+      }
+      if (existingDraft) NodeFS.writeFileSync(NodePath.join(root, "old-tag"), "commit A");
       write(root, "uploaded.json", {
         id: 7,
         draft: true,
@@ -178,17 +230,27 @@ it.each([
         echo "$*" >> "$RUNNER_TEMP/calls"
         if [[ "$1" == api ]]; then
           case "$*" in
+            *"generate-notes"*)
+              if [[ -f "$RUNNER_TEMP/old-tag" ]]; then echo 'old source changes'; else echo 'current source changes'; fi ;;
             *"--method POST"*|*"/releases/"*) cat "$RUNNER_TEMP/uploaded.json" ;;
             *) cat "$RUNNER_TEMP/history.json" ;;
           esac
         fi
+        if [[ "$1 $2" == 'release delete' ]]; then rm "$RUNNER_TEMP/old-tag"; fi
       }
     `;
-      const result = run(root, "Publish the complete Workbench release", preamble, {
-        RELEASE_TAG: tag,
-        RELEASE_CHANNEL: channel!,
-        RELEASE_VERSION: "0.5.0",
-      });
+      const result = run(
+        root,
+        ["Generate release notes from pull requests", "Publish the complete Workbench release"],
+        preamble,
+        {
+          RELEASE_TAG: tag,
+          RELEASE_CHANNEL: channel!,
+          RELEASE_VERSION: "0.5.0",
+          SIGN_MACOS: "true",
+          PREVIOUS_TAG: "",
+        },
+      );
       expect(result.status, result.stderr).toBe(0);
       const calls = NodeFS.readFileSync(NodePath.join(root, "calls"), "utf8");
       expect(calls).toContain(
@@ -200,15 +262,16 @@ it.each([
           `release delete ${tag} --repo filipgutica/t3code --yes --cleanup-tag`,
         );
         expect(deletion).toBeGreaterThanOrEqual(0);
-        expect(calls.indexOf("--method POST")).toBeGreaterThan(deletion);
+        expect(calls.indexOf("generate-notes")).toBeGreaterThan(deletion);
       }
       const created = JSON.parse(
         NodeFS.readFileSync(NodePath.join(root, "workbench-create-release.json"), "utf8"),
       );
       expect(created).toMatchObject({
         target_commitish: sha,
-        body: "release notes",
+        body: expect.stringContaining("current source changes"),
         tag_name: tag,
       });
+      expect(created.body).not.toContain("old source changes");
     }),
 );
