@@ -17,7 +17,7 @@ import { buildTicketSummaryPrompt, sanitizeTicketSummary } from "./ticketSummary
 
 export { TicketSummaryService } from "@t3tools/workbench/TicketSummaryService";
 
-const OPEN_CODE_FREE_TIER_REJECTION =
+export const OPEN_CODE_FREE_TIER_REJECTION =
   "Error from provider (Console): OpenCode's free tier can only be used from within OpenCode";
 
 export const ticketSummaryHostLayer = Layer.effect(

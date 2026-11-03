@@ -417,7 +417,7 @@ const make = Effect.gen(function* () {
           ? {}
           : { repositoryProjectIds: [...repositoryProjectIds] }),
         updatedAt: yield* currentAt,
-        updatedByThreadId: input.threadId,
+        writer: { kind: "agent", threadId: input.threadId },
       })
       .pipe(
         staleAs("ticket_changed", requireTicket(ticketId).pipe(Effect.map((t) => t.revision))),
@@ -462,7 +462,7 @@ const make = Effect.gen(function* () {
           repositoryProjectIds: [...repositoryProjectIds],
         },
         ...(input.progress === undefined ? {} : { progress: input.progress }),
-        updatedByThreadId: input.threadId,
+        writer: { kind: "agent", threadId: input.threadId },
       })
       .pipe(
         staleAs(

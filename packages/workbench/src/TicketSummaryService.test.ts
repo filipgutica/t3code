@@ -212,6 +212,7 @@ describe("TicketSummaryService", () => {
           title: "Validate requests",
           markdown: "Show a clear error for invalid dimensions.",
           updatedAt: "2026-09-07T10:01:00.000Z",
+          writer: { kind: "user" },
         });
         yield* Deferred.succeed(releaseFirst, undefined);
         yield* Deferred.await(secondStarted);

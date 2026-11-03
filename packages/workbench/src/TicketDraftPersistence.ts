@@ -20,6 +20,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
+import { documentProvenance, documentWrite, type DocumentWriter } from "./documentReview.ts";
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 
 const persistenceError = () =>
@@ -215,6 +216,16 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     if (draft.revision !== input.expectedRevision) return yield* changed();
     return draft;
   });
+  /** Takes the writer lock, then requires the expected revision of a draft still being written. */
+  const lockEditableDraft = Effect.fn("TicketDraftPersistence.lockEditableDraft")(function* (
+    input: WorkbenchTicketDraftActionInput,
+  ) {
+    yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
+    const draft = yield* getTicketDraft(input.id);
+    if (draft.revision !== input.expectedRevision) return yield* changed();
+    if (draft.phase !== "draft") return yield* busy();
+    return draft;
+  });
   const save = Effect.fn("TicketDraftPersistence.save")(function* (
     current: WorkbenchTicketDraft,
     next: WorkbenchTicketDraft,
@@ -309,12 +320,13 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     );
   }, Effect.mapError(operationError));
   /**
-   * Like `updateTicket`, a changed title or description records `updatedByThreadId`.
-   * Only the planning agent passes `progress`; omitted, it keeps the current list.
+   * Like `updateTicket`, a changed title or description records its writer and
+   * updates the review base. Only the planning agent passes `progress`;
+   * omitted, it keeps the current list.
    */
   const updateTicketDraft = Effect.fn("TicketDraftPersistence.updateTicketDraft")(function* (
     input: WorkbenchUpdateTicketDraftInput & {
-      readonly updatedByThreadId?: ThreadId;
+      readonly writer: DocumentWriter;
       readonly progress?: string;
     },
   ) {
@@ -323,20 +335,22 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     const validatedRoots = yield* validateRepositories(input.fields.repositoryProjectIds);
     return yield* sql.withTransaction(
       Effect.gen(function* () {
-        yield* sql`UPDATE workbench_ticket_drafts SET revision = revision WHERE draft_id = ${input.id}`;
-        const draft = yield* getTicketDraft(input.id);
-        if (draft.revision !== input.expectedRevision) return yield* changed();
-        if (draft.phase !== "draft") return yield* busy();
-        const contentChanged =
-          input.fields.title !== draft.fields.title ||
-          input.fields.markdown !== draft.fields.markdown;
+        const draft = yield* lockEditableDraft(input);
+        const { contentChanged: _contentChanged, ...write } = documentWrite({
+          writer: input.writer,
+          before: {
+            ...draft.fields,
+            updatedByThreadId: draft.updatedByThreadId ?? null,
+            updatedByAskForChange: draft.updatedByAskForChange ?? false,
+            reviewBase: draft.reviewBase ?? null,
+          },
+          after: input.fields,
+        });
         const next = {
           ...draft,
           fields: input.fields,
           ...(input.progress === undefined ? {} : { progress: input.progress }),
-          updatedByThreadId: contentChanged
-            ? (input.updatedByThreadId ?? null)
-            : (draft.updatedByThreadId ?? null),
+          ...write,
           revision: draft.revision + 1,
           updatedAt: yield* now,
         };
@@ -345,6 +359,38 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }),
     );
   }, Effect.mapError(operationError));
+  /** As `resolveTicketReview`, for a draft still being written. */
+  const resolveTicketDraftReview = Effect.fn("TicketDraftPersistence.resolveTicketDraftReview")(
+    function* (
+      input: WorkbenchTicketDraftActionInput & { readonly resolution: "accept" | "undo" },
+    ) {
+      return yield* sql.withTransaction(
+        Effect.gen(function* () {
+          const draft = yield* lockEditableDraft(input);
+          const base = draft.reviewBase ?? null;
+          if (base === null) {
+            return yield* new WorkbenchOperationError({
+              code: "review_not_pending",
+              message: "No changes to this draft await review.",
+            });
+          }
+          return yield* save(draft, {
+            ...draft,
+            ...(input.resolution === "undo"
+              ? {
+                  fields: { ...draft.fields, title: base.title, markdown: base.markdown },
+                  ...documentProvenance({ kind: "user" }),
+                }
+              : {}),
+            reviewBase: null,
+            revision: draft.revision + 1,
+            updatedAt: yield* now,
+          });
+        }),
+      );
+    },
+    Effect.mapError(operationError),
+  );
   const requirePlanningDraftLinked = Effect.fn("TicketDraftPersistence.requirePlanningDraftLinked")(
     function* (draft: WorkbenchTicketDraft) {
       const tickets =
@@ -419,6 +465,8 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             yield* validateFields(draft, validatedRoots);
           return yield* save(draft, {
             ...draft,
+            // Creating the Ticket accepts any pending changes, so it starts with no review.
+            ...(input.phase === "promoting" ? { reviewBase: null } : {}),
             phase: input.phase,
             revision: draft.revision + 1,
             updatedAt: yield* now,
@@ -565,6 +613,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     getTicketDraft,
     beginTicketDraft,
     updateTicketDraft,
+    resolveTicketDraftReview,
     transitionTicketDraft,
     restoreUncreatedTicketDraft,
     completeTicketDraftWork,

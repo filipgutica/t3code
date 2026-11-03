@@ -116,6 +116,7 @@ const make = Effect.gen(function* () {
           projectId: draft.projectId,
           ...draft.fields,
           updatedByThreadId: draft.updatedByThreadId ?? null,
+          updatedByAskForChange: draft.updatedByAskForChange ?? false,
           // Only the draft's planning Thread writes its Progress.
           progress: draft.progress ?? "",
           progressUpdatedByThreadId: draft.progress ? draft.threadId : null,
@@ -273,7 +274,9 @@ const make = Effect.gen(function* () {
     begin: Effect.fnUntraced(function* (input) {
       return yield* withDraftLock(input.id, begin(input));
     }),
-    update: store.updateTicketDraft,
+    update: Effect.fnUntraced(function* (input) {
+      return yield* store.updateTicketDraft({ ...input, writer: { kind: "user" } });
+    }),
     promote: Effect.fnUntraced(function* (input) {
       return yield* withDraftLock(input.id, promote(input));
     }),

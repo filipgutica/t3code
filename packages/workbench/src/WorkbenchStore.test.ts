@@ -181,6 +181,7 @@ describe("WorkbenchStore package boundary", () => {
         expectedRevision: done.revision,
         status: "done",
         updatedAt: "2026-09-07T10:01:00.000Z",
+        writer: { kind: "user" },
       });
 
       const todoThread = ThreadId.make("execution-todo-thread");
@@ -289,6 +290,7 @@ describe("WorkbenchStore package boundary", () => {
           expectedRevision: 0,
           status: "in_progress",
           updatedAt: "2026-09-07T10:01:00.000Z",
+          writer: { kind: "user" },
         });
         expect(statusUpdate.generatedSummary).toEqual(completedTicket.generatedSummary);
 
@@ -627,6 +629,7 @@ describe("WorkbenchStore package boundary", () => {
           expectedRevision: 0,
           title: "Updated title",
           updatedAt: "2026-09-05T12:01:00.000Z",
+          writer: { kind: "user" },
         }),
       );
       const snapshot = yield* store.getSnapshot;
@@ -671,9 +674,10 @@ describe("WorkbenchStore package boundary", () => {
           expectedRevision: input.revision,
           ...(input.markdown === undefined ? {} : { markdown: input.markdown }),
           ...(input.status === undefined ? {} : { status: input.status }),
-          ...(input.updatedByThreadId === undefined
-            ? {}
-            : { updatedByThreadId: input.updatedByThreadId }),
+          writer:
+            input.updatedByThreadId === undefined
+              ? { kind: "user" }
+              : { kind: "agent", threadId: input.updatedByThreadId },
           updatedAt: "2026-10-20T10:00:00.000Z",
         });
       const byAgent = yield* update({
@@ -809,6 +813,7 @@ describe("WorkbenchStore package boundary", () => {
               expectedRevision: Option.getOrThrow(ticket).revision,
               repositoryProjectIds,
               updatedAt: at,
+              writer: { kind: "user" },
             }),
           );
         yield* store.createProject({
@@ -1123,6 +1128,7 @@ describe("Workbench Workspace lifecycle", () => {
           expectedRevision: request.revision,
           title: "Blocked",
           updatedAt: now,
+          writer: { kind: "user" },
         }),
         store.archiveTicket({
           ticketId,
@@ -1203,6 +1209,7 @@ describe("Workbench Workspace lifecycle", () => {
         expectedRevision: request.revision,
         title: "Allowed",
         updatedAt: now,
+        writer: { kind: "user" },
       });
     }).pipe(Effect.provide(layer())),
   );
@@ -1504,6 +1511,7 @@ describe("Workbench Workspace lifecycle", () => {
         title: "Edited locally",
         status: "done",
         updatedAt: now,
+        writer: { kind: "user" },
       });
       expect(edited).toMatchObject({ title: "Edited locally", status: "done" });
       const archived = yield* store.archiveTicket({
@@ -1582,6 +1590,7 @@ describe("Workbench Workspace lifecycle", () => {
         expectedRevision: advanced.ticket.revision,
         status: "done",
         updatedAt: now,
+        writer: { kind: "user" },
       });
 
       // Startup with an existing cursor is the path a restarted server takes.
@@ -1704,6 +1713,7 @@ describe("Ticket Progress and Thread context", () => {
         expectedRevision: ticket.revision,
         progress: "- [x] PR 1. API\n- [ ] PR 2. Web\nNotes are not items.",
         updatedAt: "2026-09-07T11:00:00.000Z",
+        writer: { kind: "user" },
       });
       expect(ticked).toMatchObject({ revision: ticket.revision + 1, progressDone: 1 });
       // Progress is not the brief: no Updated by, and the generated summary stays current.
@@ -1714,6 +1724,7 @@ describe("Ticket Progress and Thread context", () => {
         expectedRevision: ticked.revision,
         markdown: "A user edit",
         updatedAt: "2026-09-07T12:00:00.000Z",
+        writer: { kind: "user" },
       });
       expect(edited.progress).toBe(ticked.progress);
 
@@ -1832,6 +1843,7 @@ describe("Ticket Progress and Thread context", () => {
           expectedRevision: ticket.revision,
           progress: "- [x] PR 1",
           updatedAt: "2026-09-07T11:00:00.000Z",
+          writer: { kind: "user" },
         });
         yield* store.settleThreadContext({ threadId, seen: Option.some(seen), endedRunIds: [] });
         yield* store.recordPendingThreadContext({ ...pending, threadId });
@@ -1891,5 +1903,208 @@ describe("Ticket Progress and Thread context", () => {
         testLayer({ projects: new Set([projectId]), threads: new Map([[threadId, projectId]]) }),
       ),
     ),
+  );
+});
+
+describe("Ticket review of agent edits", () => {
+  const projectId = ProjectId.make("review-project");
+  const workspaceId = WorkbenchProjectId.make("review-workspace");
+  const ticketId = WorkbenchTicketId.make("review-ticket");
+  const agent = ThreadId.make("review-agent");
+  const at = "2026-10-20T10:00:00.000Z";
+  const original = { title: "Validate requests", markdown: "Reject invalid sizes." };
+  const layer = () =>
+    testLayer({ projects: new Set([projectId]), threads: new Map([[agent, projectId]]) });
+
+  /** A Ticket with two agent edits awaiting review. */
+  const reviewed = Effect.gen(function* () {
+    const store = yield* WorkbenchStore;
+    const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId, ...original });
+    yield* store.createAssignment({
+      id: WorkbenchAssignmentId.make("review-assignment"),
+      ticketId,
+      threadId: agent,
+      createdAt: ticket.createdAt,
+    });
+    const firstEdit = yield* store.updateTicket({
+      id: ticketId,
+      expectedRevision: ticket.revision,
+      markdown: "Reject invalid sizes early.",
+      updatedAt: at,
+      writer: { kind: "agent", threadId: agent },
+    });
+    return yield* store.updateTicket({
+      id: ticketId,
+      expectedRevision: firstEdit.revision,
+      title: "Validate inputs",
+      markdown: "Reject invalid sizes before querying.",
+      updatedAt: at,
+      writer: { kind: "agent", threadId: agent },
+    });
+  });
+
+  it.effect("reviews two agent edits against the text before the first", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      expect(edited).toMatchObject({
+        reviewPending: true,
+        reviewBase: original,
+        updatedByThreadId: agent,
+        updatedByAskForChange: false,
+      });
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).reviewBase).toEqual(original);
+      const [snapshotTicket] = (yield* store.getSnapshot).tickets;
+      expect(snapshotTicket).toMatchObject({ reviewPending: true });
+      expect(snapshotTicket).not.toHaveProperty("reviewBase");
+      // A board drag changes no content, so the review stays.
+      const moved = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: edited.revision,
+        status: "in_progress",
+        updatedAt: at,
+        writer: { kind: "user" },
+      });
+      expect(moved).toMatchObject({ reviewBase: original, updatedByThreadId: agent });
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("records Ask for change edits without a Thread until an agent writes", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const ticket = yield* seedTicket({ store, projectId, workspaceId, ticketId, ...original });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("review-assignment"),
+        ticketId,
+        threadId: agent,
+        createdAt: ticket.createdAt,
+      });
+      const asked = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        markdown: "Reject invalid sizes early.",
+        updatedAt: at,
+        writer: { kind: "askForChange" },
+      });
+      expect(asked).toMatchObject({
+        updatedByThreadId: null,
+        updatedByAskForChange: true,
+        reviewBase: original,
+      });
+      const byAgent = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: asked.revision,
+        markdown: "Reject invalid sizes before querying.",
+        updatedAt: at,
+        writer: { kind: "agent", threadId: agent },
+      });
+      expect(byAgent).toMatchObject({
+        updatedByThreadId: agent,
+        updatedByAskForChange: false,
+        reviewBase: original,
+      });
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("Accept clears the review and bumps the revision without changing content", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      const accepted = yield* store.resolveTicketReview({
+        id: ticketId,
+        expectedRevision: edited.revision,
+        resolution: "accept",
+      });
+      expect(accepted).toMatchObject({
+        revision: edited.revision + 1,
+        title: edited.title,
+        markdown: edited.markdown,
+        reviewPending: false,
+        reviewBase: null,
+        updatedByThreadId: agent,
+        generatedSummary: edited.generatedSummary,
+      });
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("Undo restores the base, records no Thread, and bumps the revision", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      const undone = yield* store.resolveTicketReview({
+        id: ticketId,
+        expectedRevision: edited.revision,
+        resolution: "undo",
+      });
+      expect(undone).toMatchObject({
+        ...original,
+        revision: edited.revision + 1,
+        reviewPending: false,
+        reviewBase: null,
+        updatedByThreadId: null,
+        updatedByAskForChange: false,
+      });
+      expect(undone.generatedSummary?.status).toBe("pending");
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(undone);
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("a stale revision fails Accept and Undo and changes nothing", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      for (const resolution of ["accept", "undo"] as const) {
+        const error = yield* Effect.flip(
+          store.resolveTicketReview({
+            id: ticketId,
+            expectedRevision: edited.revision - 1,
+            resolution,
+          }),
+        );
+        expect(error).toMatchObject({ code: "ticket_changed" });
+      }
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(edited);
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("a user content edit ends the review", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      const byUser = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: edited.revision,
+        markdown: "My own words.",
+        updatedAt: at,
+        writer: { kind: "user" },
+      });
+      expect(byUser).toMatchObject({ reviewPending: false, reviewBase: null });
+      expect(
+        yield* Effect.flip(
+          store.resolveTicketReview({
+            id: ticketId,
+            expectedRevision: byUser.revision,
+            resolution: "undo",
+          }),
+        ),
+      ).toMatchObject({ code: "review_not_pending" });
+    }).pipe(Effect.provide(layer())),
+  );
+
+  it.effect("keeps an archived Ticket's review flag but not its base in compact snapshots", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      yield* store.archiveTicket({
+        ticketId,
+        expectedRevision: edited.revision,
+        archivedAt: at,
+        updatedAt: at,
+      });
+      const [compact] = (yield* store.getCompactSnapshot).tickets;
+      expect(compact).toMatchObject({ markdownOmitted: true, reviewPending: true });
+      expect(compact).not.toHaveProperty("reviewBase");
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).reviewBase).toEqual(original);
+    }).pipe(Effect.provide(layer())),
   );
 });

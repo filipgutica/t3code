@@ -6,6 +6,7 @@ import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProjectionStoreV2 from "../orchestration-v2/ProjectionStore.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
+import * as AskForChangeService from "./AskForChangeService.ts";
 import * as WorkbenchOrchestrationReactor from "./OrchestrationReactor.ts";
 import * as TicketSettlement from "./TicketSettlement.ts";
 import * as TicketExecutionReactor from "./TicketExecutionReactor.ts";
@@ -69,6 +70,7 @@ export const WorkbenchServicesLayerLive = Layer.empty.pipe(
   Layer.provideMerge(WorkspaceLifecycleLayerLive),
   Layer.provideMerge(TicketWorkspaceService.TicketWorkspaceServiceLive),
   Layer.provideMerge(TicketSummaryService.TicketSummaryServiceLive),
+  Layer.provideMerge(AskForChangeService.AskForChangeServiceLive),
   Layer.provideMerge(ThreadRecapService.ThreadRecapServiceLive),
   Layer.provideMerge(WorkbenchStoreLayerLive),
 );

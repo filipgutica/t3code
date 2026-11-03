@@ -152,6 +152,7 @@ describe("durable Workbench execution consumption", () => {
                   expectedRevision: before.revision,
                   status: "todo",
                   updatedAt: now,
+                  writer: { kind: "user" },
                 });
               if (action === "reassign") {
                 yield* store.unlinkAssignment({ ticketId, threadId });

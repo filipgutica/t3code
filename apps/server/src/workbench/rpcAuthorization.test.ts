@@ -7,7 +7,9 @@ import {
   WorkbenchTicketId,
   WsRpcGroup,
 } from "@t3tools/contracts";
+import * as Deferred from "effect/Deferred";
 import * as Effect from "effect/Effect";
+import * as Fiber from "effect/Fiber";
 import * as Layer from "effect/Layer";
 import * as RpcTest from "effect/rpc/RpcTest";
 
@@ -96,6 +98,53 @@ describe("Workbench RPC authorization", () => {
       expect(removals).toBe(1);
     }).pipe(Effect.scoped),
   );
+  it.effect("requires operate scope to ask for a change and stops it when the client cancels", () =>
+    Effect.gen(function* () {
+      const method = WORKBENCH_WS_METHODS.workbenchAskForTicketChange;
+      const group = WsRpcGroup.omit(
+        ...[...WsRpcGroup.requests.keys()].filter(
+          (tag): tag is Exclude<keyof typeof RPC_REQUIRED_SCOPES, typeof method> => tag !== method,
+        ),
+      );
+      const started = yield* Deferred.make<void>();
+      const interrupted = yield* Deferred.make<void>();
+      const handlers = group.toLayerHandler(method, () =>
+        Deferred.succeed(started, undefined).pipe(
+          Effect.andThen(Effect.never),
+          Effect.onInterrupt(() => Deferred.succeed(interrupted, undefined)),
+        ),
+      );
+      const input = {
+        id: reference.ticketId,
+        expectedRevision: 0,
+        start: 0,
+        end: 5,
+        blockSource: "Brief",
+        selectedText: "",
+        instruction: "Shorten it.",
+      };
+      const reader = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationReadScope])),
+        ),
+      );
+      expect(yield* reader[method](input).pipe(Effect.flip)).toMatchObject({
+        requiredScope: AuthOrchestrationOperateScope,
+      });
+      expect(yield* Deferred.isDone(started)).toBe(false);
+      const operator = yield* RpcTest.makeClient(group).pipe(
+        Effect.provide(
+          Layer.merge(handlers, rpcScopeAuthorizationLayer([AuthOrchestrationOperateScope])),
+        ),
+      );
+      // Cancel interrupts the client call; the server must interrupt the handler's generation.
+      const request = yield* operator[method](input).pipe(Effect.forkChild);
+      yield* Deferred.await(started);
+      yield* Fiber.interrupt(request);
+      yield* Deferred.await(interrupted);
+    }).pipe(Effect.scoped),
+  );
+
   it.effect("allows preparation index reads with read scope and rejects callers without it", () =>
     Effect.gen(function* () {
       const method = WORKBENCH_WS_METHODS.workbenchGetTicketPreparations;

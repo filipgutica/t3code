@@ -196,6 +196,7 @@ const editTicket = (edit: { readonly markdown?: string; readonly progress?: stri
       expectedRevision: current.revision,
       ...edit,
       updatedAt: now,
+      writer: { kind: "user" },
     });
   });
 

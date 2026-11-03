@@ -302,6 +302,28 @@ describe("ensureWorkbenchSchema", () => {
     ),
   );
 
+  it.effect("adds the review columns once, with no review pending", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+          VALUES ('review-board', 'Review', ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown,
+            primary_t3_project_id, status, blocked, revision, created_at, updated_at)
+          VALUES ('review-ticket', 'review-board', 'Ticket', 'Brief', 'repo', 'todo', 0, 0, ${now}, ${now})`;
+        yield* ensureWorkbenchSchema;
+        expect(
+          yield* sql`SELECT review_base_title AS title, review_base_markdown AS markdown,
+            updated_by_ask_for_change AS "askForChange" FROM workbench_tickets`,
+        ).toEqual([{ title: null, markdown: null, askForChange: 0 }]);
+        expect(
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 25`,
+        ).toHaveLength(1);
+      }),
+    ),
+  );
+
   it.effect("moves v19 Jira state onto local Tickets and Epics and drops the Jira tables", () =>
     withForeignKeys(
       Effect.gen(function* () {
