@@ -714,6 +714,26 @@ it("keeps the Board's Thread and mode when its Ticket opens", async () => {
   expect(chatMount).not.toHaveBeenCalledWith(ThreadId.make("p"));
 });
 
+it("keeps a settled Thread the Board showed when its Ticket opens", async () => {
+  setup();
+  // The Board chat showed settled Thread t, picked from its Settled section, as it unmounted.
+  useWorkbenchFloatingChatStore.setState({
+    mode: "expanded",
+    restoreMode: "expanded",
+    boardHandoff: { thread: scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("t")) },
+  });
+  const settled = { ...thread("t"), settledAt: "2026-11-02T00:00:00.000Z" };
+
+  await using screen = await render(
+    <div data-workbench-page-column="">
+      <Harness threads={[thread("p")]} settled={[settled]} primaryThreadId={ThreadId.make("p")} />
+    </div>,
+  );
+
+  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
+  await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toBeVisible();
+});
+
 it("collapses, without showing it, when the opened Ticket lacks the Board's Thread", async () => {
   setup();
   await using screen = await renderBoardShowing([thread("a"), thread("t")]);

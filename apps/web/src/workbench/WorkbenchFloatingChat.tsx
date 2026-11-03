@@ -819,14 +819,16 @@ function useBoardTicketHandoff({
       const { thread } = boardHandoff;
       if (
         thread?.environmentId === environmentId &&
-        chat.active.some((candidate) => candidate.threadId === thread.threadId)
+        [...chat.active, ...chat.settled].some(
+          (candidate) => candidate.threadId === thread.threadId,
+        )
       )
         onSelectThread(thread.threadId);
       else if (mode === "expanded") collapse();
     }
     // oxlint-disable-next-line react/set-state-in-effect -- the Board's handoff exists only after this chat's first commit
     setReady(true);
-  }, [ready, environmentId, chat.active, onSelectThread]);
+  }, [ready, environmentId, chat.active, chat.settled, onSelectThread]);
   return ready;
 }
 
