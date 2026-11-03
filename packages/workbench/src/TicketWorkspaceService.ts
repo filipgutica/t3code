@@ -183,6 +183,16 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     // Missing paths still need their lexical identity for stale-worktree handling.
     return fileSystem.realPath(resolved).pipe(Effect.orElseSucceed(() => resolved));
   };
+  /** Strictly below `directory`; a child may still be named like `..pr-x`. */
+  const isInsideDirectory = (directory: string, candidate: string) => {
+    const relative = path.relative(directory, candidate);
+    return (
+      relative !== "" &&
+      relative !== ".." &&
+      !relative.startsWith(`..${path.sep}`) &&
+      !path.isAbsolute(relative)
+    );
+  };
   /** A recorded Workspace keeps its directory; otherwise new worktrees go to the proposed one. */
   const recordedWorkspaceDirectory = (workspace: Option.Option<WorkbenchTicketWorkspace>) =>
     Option.isSome(workspace) && workspace.value.repositories[0] !== undefined
@@ -1307,13 +1317,16 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         recordedWorkspaceDirectory(workspace) ??
           proposedWorkspaceDirectory(ticket, yield* store.listReferences(ticket.id)),
       );
-      const prepared = new Set<string>();
-      if (Option.isSome(workspace)) {
-        for (const repository of workspace.value.repositories) {
-          if (repository.status === "released") continue;
-          prepared.add(yield* canonicalizePath(repository.worktreePath));
-        }
-      }
+      const prepared = new Set(
+        yield* Effect.forEach(
+          Option.match(workspace, {
+            onNone: () => [],
+            onSome: ({ repositories }) =>
+              repositories.filter((repository) => repository.status !== "released"),
+          }),
+          (repository) => canonicalizePath(repository.worktreePath),
+        ),
+      );
       const worktrees: Array<WorkbenchTicketWorktree> = [];
       for (const projectId of ticket.repositoryProjectIds) {
         const project = yield* projections.getProjectShellById(projectId);
@@ -1330,13 +1343,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         );
         for (const worktreePath of listed) {
           const canonical = yield* canonicalizePath(worktreePath);
-          const relative = path.relative(directory, canonical);
-          const insideDirectory =
-            relative !== "" &&
-            relative !== ".." &&
-            !relative.startsWith(`..${path.sep}`) &&
-            !path.isAbsolute(relative);
-          if (!insideDirectory || canonical === sourceRoot || prepared.has(canonical)) continue;
+          if (!isInsideDirectory(directory, canonical)) continue;
+          if (canonical === sourceRoot || prepared.has(canonical)) continue;
           worktrees.push({ projectId, path: worktreePath });
         }
       }
