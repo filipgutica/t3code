@@ -8,7 +8,6 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await page.getByRole("button", { name: "Workspace actions" }).click();
   await page.getByRole("menuitem", { name: "New Epic" }).click();
   const epicDialog = page.getByRole("dialog", { name: "Create Epic", exact: true });
-  const dialog = page.getByRole("dialog", { name: "Create Ticket", exact: true });
   await epicDialog.getByPlaceholder("What outcome does this Epic deliver?").fill("Regression Epic");
   await epicDialog
     .getByPlaceholder("Context, scope, and intended outcome…")
@@ -24,12 +23,15 @@ test("E1 T3: Epic creation, child membership and completion progress persist", a
   await expect(page.getByRole("heading", { name: "Regression Epic", exact: true })).toBeVisible();
   await expect(page.getByText("0 of 0 done", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "New Ticket", exact: true }).click();
-  await page.getByRole("button", { name: "Create manually", exact: true }).click();
-  await dialog.getByPlaceholder("What needs doing?").fill("Regression Epic child");
-  await dialog.getByRole("combobox", { name: "Ticket type" }).click();
+  const draft = page.getByRole("group", { name: "Ticket draft", exact: true });
+  await draft.getByRole("button", { name: "Expand ticket draft", exact: true }).click();
+  await draft.getByRole("button", { name: "Show full brief", exact: true }).click();
+  await draft.getByPlaceholder("What needs doing?").fill("Regression Epic child");
+  await draft.getByRole("combobox", { name: "Ticket type" }).click();
   await page.getByRole("option", { name: "Bug", exact: true }).click();
-  await dialog.getByRole("button", { name: "Create Ticket", exact: true }).click();
-  await expect(dialog).not.toBeVisible();
+  await draft.getByRole("checkbox", { name: /^Beacon CLI / }).click();
+  await draft.getByRole("button", { name: "Create ticket", exact: true }).click();
+  await expect(draft).not.toBeVisible();
   const child = (await snapshot(demo)).tickets.find((t) => t.title === "Regression Epic child");
   if (!child) throw new Error("Created child was not persisted");
   expect(child.epicId).toBe(epic.id);

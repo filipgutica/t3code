@@ -48,8 +48,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-it("returns an unsaved preparation link to its owning environment and workspace", async () => {
-  state.query.data = [preparation];
+it("returns an unsaved creation link to its owning environment and workspace", async () => {
+  state.query.data = [{ ...preparation, phase: "creating" }];
   await render();
   expect(state.navigate).toHaveBeenCalledWith({
     to: "/workbench",
@@ -59,7 +59,7 @@ it("returns an unsaved preparation link to its owning environment and workspace"
   expect(renderer!.toJSON()).toBeNull();
 });
 
-it.each(["planning", "promoting"])(
+it.each(["promoting", "starting", "discarding"])(
   "returns a saved %s Thread link to its Ticket",
   async (phase) => {
     state.query.data = [{ ...preparation, ticketId: WorkbenchTicketId.make("ticket"), phase }];
@@ -89,3 +89,19 @@ it("keeps ordinary native conversations mounted when a draft becomes a server Th
   expect(renderer!.root.findByType("span")).toBe(conversation);
   expect(state.navigate).not.toHaveBeenCalled();
 });
+
+it.each(["draft", "planning"] as const)(
+  "allows an explicit full Thread view for a %s preparation",
+  async (phase) => {
+    state.query.data = [
+      {
+        ...preparation,
+        phase,
+        ticketId: phase === "planning" ? WorkbenchTicketId.make("ticket") : null,
+      },
+    ];
+    await render();
+    expect(state.navigate).not.toHaveBeenCalled();
+    expect(renderer!.root.findByType("span").children).toEqual(["Native conversation"]);
+  },
+);
