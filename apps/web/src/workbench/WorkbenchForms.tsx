@@ -33,6 +33,7 @@ import {
   type WorkbenchReferenceDraft,
   type WorkbenchTicketKind,
   type WorkbenchTicketWorkspace,
+  type WorkbenchTicketWorktree,
 } from "@t3tools/contracts";
 import {
   ArrowLeftIcon,
@@ -95,7 +96,6 @@ import {
 import { isElectron } from "../env";
 
 import { Badge } from "../components/ui/badge";
-import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import {
@@ -169,10 +169,9 @@ import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileShe
 import {
   useWorkbenchCheckoutStatusRefresh,
   WorkbenchCheckoutDirectory,
-  WorkbenchCheckoutDetails,
 } from "./WorkbenchCheckoutDetails";
 import {
-  WorkbenchTicketWorktreeRows,
+  WorkbenchTicketCheckoutRows,
   useWorkbenchTicketWorktrees,
 } from "./WorkbenchTicketWorktrees";
 import {
@@ -209,6 +208,7 @@ import {
 } from "./workbenchPullRequests.logic";
 
 const NO_EPIC_VALUE = "__workbench_no_epic__";
+const NO_TICKET_WORKTREES: ReadonlyArray<WorkbenchTicketWorktree> = [];
 const CREATE_EPIC_VALUE = "__workbench_create_epic__";
 
 function useWorkbenchEpicEditor(epic: WorkbenchEpic) {
@@ -1537,56 +1537,54 @@ type WorkbenchTicketRepositoryEntry = {
 
 function WorkbenchTicketRepositoryRow({
   environmentId,
+  ticketId,
   entry,
+  worktrees,
   keybindings,
   availableEditors,
   isArchived,
   canOpen,
 }: {
   readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
   readonly entry: WorkbenchTicketRepositoryEntry;
+  readonly worktrees: ReadonlyArray<WorkbenchTicketWorktree>;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly isArchived: boolean;
   readonly canOpen: boolean;
 }) {
-  const { repository, openInCwd } = entry;
+  const checkoutCount = (entry.openInCwd ? 1 : 0) + worktrees.length;
   return (
-    <div className="flex min-w-0 flex-wrap items-start gap-x-2 gap-y-1 py-2 text-sm">
-      <WorkbenchTicketRepositoryIdentity entry={entry} />
-      {repository && !isArchived && canOpen && openInCwd ? (
-        <OpenInPicker
-          environmentId={repository.environmentId}
-          keybindings={keybindings}
-          availableEditors={availableEditors}
-          openInCwd={openInCwd}
-          compact
-          enableShortcut={false}
-        />
-      ) : null}
-      {entry.workspaceRepository?.errorMessage ? (
-        <p className="min-w-0 basis-full break-words text-xs text-destructive" role="alert">
-          {entry.workspaceRepository.errorMessage}
-        </p>
-      ) : null}
-      {openInCwd ? (
-        <div className="min-w-0 basis-full">
-          <WorkbenchCheckoutDetails
-            environmentId={environmentId}
-            cwd={openInCwd}
-            showDirectory={false}
-            showPullRequest={false}
-          />
-        </div>
-      ) : null}
+    <div className="min-w-0 text-sm">
+      <div className="py-2">
+        <WorkbenchTicketRepositoryIdentity entry={entry} checkoutCount={checkoutCount} />
+        {entry.workspaceRepository?.errorMessage ? (
+          <p className="mt-1 min-w-0 break-words text-xs text-destructive" role="alert">
+            {entry.workspaceRepository.errorMessage}
+          </p>
+        ) : null}
+      </div>
+      <WorkbenchTicketCheckoutRows
+        environmentId={environmentId}
+        ticketId={ticketId}
+        preparedPath={entry.openInCwd}
+        canOpenPrepared={canOpen && entry.repository !== null}
+        worktrees={worktrees}
+        keybindings={keybindings}
+        availableEditors={availableEditors}
+        isArchived={isArchived}
+      />
     </div>
   );
 }
 
 function WorkbenchTicketRepositoryIdentity({
   entry,
+  checkoutCount,
 }: {
   readonly entry: WorkbenchTicketRepositoryEntry;
+  readonly checkoutCount: number;
 }) {
   const repositoryTitle = entry.repository?.title ?? "Repository unavailable";
   return (
@@ -1608,6 +1606,9 @@ function WorkbenchTicketRepositoryIdentity({
           </span>
         )}
         <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
+        {checkoutCount > 1 ? (
+          <span className="text-xs text-muted-foreground">{checkoutCount} worktrees</span>
+        ) : null}
       </div>
     </div>
   );
@@ -3062,24 +3063,17 @@ function WorkbenchTicketWorkspaceRepositories({
   return (
     <div className="divide-y divide-border/50">
       {repositories.map((entry) => (
-        <div key={entry.id}>
-          <WorkbenchTicketRepositoryRow
-            environmentId={environmentId}
-            entry={entry}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            isArchived={isArchived}
-            canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
-          />
-          <WorkbenchTicketWorktreeRows
-            environmentId={environmentId}
-            ticketId={ticket.id}
-            worktrees={worktrees.filter((worktree) => worktree.projectId === entry.id)}
-            keybindings={keybindings}
-            availableEditors={availableEditors}
-            isArchived={isArchived}
-          />
-        </div>
+        <WorkbenchTicketRepositoryRow
+          key={entry.id}
+          environmentId={environmentId}
+          ticketId={ticket.id}
+          entry={entry}
+          worktrees={worktrees.filter((worktree) => worktree.projectId === entry.id)}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          isArchived={isArchived}
+          canOpen={ticketWorkspace?.status === "ready" && !workspaceIsPreparing}
+        />
       ))}
       {retainedRepositories.length > 0 ? (
         <details className="pt-2">
@@ -3094,7 +3088,9 @@ function WorkbenchTicketWorkspaceRepositories({
               <WorkbenchTicketRepositoryRow
                 key={entry.id}
                 environmentId={environmentId}
+                ticketId={ticket.id}
                 entry={entry}
+                worktrees={NO_TICKET_WORKTREES}
                 keybindings={keybindings}
                 availableEditors={availableEditors}
                 isArchived={isArchived}
