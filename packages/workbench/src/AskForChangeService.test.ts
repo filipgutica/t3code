@@ -22,6 +22,7 @@ import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
 
 const projectId = ProjectId.make("ask-project");
+const otherProjectId = ProjectId.make("ask-other-project");
 const workspaceId = WorkbenchProjectId.make("ask-workspace");
 const ticketId = WorkbenchTicketId.make("ask-ticket");
 const createdAt = "2026-10-20T10:00:00.000Z";
@@ -97,36 +98,43 @@ const seedTicket = Effect.gen(function* () {
   });
 });
 
-const seedDraft = Effect.gen(function* () {
-  const store = yield* WorkbenchStore;
-  yield* store.createProject({
-    id: workspaceId,
-    title: "Ask",
-    linkedProjectIds: [projectId],
-    createdAt,
+const seedDraftWith = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
+  Effect.gen(function* () {
+    const store = yield* WorkbenchStore;
+    yield* store.createProject({
+      id: workspaceId,
+      title: "Ask",
+      // The first link is the draft's anchor.
+      linkedProjectIds: [projectId, otherProjectId],
+      createdAt,
+    });
+    const created = yield* store.beginTicketDraft({
+      id: ticketId,
+      projectId: workspaceId,
+      threadId: ThreadId.make("ask-planning"),
+      modelSelection: ModelSelection.make({
+        instanceId: ProviderInstanceId.make("codex"),
+        model: "gpt-6.1-sol",
+      }),
+    });
+    const draft = yield* store.transitionTicketDraft({
+      id: created.id,
+      expectedRevision: created.revision,
+      from: ["creating"],
+      phase: "draft",
+    });
+    return yield* store.updateTicketDraft({
+      id: draft.id,
+      expectedRevision: draft.revision,
+      fields: {
+        title: "Explain worktree failures",
+        markdown: brief,
+        repositoryProjectIds: [...repositoryProjectIds],
+      },
+      writer: { kind: "user" },
+    });
   });
-  const created = yield* store.beginTicketDraft({
-    id: ticketId,
-    projectId: workspaceId,
-    threadId: ThreadId.make("ask-planning"),
-    modelSelection: ModelSelection.make({
-      instanceId: ProviderInstanceId.make("codex"),
-      model: "gpt-6.1-sol",
-    }),
-  });
-  const draft = yield* store.transitionTicketDraft({
-    id: created.id,
-    expectedRevision: created.revision,
-    from: ["creating"],
-    phase: "draft",
-  });
-  return yield* store.updateTicketDraft({
-    id: draft.id,
-    expectedRevision: draft.revision,
-    fields: { title: "Explain worktree failures", markdown: brief, repositoryProjectIds: [] },
-    writer: { kind: "user" },
-  });
-});
+const seedDraft = seedDraftWith([]);
 
 describe("AskForChangeService", () => {
   it.effect("replaces the selected blocks and keeps every other byte", () => {
@@ -253,6 +261,30 @@ describe("AskForChangeService", () => {
     }).pipe(
       Effect.provide(
         withHost(() => Deferred.succeed(started, undefined).pipe(Effect.andThen(Effect.never))),
+      ),
+    );
+  });
+
+  it.effect("runs a draft's rewrite in its first selected repository, not its anchor", () => {
+    const requests: Array<MarkdownRewriteRequest> = [];
+    return Effect.gen(function* () {
+      const service = yield* AskForChangeService;
+      const draft = yield* seedDraftWith([otherProjectId, projectId]);
+      expect(draft.anchorProjectId).toBe(projectId);
+      yield* service.askForDraftChange({
+        id: draft.id,
+        expectedRevision: draft.revision,
+        ...selection,
+      });
+      expect(requests.map((request) => request.projectId)).toEqual([otherProjectId]);
+    }).pipe(
+      Effect.provide(
+        withHost((request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            return "Rewritten block.";
+          }),
+        ),
       ),
     );
   });

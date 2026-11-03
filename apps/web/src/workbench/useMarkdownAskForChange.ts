@@ -106,11 +106,19 @@ export function useMarkdownAskForChange({
     setTarget(null);
     setPhase({ kind: "pill" });
   };
+  // The pill opens after the second click of a triple-click, so that gesture's third click is a
+  // press outside it. Presses in the text are the selection's to decide on release instead.
+  const dismiss = (pressTarget: EventTarget | null) => {
+    const container = containerRef.current;
+    const pressedText = pressTarget instanceof Node && container?.contains(pressTarget) === true;
+    if (phase.kind === "pill" && pressedText) return;
+    close();
+  };
   const capture = () => {
     const container = containerRef.current;
     if (!enabled || running || phase.kind === "prompt" || container === null) return;
-    const next = readMarkdownBlockSelection(container, markdown);
-    if (next !== null) setTarget(next);
+    // A press that collapses the selection, such as a click in the text, drops the pill.
+    setTarget(readMarkdownBlockSelection(container, markdown));
   };
   const send = async () => {
     const text = instruction.trim();
@@ -168,7 +176,7 @@ export function useMarkdownAskForChange({
             cancel: () => {
               if (phase.kind === "running") phase.controller.abort();
             },
-            close,
+            dismiss,
           },
   };
 }

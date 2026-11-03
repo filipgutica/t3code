@@ -151,7 +151,9 @@ const make = Effect.gen(function* () {
         message: "Ticket preparation is changing. Finish or retry that operation first.",
       });
     }
-    const markdown = yield* rewrite(input, { ...draft.fields, projectId: draft.anchorProjectId });
+    // As Start work does, the first selected repository runs it; the anchor until one is chosen.
+    const projectId = draft.fields.repositoryProjectIds[0] ?? draft.anchorProjectId;
+    const markdown = yield* rewrite(input, { ...draft.fields, projectId });
     return yield* store
       .updateTicketDraft({
         id: input.id,

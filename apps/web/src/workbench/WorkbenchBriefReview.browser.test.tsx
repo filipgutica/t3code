@@ -166,3 +166,15 @@ it("asks for a change to the whole blocks a selection touches, and Cancel stops 
     .element(page.getByRole("textbox", { name: "Describe the edit" }))
     .toHaveValue("Say it shorter");
 });
+
+it("keeps the pill through the rest of the triple-click that opened it", async () => {
+  setup();
+  await using screen = await render(<TicketBrief record={ticket} />);
+  // On the words, so the second click selects one and opens the pill mid-gesture; the third
+  // click then selects the paragraph and must not count as a press outside the pill.
+  await userEvent.tripleClick(screen.getByText(goal), { position: { x: 8, y: 8 } });
+  await userEvent.click(page.getByRole("button", { name: "Ask for change" }));
+  await expect
+    .element(page.getByText("Rewrites the outlined paragraph", { exact: false }))
+    .toBeVisible();
+});

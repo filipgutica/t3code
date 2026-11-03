@@ -51,8 +51,9 @@ export function WorkbenchAskForChange({ ask }: { readonly ask: MarkdownAsk }) {
   return (
     <Popover
       open
-      onOpenChange={(open) => {
-        if (!open) popover.close();
+      onOpenChange={(open, details) => {
+        if (open) return;
+        popover.dismiss(details.reason === "outside-press" ? details.event.target : null);
       }}
     >
       <PopoverPopup

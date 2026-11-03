@@ -181,6 +181,62 @@ describe("Ticket review content", () => {
     }
   });
 
+  it("shows a review only from the read of the revision Accept and Undo will name", async () => {
+    const registry = AtomRegistry.make();
+    let content: ReturnType<typeof useWorkbenchTicketContent> | undefined;
+    function Consumer({ record }: { record: WorkbenchTicket }) {
+      const result = useWorkbenchTicketContent(environmentId, record);
+      useEffect(() => {
+        content = result;
+      }, [result]);
+      return null;
+    }
+    const view = (record: WorkbenchTicket) =>
+      createElement(
+        RegistryContext.Provider,
+        { value: registry },
+        createElement(Consumer, { record }),
+      );
+    const key = (revision: number) =>
+      JSON.stringify({ environmentId, input: { ticketId: ticket.id, revision } });
+    const first = {
+      ...ticket,
+      archivedAt: null,
+      revision: 10,
+      markdown: "First agent edit",
+      reviewPending: true,
+    };
+    const firstBase = { title: ticket.title, markdown: "Before the first edit" };
+    let root: ReturnType<typeof create> | undefined;
+    try {
+      await act(async () => {
+        root = create(view(first));
+      });
+      await act(async () =>
+        registry.set(
+          ticketQuery(key(10)),
+          AsyncResult.success({ ...first, reviewBase: firstBase }),
+        ),
+      );
+      expect(content?.ticket?.reviewBase).toEqual(firstBase);
+      // Accept, then another agent edit: a new review whose base revision 12 has not loaded yet.
+      const second = { ...first, revision: 12, markdown: "Second agent edit" };
+      await act(async () => root?.update(view(second)));
+      expect(content?.ticket).toMatchObject({ markdown: "Second agent edit", reviewBase: null });
+      const secondBase = { title: ticket.title, markdown: "First agent edit" };
+      await act(async () =>
+        registry.set(
+          ticketQuery(key(12)),
+          AsyncResult.success({ ...second, reviewBase: secondBase }),
+        ),
+      );
+      expect(content?.ticket?.reviewBase).toEqual(secondBase);
+    } finally {
+      await act(async () => root?.unmount());
+      registry.dispose();
+    }
+  });
+
   it("keeps a Ticket shown while the first review's base loads", async () => {
     const registry = AtomRegistry.make();
     let content: ReturnType<typeof useWorkbenchTicketContent> | undefined;
