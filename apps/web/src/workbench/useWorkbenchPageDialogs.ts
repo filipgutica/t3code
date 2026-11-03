@@ -238,10 +238,6 @@ export function useWorkbenchPageDialogs({
       return;
     setError(null);
     setConversationEpicId(epicId);
-    setAwaitingTicketId(null);
-    setAwaitingEpicId(null);
-    setSelectedTicketId(null);
-    setSelectedEpicId(null);
     void navigate({
       to: "/workbench",
       search: withWorkbenchEnvironmentSearch(environmentId, {

@@ -164,13 +164,14 @@ export function useTicketDraftBegin({
 
   const needsBegin =
     enabled && (draft === null ? modelSelection !== null : draft.phase === "creating");
-  const beginScope = `${scope}:${draft?.id ?? "new"}`;
+  const draftId = draft?.id;
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- starts or recovers the server planning resource requested by the mounted route, including direct links and reloads without a click handler
   useEffect(() => {
+    const beginScope = `${scope}:${draftId ?? (requestRef.current?.scope === scope ? requestRef.current.id : "new")}`;
     if (!needsBegin || startedScopeRef.current === beginScope) return;
     startedScopeRef.current = beginScope;
     void begin();
-  }, [begin, needsBegin, beginScope]);
+  }, [begin, needsBegin, scope, draftId]);
 
   const retry = () => {
     void begin();

@@ -14,9 +14,7 @@ import {
   WorkbenchCreateTicketEpic,
   WorkbenchCreateTicketKind,
   WorkbenchCreateTicketRepositories,
-  getWorkbenchCreateTicketRepositories,
 } from "./WorkbenchForms";
-import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 
@@ -38,10 +36,8 @@ const getCreateBlocker = ({
 };
 
 /**
- * Applies the manual form's epic and repository defaults to stored fields.
- * `fields` keeps only what the person chose, so the assistant never reads a default as a
- * decision; `effectiveFields` is what Create ticket sends. `blocker` explains a disabled
- * Create ticket.
+ * Validates the draft's chosen repositories and Epic against the current Workspace.
+ * `effectiveFields` is what Create ticket sends; `blocker` explains why it is disabled.
  */
 export const getTicketDraftCreateState = ({
   fields,
@@ -49,10 +45,11 @@ export const getTicketDraftCreateState = ({
   epics,
 }: DraftFieldContext & { readonly fields: WorkbenchTicketDraftFields }) => {
   const selectedEpicId = epics.some((epic) => epic.id === fields.epicId) ? fields.epicId : null;
-  const repositories = getWorkbenchCreateTicketRepositories({
-    linkedProjects,
-    repositoryProjectIds: fields.repositoryProjectIds,
-  });
+  const repositories = {
+    selectedRepositoryProjectIds: fields.repositoryProjectIds.filter((id) =>
+      linkedProjects.some((project) => project.id === id),
+    ),
+  };
   const blocker = getCreateBlocker({
     title: fields.title,
     hasRepository: repositories.selectedRepositoryProjectIds.length > 0,
@@ -100,7 +97,6 @@ export function WorkbenchTicketDraftFieldsForm({
   fields,
   disabled,
   updatedBy,
-  brief = "editor",
   references,
   onChange,
   onCreateEpic,
@@ -110,8 +106,6 @@ export function WorkbenchTicketDraftFieldsForm({
   readonly disabled: boolean;
   /** The agent Thread that last wrote the title or brief, if one did. */
   readonly updatedBy: string | null;
-  /** "rendered" shows the brief read-only, for surfaces where you ask the agent for changes. */
-  readonly brief?: "editor" | "rendered";
   /** Sits after the description and keeps its own read-only rules, outside the form's fieldsets. */
   readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
@@ -130,18 +124,7 @@ export function WorkbenchTicketDraftFieldsForm({
             onChange={(event) => onChange({ title: event.currentTarget.value })}
           />
         </div>
-        {brief === "rendered" ? (
-          <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} />
-        ) : (
-          <WorkbenchTicketDescriptionEditor
-            id="workbench-draft-description"
-            markdown={fields.markdown}
-            jira={false}
-            updatedBy={updatedBy}
-            disabled={disabled}
-            onChange={(markdown) => onChange({ markdown })}
-          />
-        )}
+        <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} />
       </fieldset>
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">

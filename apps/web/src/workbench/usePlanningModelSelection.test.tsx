@@ -7,7 +7,7 @@ import {
   type ServerProvider,
 } from "@t3tools/contracts";
 import { DEFAULT_SERVER_SETTINGS, type ServerSettings } from "@t3tools/contracts/settings";
-import { act, type ReactNode } from "react";
+import { act } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { Project } from "../types";
@@ -16,29 +16,7 @@ const observed = vi.hoisted(() => ({
   beginInput: vi.fn(),
 }));
 vi.mock("../hooks/useSettings", () => ({ useEnvironmentSettings: () => observed.settings }));
-vi.mock("../components/ChatView", () => ({ default: () => null }));
-vi.mock("../components/WorkspacePageHeader", () => ({
-  WorkspacePageHeader: ({ children }: { children?: ReactNode }) => children,
-}));
-vi.mock("./WorkbenchForms", () => ({ WorkbenchInlineError: () => null }));
-vi.mock("./WorkbenchTicketDraftPanel", () => ({
-  WorkbenchTicketDraftFieldsForm: () => null,
-  getTicketDraftCreateState: () => null,
-}));
-vi.mock("./state", () => ({
-  workbenchEnvironment: { beginTicketDraft: "begin", updateTicketDraft: "update" },
-}));
-vi.mock("./useWorkbenchTicketConversation", () => ({
-  useTicketDraftBegin: (
-    input: Parameters<typeof import("./useWorkbenchTicketConversation").useTicketDraftBegin>[0],
-  ) => {
-    observed.beginInput(input);
-    return { state: { status: "idle" }, retry: () => {} };
-  },
-  useTicketDraftEditor: () => null,
-  useTicketDraftTransitions: () => null,
-}));
-import { WorkbenchTicketConversation } from "./WorkbenchTicketConversation";
+import { usePlanningModelSelection } from "./usePlanningModelSelection";
 
 const environmentId = EnvironmentId.make("environment");
 const first = ProjectId.make("native-first");
@@ -82,42 +60,28 @@ afterEach(() => {
   act(() => renderer?.unmount());
   vi.unstubAllGlobals();
 });
+function SelectionHarness() {
+  const result = usePlanningModelSelection({
+    environmentId,
+    workspace: {
+      id: WorkbenchProjectId.make("workspace"),
+      title: "Test",
+      linkedProjectIds: [anchor, first],
+      archivedAt: null,
+      revision: 0,
+      createdAt: provider.checkedAt,
+      updatedAt: provider.checkedAt,
+    },
+    draft: null,
+    providers: [provider],
+    linkedProjects: projects,
+  });
+  observed.beginInput(result);
+  return null;
+}
 const mount = () =>
   act(() => {
-    renderer = create(
-      <WorkbenchTicketConversation
-        environmentId={environmentId}
-        workspace={{
-          id: WorkbenchProjectId.make("workspace"),
-          title: "Test",
-          linkedProjectIds: [anchor, first],
-          archivedAt: null,
-          revision: 0,
-          createdAt: provider.checkedAt,
-          updatedAt: provider.checkedAt,
-        }}
-        draft={null}
-        requestedDraftId={null}
-        ticket={null}
-        draftsSupported
-        providers={[provider]}
-        linkedProjects={projects}
-        references={[]}
-        threadsById={new Map()}
-        archivedThreadsById={new Map()}
-        epics={[]}
-        initialEpicId={null}
-        refreshSnapshot={() => {}}
-        onClose={() => {}}
-        onCreateManually={() => {}}
-        onCreateEpic={() => {}}
-        onDraftPrepared={() => {}}
-        onTicketCreated={() => {}}
-        onDiscarded={() => {}}
-        onWorkStarted={() => {}}
-        onShowTicketDetails={() => {}}
-      />,
-    );
+    renderer = create(<SelectionHarness />);
   });
 it("blocks planning when the workspace anchor disables the provider despite native project order", () => {
   observed.settings = {
@@ -130,7 +94,6 @@ it("blocks planning when the workspace anchor disables the provider despite nati
   expect(observed.beginInput).toHaveBeenCalledWith(
     expect.objectContaining({ modelSelection: null }),
   );
-  expect(JSON.stringify(renderer.toJSON())).toContain("Ticket planning needs a supported provider");
 });
 it("supplies the anchor's enabled provider and default model to planning despite reversed native project order", () => {
   observed.settings = {
@@ -143,7 +106,6 @@ it("supplies the anchor's enabled provider and default model to planning despite
   mount();
   expect(observed.beginInput).toHaveBeenCalledWith(
     expect.objectContaining({
-      environmentId,
       modelSelection: { instanceId, model: "gpt-anchor" },
     }),
   );

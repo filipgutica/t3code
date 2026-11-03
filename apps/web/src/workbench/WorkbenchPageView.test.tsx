@@ -45,25 +45,6 @@ vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async 
 vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
 }));
-// The conversation embeds the native ChatView; this suite only proves when the Workspace shows it.
-vi.mock("./WorkbenchTicketConversation", async () => {
-  const { createElement } = await import("react");
-  return {
-    WorkbenchTicketConversation: (props: {
-      draft: { phase: string } | null;
-      draftsSupported: boolean;
-      onShowTicketDetails: () => void;
-    }) =>
-      createElement(
-        "div",
-        {
-          "data-conversation": props.draft?.phase ?? "none",
-          "data-drafts-supported": String(props.draftsSupported),
-        },
-        createElement("button", { onClick: props.onShowTicketDetails }, "Ticket details"),
-      ),
-  };
-});
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => null,
   pullRequestEnvironment: { activity: () => null },
@@ -620,10 +601,11 @@ it.each(["queryError", "threadLookupError"] as const)(
   },
 );
 
-it("opens the planning conversation for create=ticket instead of the board", async () => {
+it("opens create=ticket in the Board chat", async () => {
   await render({ conversation: "create" });
-  expect(document.querySelector('[data-conversation="none"]')).not.toBeNull();
-  expect(document.querySelector("article")).toBeNull();
+  expect(document.querySelector('[aria-label="Ticket board"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Preparing conversation");
+  expect(document.querySelector("[data-workbench-ticket-conversation]")).toBeNull();
   await render({ conversation: "create", workspaceState: "archived" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(document.querySelector("article")).not.toBeNull();
@@ -659,9 +641,9 @@ it("shows the ticket's Threads in the floating chat, also while the ticket is pl
 
 it("tells the conversation when the host predates conversation drafts", async () => {
   await render({ conversation: "legacy" });
-  expect(document.querySelector('[data-drafts-supported="false"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Ticket planning needs a supported provider");
   await render({ conversation: "create" });
-  expect(document.querySelector('[data-drafts-supported="true"]')).not.toBeNull();
+  expect(document.body.textContent).toContain("Preparing conversation");
 });
 
 it("disables board mutations without operate permission and restores them when granted", async () => {

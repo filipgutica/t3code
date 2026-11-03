@@ -1291,6 +1291,7 @@ function WorkbenchTicketDetailController({
                 onShowPullRequestOwner={showPullRequestOwner}
               />
               <WorkbenchTicketThreadsPanel
+                planningRow={floatingChatPlanning?.row}
                 expansion={{ threadPanelCollapsed: threadPanelCollapsed }}
                 actions={{
                   setThreadPanelCollapsed: setThreadPanelCollapsed,
@@ -2319,12 +2320,14 @@ type WorkbenchTicketThreadsPanelProps = {
   onAttachThread: (ticket: WorkbenchTicket) => void;
 };
 function WorkbenchTicketThreadsPanel({
+  planningRow,
   expansion,
   actions,
   presentation,
   context,
   records,
 }: {
+  planningRow?: ReactNode;
   expansion: Pick<WorkbenchTicketThreadsPanelProps, "threadPanelCollapsed">;
   actions: Pick<
     WorkbenchTicketThreadsPanelProps,
@@ -2520,6 +2523,18 @@ function WorkbenchTicketThreadsPanel({
       heading={ticket.title}
     />
   );
+  const renderPrimaryNotice = () => {
+    if (!canOpenThread)
+      return (
+        <p className="px-4 pb-3 text-sm text-muted-foreground">
+          No Thread is available for this Ticket.
+        </p>
+      );
+    if (assignment) return null;
+    // A starting Thread shows its progress here until it is listed.
+    if (threadActionPending) return <div className="px-2 pb-2">{primaryThread}</div>;
+    return <p className="px-4 pb-3 text-sm text-muted-foreground">{agentTitle}</p>;
+  };
   return (
     <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketPanelHeader
@@ -2531,17 +2546,8 @@ function WorkbenchTicketThreadsPanel({
       />
       <div id="workbench-ticket-agent-threads" hidden={threadPanelCollapsed}>
         <div className="min-w-0">
-          {!canOpenThread ? (
-            <p className="px-4 pb-3 text-sm text-muted-foreground">
-              No Thread is available for this Ticket.
-            </p>
-          ) : assignment ? null : threadActionPending ? (
-            // A starting Thread shows its progress here until it is listed.
-            <div className="px-2 pb-2">{primaryThread}</div>
-          ) : (
-            <p className="px-4 pb-3 text-sm text-muted-foreground">{agentTitle}</p>
-          )}
-          {sections.map((section) => {
+          {planningRow ?? renderPrimaryNotice()}
+          {(planningRow ? [] : sections).map((section) => {
             const open = sectionToggles.get(section.id) ?? section.openByDefault;
             return (
               <WorkbenchTicketThreadSection
@@ -2582,13 +2588,15 @@ function WorkbenchTicketThreadsPanel({
             />
           ) : null}
         </div>
-        <WorkbenchTicketThreadCreationActions
-          onNewThread={onNewThread}
-          onAttachThread={onAttachThread}
-          pending={pending || threadMutationsDisabled}
-          isArchived={isArchived}
-          ticket={ticket}
-        />
+        {!planningRow && (
+          <WorkbenchTicketThreadCreationActions
+            onNewThread={onNewThread}
+            onAttachThread={onAttachThread}
+            pending={pending || threadMutationsDisabled}
+            isArchived={isArchived}
+            ticket={ticket}
+          />
+        )}
       </div>
     </section>
   );
@@ -4995,7 +5003,7 @@ function useWorkbenchCreateTicketDraft({
   };
 }
 
-export function getWorkbenchCreateTicketRepositories({
+function getWorkbenchCreateTicketRepositories({
   linkedProjects,
   repositoryProjectIds,
 }: {
