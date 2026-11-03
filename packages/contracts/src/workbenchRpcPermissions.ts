@@ -36,6 +36,8 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchReplaceAssignment]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: AuthOrchestrationOperateScope,
+  [WORKBENCH_WS_METHODS.workbenchListTicketWorktrees]: AuthOrchestrationReadScope,
+  [WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchAddReference]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchRemoveReference]: AuthOrchestrationOperateScope,
@@ -46,6 +48,7 @@ const {
   [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: _snapshot,
   [WORKBENCH_WS_METHODS.workbenchGetTicket]: _ticket,
   [WORKBENCH_WS_METHODS.workbenchGetTicketContext]: _ticketContext,
+  [WORKBENCH_WS_METHODS.workbenchListTicketWorktrees]: _ticketWorktrees,
   ...mutationScopes
 } = WORKBENCH_RPC_REQUIRED_SCOPES;
 

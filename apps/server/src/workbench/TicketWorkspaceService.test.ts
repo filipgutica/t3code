@@ -42,6 +42,7 @@ import {
 
 import * as ServerConfig from "../config.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
+import { GitVcsDriver } from "../vcs/GitVcsDriver.ts";
 import { ProjectStoreV2 } from "../orchestration-v2/ProjectStore.ts";
 import { ThreadManagementService } from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
@@ -487,6 +488,10 @@ const makeTestLayer = ({
             generateBranchName ?? (() => Effect.succeed({ branch: "t3/prepare-repositories" })),
         }),
         gitLayer,
+        Layer.mock(GitVcsDriver)({
+          listWorktreePaths: (cwd) =>
+            Effect.succeed([cwd, ...(worktrees.has(cwd) ? [worktrees.get(cwd)!] : [])]),
+        }),
         projectLayer,
         threadLayer,
         Layer.mock(TicketWorkspacePullRequestResolver)({
@@ -651,6 +656,15 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
             ]);
             return { worktree: { path: input.path, refName: input.newRefName ?? input.refName } };
           }),
+        listWorktreePaths: (cwd) =>
+          git(cwd, ["worktree", "list", "--porcelain"]).pipe(
+            Effect.map((output) =>
+              output
+                .split("\n")
+                .filter((line) => line.startsWith("worktree "))
+                .map((line) => line.slice("worktree ".length)),
+            ),
+          ),
         removeWorktree: ({ cwd, path, force }) =>
           Effect.gen(function* () {
             expect(force).not.toBe(true);
@@ -1219,6 +1233,149 @@ describe("TicketWorkspaceService", () => {
         }).pipe(Effect.provide(fixture.layer));
       }).pipe(Effect.provide(NodeServices.layer), Effect.scoped);
     },
+  );
+
+  it.effect("lists other worktrees under the Ticket's workspace, with or without a checkout", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePersistentWorkspaceFixture;
+      const { fileSystem, path } = fixture;
+      const primary = fixture.repositories[0]!;
+      const secondary = fixture.repositories[1]!;
+      const workspaceDirectory = path.dirname(primary.worktreePath);
+      const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-outside-" });
+      for (const name of ["pr-x", "..pr-dots"]) {
+        yield* fixture.git(primary.sourcePath, [
+          "worktree",
+          "add",
+          "-b",
+          name.replace(/^\.+/, ""),
+          path.join(workspaceDirectory, name),
+        ]);
+      }
+      yield* fixture.git(primary.sourcePath, [
+        "worktree",
+        "add",
+        "-b",
+        "elsewhere",
+        path.join(outside, "elsewhere"),
+      ]);
+      // Without its checkout, the repository's own root still lists its worktrees.
+      yield* fixture.git(secondary.sourcePath, ["worktree", "remove", secondary.worktreePath]);
+      yield* fixture.git(secondary.sourcePath, [
+        "worktree",
+        "add",
+        "-b",
+        "pr-y",
+        path.join(workspaceDirectory, "pr-y"),
+      ]);
+
+      const worktrees = yield* Effect.gen(function* () {
+        yield* fixture.seed;
+        const service = yield* TicketWorkspaceService;
+        return yield* service.listWorktrees({ ticketId });
+      }).pipe(Effect.provide(fixture.layer));
+
+      expect(
+        worktrees.map((worktree) => [worktree.projectId, path.basename(worktree.path)]),
+      ).toEqual([
+        [primaryProjectId, "..pr-dots"],
+        [primaryProjectId, "pr-x"],
+        [secondaryProjectId, "pr-y"],
+      ]);
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
+  );
+
+  it.effect("removes a clean Ticket worktree, keeps its branch, and refuses one in use", () =>
+    Effect.gen(function* () {
+      const fixture = yield* makePersistentWorkspaceFixture;
+      const { fileSystem, path } = fixture;
+      const primary = fixture.repositories[0]!;
+      const workspaceDirectory = path.dirname(primary.worktreePath);
+      for (const name of ["pr-clean", "pr-dirty", "pr-used", "pr-project", "pr-nested"]) {
+        yield* fixture.git(primary.sourcePath, [
+          "worktree",
+          "add",
+          "-b",
+          name,
+          path.join(workspaceDirectory, name),
+        ]);
+      }
+      yield* fileSystem.writeFileString(
+        path.join(workspaceDirectory, "pr-dirty", "notes.txt"),
+        "untracked work",
+      );
+      // An empty directory leaves the worktree clean for Git.
+      yield* fileSystem.makeDirectory(path.join(workspaceDirectory, "pr-nested", "apps", "web"), {
+        recursive: true,
+      });
+      const outside = yield* fileSystem.makeTempDirectoryScoped({ prefix: "t3-alias-" });
+      const alias = path.join(outside, "workspace-alias");
+      yield* fileSystem.symlink(workspaceDirectory, alias);
+
+      yield* Effect.gen(function* () {
+        yield* fixture.seed;
+        const service = yield* TicketWorkspaceService;
+        const listed = new Map(
+          (yield* service.listWorktrees({ ticketId })).map((worktree) => [
+            path.basename(worktree.path),
+            worktree.path,
+          ]),
+        );
+        const remove = (worktreePath: string) =>
+          service.removeWorktree({ ticketId, projectId: primaryProjectId, path: worktreePath });
+        yield* seedNativeThread({
+          threadId: activeThreadId,
+          projectId: primaryProjectId,
+          createdAt,
+          // The Thread recorded the worktree through a symlinked directory.
+          worktreePath: path.join(alias, "pr-used"),
+          archivedAt: createdAt,
+        });
+        // A native Project opened on the worktree, or inside it, runs its Threads there with no worktreePath.
+        const sql = yield* SqlClient.SqlClient;
+        const seedProjectThread = (name: string, workspaceRoot: string) =>
+          Effect.gen(function* () {
+            const projectId = ProjectId.make(`project-${name}`);
+            yield* sql`
+              INSERT INTO projection_projects (
+                project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+              ) VALUES (
+                ${projectId}, ${name}, ${workspaceRoot}, '[]', ${createdAt}, ${createdAt}, NULL
+              )
+            `;
+            yield* seedNativeThread({
+              threadId: ThreadId.make(`thread-${name}`),
+              projectId,
+              createdAt,
+            });
+          });
+        yield* seedProjectThread("worktree", listed.get("pr-project")!);
+        yield* seedProjectThread("nested", path.join(listed.get("pr-nested")!, "apps", "web"));
+
+        const dirty = yield* Effect.flip(remove(listed.get("pr-dirty")!));
+        expect(dirty.message).toContain("has local changes");
+        const used = yield* Effect.flip(remove(listed.get("pr-used")!));
+        expect(used.code).toBe("ticket_workspace_in_use");
+        const projectRoot = yield* Effect.flip(remove(listed.get("pr-project")!));
+        expect(projectRoot.code).toBe("ticket_workspace_in_use");
+        const nested = yield* Effect.flip(remove(listed.get("pr-nested")!));
+        expect(nested.code).toBe("ticket_workspace_in_use");
+        const prepared = yield* Effect.flip(remove(primary.worktreePath));
+        expect(prepared.code).toBe("ticket_workspace_repository_not_found");
+        expect(fixture.removals).toEqual([]);
+
+        yield* remove(listed.get("pr-clean")!);
+        expect(fixture.removals).toEqual([listed.get("pr-clean")]);
+        expect(
+          (yield* service.listWorktrees({ ticketId })).map((worktree) =>
+            path.basename(worktree.path),
+          ),
+        ).toEqual(["pr-dirty", "pr-nested", "pr-project", "pr-used"]);
+        expect(yield* fixture.git(primary.sourcePath, ["branch", "--list", "pr-clean"])).toBe(
+          "pr-clean",
+        );
+      }).pipe(Effect.provide(fixture.layer));
+    }).pipe(Effect.provide(NodeServices.layer), Effect.scoped),
   );
 
   it.effect.each([false, true])(

@@ -610,6 +610,25 @@ export const WorkbenchReleaseTicketWorkspaceInput = Schema.Struct({
 });
 export type WorkbenchReleaseTicketWorkspaceInput = typeof WorkbenchReleaseTicketWorkspaceInput.Type;
 
+/** A Git worktree that a Thread or agent added under the Ticket's workspace directory. */
+export const WorkbenchTicketWorktree = Schema.Struct({
+  projectId: ProjectId,
+  path: TrimmedNonEmptyString,
+});
+export type WorkbenchTicketWorktree = typeof WorkbenchTicketWorktree.Type;
+
+export const WorkbenchListTicketWorktreesInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+});
+export type WorkbenchListTicketWorktreesInput = typeof WorkbenchListTicketWorktreesInput.Type;
+
+export const WorkbenchRemoveTicketWorktreeInput = Schema.Struct({
+  ticketId: WorkbenchTicketId,
+  projectId: ProjectId,
+  path: TrimmedNonEmptyString,
+});
+export type WorkbenchRemoveTicketWorktreeInput = typeof WorkbenchRemoveTicketWorktreeInput.Type;
+
 export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_draft_not_found",
   "ticket_draft_changed",

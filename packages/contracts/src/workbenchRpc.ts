@@ -25,6 +25,9 @@ import {
   WorkbenchProject,
   WorkbenchRegenerateTicketSummaryInput,
   WorkbenchReleaseTicketWorkspaceInput,
+  WorkbenchListTicketWorktreesInput,
+  WorkbenchRemoveTicketWorktreeInput,
+  WorkbenchTicketWorktree,
   WorkbenchReplaceAssignmentInput,
   WorkbenchSetJiraIssueLinkInput,
   WorkbenchAddReferenceInput,
@@ -69,6 +72,8 @@ export const WORKBENCH_WS_METHODS = {
   workbenchReplaceAssignment: "workbench.assignments.replace",
   workbenchPrepareTicketWorkspace: "workbench.ticketWorkspaces.prepare",
   workbenchReleaseTicketWorkspace: "workbench.ticketWorkspaces.release",
+  workbenchListTicketWorktrees: "workbench.ticketWorktrees.list",
+  workbenchRemoveTicketWorktree: "workbench.ticketWorktrees.remove",
   workbenchSetJiraIssueLink: "workbench.setJiraIssueLink",
   workbenchAddReference: "workbench.references.add",
   workbenchRemoveReference: "workbench.references.remove",
@@ -214,6 +219,24 @@ const WsWorkbenchReleaseTicketWorkspaceRpc = Rpc.make(
   },
 );
 
+const WsWorkbenchListTicketWorktreesRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchListTicketWorktrees,
+  {
+    payload: WorkbenchListTicketWorktreesInput,
+    success: Schema.Array(WorkbenchTicketWorktree),
+    error: WorkbenchRpcError,
+  },
+);
+
+const WsWorkbenchRemoveTicketWorktreeRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree,
+  {
+    payload: WorkbenchRemoveTicketWorktreeInput,
+    success: Schema.Void,
+    error: WorkbenchRpcError,
+  },
+);
+
 const WsWorkbenchSetJiraIssueLinkRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink, {
   payload: WorkbenchSetJiraIssueLinkInput,
   success: WorkbenchEpic,
@@ -294,6 +317,8 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchReplaceAssignmentRpc,
   WsWorkbenchPrepareTicketWorkspaceRpc,
   WsWorkbenchReleaseTicketWorkspaceRpc,
+  WsWorkbenchListTicketWorktreesRpc,
+  WsWorkbenchRemoveTicketWorktreeRpc,
   WsWorkbenchSetJiraIssueLinkRpc,
   WsWorkbenchAddReferenceRpc,
   WsWorkbenchRemoveReferenceRpc,

@@ -83,7 +83,7 @@ const testLayer = Layer.mergeAll(
           Effect.succeed(ids.map((id) => ({ id, title: id, pullRequests: [] }))),
       }),
     ),
-    Layer.provide(Layer.mock(TicketWorkspaceService)({})),
+    Layer.provide(Layer.mock(TicketWorkspaceService)({ listWorktrees: () => Effect.succeed([]) })),
   ),
   reactorServices.pipe(Layer.provide(heldReactorSink)),
 ).pipe(

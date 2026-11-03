@@ -76,6 +76,9 @@ const fixture = (options?: {
             : Option.none();
         }),
       hasThreadAtWorktreePath: (value) => Effect.sync(() => [...paths.values()].includes(value)),
+      listThreadWorkspacePaths: Effect.sync(() =>
+        [...paths.values()].filter((value) => value !== null),
+      ),
       findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
       findRun: () => Effect.succeedNone,
@@ -152,6 +155,8 @@ const fixture = (options?: {
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       return TicketWorkspaceService.of({
+        listWorktrees: () => Effect.die("unused"),
+        removeWorktree: () => Effect.die("unused"),
         prepare: (input) =>
           Effect.gen(function* () {
             prepares++;

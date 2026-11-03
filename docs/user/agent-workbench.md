@@ -325,6 +325,13 @@ Threads. Unlink Threads working elsewhere. Commit or preserve local changes, the
 work area → Advanced work area settings → Remove prepared worktrees** and confirm.
 The reset removes worktrees but keeps the Ticket, branches, and commits.
 
+Worktrees that agents or you add with Git inside the Ticket's workspace directory,
+such as one per pull request, show under their repository in **Work area** with
+their branch and pull request. They appear when the window regains focus, and
+agents see them when they read the Ticket. To remove one, choose its **⋯** menu →
+**Remove worktree** and confirm. Its branch and commits stay. Removal is refused
+while a Thread works in that worktree or Git reports local changes.
+
 After deleting a Ticket or Workspace, open **Retained worktrees** in the Workbench sidebar to
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.

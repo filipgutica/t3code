@@ -114,6 +114,10 @@ export const makeWorkbenchRpcHandlers = ({
       ticketWorkspaces.prepare(input),
     [WORKBENCH_WS_METHODS.workbenchReleaseTicketWorkspace]: (input) =>
       ticketWorkspaces.release(input),
+    [WORKBENCH_WS_METHODS.workbenchListTicketWorktrees]: (input) =>
+      ticketWorkspaces.listWorktrees(input),
+    [WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree]: (input) =>
+      ticketWorkspaces.removeWorktree(input),
     [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: (input) =>
       setEpicJiraIssueLink(workbench, input),
     [WORKBENCH_WS_METHODS.workbenchAddReference]: (input) =>

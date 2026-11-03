@@ -53,6 +53,8 @@ export class TicketWorkspaceHost extends Context.Service<
       readonly createWorktree: (
         input: VcsCreateWorktreeInput,
       ) => Effect.Effect<VcsCreateWorktreeResult, GitCommandError>;
+      /** Every registered worktree of `cwd`'s repository, prunable ones excluded. */
+      readonly listWorktreePaths: (cwd: string) => Effect.Effect<string[], GitCommandError>;
       readonly removeWorktree: (
         input: VcsRemoveWorktreeInput,
       ) => Effect.Effect<void, GitCommandError>;

@@ -1,27 +1,22 @@
 import type { EnvironmentId, VcsStatusResult } from "@t3tools/contracts";
-import { CheckIcon, CopyIcon, FolderIcon, GitBranchIcon } from "lucide-react";
-import { useEffect, useRef, type ReactNode } from "react";
+import { FolderIcon, GitBranchIcon } from "lucide-react";
+import { useEffect, type ReactNode } from "react";
 
-import {
-  ANCHORED_COPY_TOAST_TIMEOUT_MS,
-  showAnchoredCopyErrorToast,
-  showAnchoredCopySuccessToast,
-} from "../components/ui/anchoredCopyToast";
-import { Button } from "../components/ui/button";
+import { MiddleTruncate } from "../components/ui/middle-truncate";
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { useCopyToClipboard } from "../hooks/useCopyToClipboard";
-import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { vcsEnvironment } from "../state/vcs";
-import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 
 export function useWorkbenchCheckoutStatusRefresh({
   environmentId,
   cwds,
+  onFocus,
 }: {
   readonly environmentId: EnvironmentId;
   readonly cwds: ReadonlyArray<string | null | undefined>;
+  /** Runs on each focus or visibility return, even with no checkouts yet. Keep it stable. */
+  readonly onFocus?: () => void;
 }) {
   const refreshStatus = useAtomCommand(vcsEnvironment.refreshStatus);
   const cwdKey = [...new Set(cwds.filter((cwd) => typeof cwd === "string" && cwd.length > 0))]
@@ -29,10 +24,10 @@ export function useWorkbenchCheckoutStatusRefresh({
     .join("\0");
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- refreshes native checkout status on window focus/visibility changes and releases those listeners on unmount
   useEffect(() => {
-    if (!cwdKey) return;
-    const paths = cwdKey.split("\0");
+    if (!cwdKey && !onFocus) return;
+    const paths = cwdKey ? cwdKey.split("\0") : [];
     const pending = new Set<string>();
-    const refresh = () => {
+    const refreshStatuses = () => {
       if (document.visibilityState !== "visible") return;
       for (const cwd of paths) {
         if (pending.has(cwd)) continue;
@@ -40,21 +35,26 @@ export function useWorkbenchCheckoutStatusRefresh({
         void refreshStatus({ environmentId, input: { cwd } }).finally(() => pending.delete(cwd));
       }
     };
-    refresh();
+    const refresh = () => {
+      if (document.visibilityState !== "visible") return;
+      onFocus?.();
+      refreshStatuses();
+    };
+    refreshStatuses();
     window.addEventListener("focus", refresh);
     document.addEventListener("visibilitychange", refresh);
     return () => {
       window.removeEventListener("focus", refresh);
       document.removeEventListener("visibilitychange", refresh);
     };
-  }, [cwdKey, environmentId, refreshStatus]);
+  }, [cwdKey, environmentId, onFocus, refreshStatus]);
 }
 
 export function WorkbenchCheckoutDirectory({
   cwd,
   value = formatCheckoutPath(cwd),
   icon,
-  valueClassName,
+  valueClassName = "font-mono",
 }: {
   readonly cwd: string;
   readonly value?: string;
@@ -65,68 +65,48 @@ export function WorkbenchCheckoutDirectory({
     <CheckoutDetailPopover
       icon={icon ?? <FolderIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
       label="Directory"
-      value={value}
-      valueClassName={valueClassName ?? "font-mono"}
+      value={<span className={`min-w-0 truncate font-medium ${valueClassName}`}>{value}</span>}
       fullValue={cwd}
-      copyLabel="Copy path"
     />
   );
 }
 
-const checkoutBranchLabel = (status: { error: string | null; data: VcsStatusResult | null }) =>
+export type WorkbenchCheckoutStatus = {
+  readonly error: string | null;
+  readonly data: VcsStatusResult | null;
+};
+
+/** The checkout's branch, or why it has none. */
+const checkoutBranchName = (status: WorkbenchCheckoutStatus) =>
   status.error
     ? "Branch unavailable"
     : status.data === null
       ? "Checking branch…"
       : !status.data.isRepo
         ? "Not a Git checkout"
-        : status.data.refName === null
-          ? "Detached HEAD"
-          : status.data.refName;
+        : (status.data.refName ?? "Detached HEAD");
 
-export function WorkbenchCheckoutDetails({
-  environmentId,
+/** The branch cut in the middle to fit; its popover shows the full branch and the checkout path. */
+export function WorkbenchCheckoutBranch({
   cwd,
-  showDirectory = true,
-  showPullRequest = true,
+  status,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly cwd: string;
-  /** Keep the full path available without repeating a repository name already shown by the parent. */
-  readonly showDirectory?: boolean;
-  readonly showPullRequest?: boolean;
+  readonly status: WorkbenchCheckoutStatus;
 }) {
-  const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
-  const branchLabel = checkoutBranchLabel(status);
-  const branchValue = status.error ?? status.data?.refName ?? branchLabel;
-  const canCopyBranch =
-    status.error === null &&
-    status.data !== null &&
-    status.data.isRepo &&
-    status.data.refName !== null;
-
+  const branch = checkoutBranchName(status);
   return (
-    <span className="mt-1 flex min-w-0 flex-col items-start gap-1 text-xs text-foreground/80">
-      {showDirectory ? (
-        <span className="flex min-w-0 w-full">
-          <WorkbenchCheckoutDirectory cwd={cwd} />
+    <CheckoutDetailPopover
+      icon={<GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
+      label="Branch"
+      value={
+        <span className="flex min-w-0 font-mono font-medium">
+          <MiddleTruncate value={branch} showTitle={false} />
         </span>
-      ) : null}
-      <span className="flex min-w-0 w-full items-center gap-1">
-        <CheckoutDetailPopover
-          icon={<GitBranchIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />}
-          label="Branch"
-          value={formatBranchLabel(branchLabel)}
-          fullValue={branchValue}
-          copyDisabled={!canCopyBranch}
-          copyLabel={undefined}
-          valueClassName="font-mono"
-        />
-      </span>
-      {showPullRequest && status.data?.pr ? (
-        <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={status.data.pr} />
-      ) : null}
-    </span>
+      }
+      fullValue={status.error ?? branch}
+      note={cwd}
+    />
   );
 }
 
@@ -137,60 +117,42 @@ function formatCheckoutPath(path: string): string {
   return `${finalDirectory.slice(0, 24)}…${finalDirectory.slice(-15)}`;
 }
 
-function formatBranchLabel(branch: string): string {
-  const maxLength = 36;
-  if (branch.length <= maxLength) return branch;
-  return `${branch.slice(0, maxLength - 15)}…${branch.slice(-14)}`;
-}
-
 function CheckoutDetailPopover({
   icon,
   label,
   value,
-  valueClassName,
   fullValue,
-  copyDisabled = false,
-  copyLabel,
+  note,
 }: {
   readonly icon: ReactNode;
   readonly label: string;
-  readonly value: string;
-  readonly valueClassName: string;
+  readonly value: ReactNode;
   readonly fullValue: string;
-  readonly copyDisabled?: boolean;
-  readonly copyLabel: string | undefined;
+  readonly note?: string;
 }) {
   return (
     <Popover>
-      <span className="inline-flex min-w-0 max-w-full items-center gap-1.5">
-        <Tooltip>
-          <TooltipTrigger
-            render={
-              <PopoverTrigger
-                aria-label={`${label}: ${fullValue}`}
-                variant="inline"
-                className="min-w-0 max-w-full flex-1"
-              />
-            }
-          >
-            {icon}
-            <span className={`min-w-0 truncate font-medium ${valueClassName}`}>{value}</span>
-          </TooltipTrigger>
-          <TooltipPopup
-            side="top"
-            align="start"
-            className="max-w-[min(40rem,calc(100vw-2rem))] break-all"
-          >
-            {fullValue}
-          </TooltipPopup>
-        </Tooltip>
-        <CheckoutDetailCopyButton
-          copyLabel={copyLabel}
-          disabled={copyDisabled}
-          label={label}
-          value={fullValue}
-        />
-      </span>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              aria-label={`${label}: ${fullValue}`}
+              variant="inline"
+              className="min-w-0 max-w-full"
+            />
+          }
+        >
+          {icon}
+          {value}
+        </TooltipTrigger>
+        <TooltipPopup
+          side="top"
+          align="start"
+          className="max-w-[min(40rem,calc(100vw-2rem))] break-all"
+        >
+          {fullValue}
+        </TooltipPopup>
+      </Tooltip>
       <PopoverPopup side="top" align="start" className="w-[min(36rem,calc(100vw-2rem))]">
         <div
           tabIndex={0}
@@ -202,52 +164,13 @@ function CheckoutDetailPopover({
           <p className="whitespace-pre-wrap break-all font-mono text-sm text-foreground">
             {fullValue}
           </p>
+          {note ? (
+            <p className="whitespace-pre-wrap break-all font-mono text-xs text-muted-foreground">
+              {note}
+            </p>
+          ) : null}
         </div>
       </PopoverPopup>
     </Popover>
-  );
-}
-
-function CheckoutDetailCopyButton({
-  disabled,
-  label,
-  value,
-  copyLabel,
-}: {
-  readonly disabled: boolean;
-  readonly label: string;
-  readonly value: string;
-  readonly copyLabel: string | undefined;
-}) {
-  const ref = useRef<HTMLButtonElement>(null);
-  const { copyToClipboard, isCopied } = useCopyToClipboard<void>({
-    target: label.toLowerCase(),
-    onCopy: () => showAnchoredCopySuccessToast(ref),
-    onError: (error) => showAnchoredCopyErrorToast(ref, error),
-    timeout: ANCHORED_COPY_TOAST_TIMEOUT_MS,
-  });
-  const actionLabel = copyLabel ?? `Copy ${label}`;
-  const copiedLabel = copyLabel?.replace(/^Copy/, "Copied") ?? `${label} copied`;
-  const statusLabel = disabled ? `${label} unavailable` : isCopied ? copiedLabel : actionLabel;
-
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            ref={ref}
-            aria-label={statusLabel}
-            disabled={disabled}
-            onClick={() => copyToClipboard(value, undefined)}
-            size="icon-xs"
-            type="button"
-            variant="ghost-muted"
-          />
-        }
-      >
-        {isCopied ? <CheckIcon className="size-3 text-success" /> : <CopyIcon className="size-3" />}
-      </TooltipTrigger>
-      <TooltipPopup side="top">{statusLabel}</TooltipPopup>
-    </Tooltip>
   );
 }

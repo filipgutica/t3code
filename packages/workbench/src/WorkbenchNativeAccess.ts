@@ -46,6 +46,11 @@ export class WorkbenchNativeAccess extends Context.Service<
     readonly hasThreadAtWorktreePath: (
       worktreePath: string,
     ) => Effect.Effect<boolean, WorkbenchOperationError>;
+    /** Where non-deleted native Threads run: their recorded worktree, else their Project's root. */
+    readonly listThreadWorkspacePaths: Effect.Effect<
+      ReadonlyArray<string>,
+      WorkbenchOperationError
+    >;
     /** The Thread's run whose provider turn is being started, and the conversation it goes to. */
     readonly findStartingRun: (
       threadId: ThreadId,
