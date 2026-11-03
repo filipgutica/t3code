@@ -27,7 +27,7 @@ if (import.meta.main) {
       previousTag: process.env.PREVIOUS_TAG ?? "",
       upstreamSha: process.env.UPSTREAM_SHA ?? "",
       upstreamBase: process.env.UPSTREAM_BASE ?? "",
-      dailyMetadata: channel === "nightly" ? requiredEnv("DAILY_METADATA_JSON") : undefined,
+      dailyMetadata: process.env.DAILY_METADATA_JSON || undefined,
     }),
   );
 }

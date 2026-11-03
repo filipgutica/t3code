@@ -2,13 +2,22 @@ name: Workbench daily desktop release
 
 on:
   workflow_dispatch:
-  schedule:
-    # Every six hours; unchanged main snapshots resolve to no release. An off-hour minute
-    # avoids the start-of-hour scheduler backlog.
-    - cron: "17 2,8,14,20 * * *"
-      timezone: "America/Vancouver"
+    inputs:
+      channel:
+        description: Workbench release channel
+        type: choice
+        options: [nightly, stable]
+        default: nightly
+      bump:
+        description: Workbench version bump
+        type: choice
+        options: [patch, minor, major, none]
+        default: patch
+      upstream_tag:
+        description: Published upstream event supplied by the sync workflow; blank for our own release
+        type: string
+        default: ""
 
-# Keep successful checkpoints ordered, including when a failed run is retried.
 concurrency:
   group: workbench-daily-release
   cancel-in-progress: false
@@ -18,30 +27,22 @@ permissions:
 
 jobs:
   resolve:
-    name: Resolve changed main checkpoint
-    if: >-
-      github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main' &&
-      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
+    name: Resolve main HEAD and release version
+    if: github.repository == 'filipgutica/t3code' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    permissions:
-      contents: read
-      actions: read
     outputs:
       should_release: ${{ steps.resolve.outputs.should_release }}
-      reason: ${{ steps.resolve.outputs.reason }}
       sha: ${{ steps.resolve.outputs.sha }}
       version: ${{ steps.resolve.outputs.version }}
-      tag: ${{ steps.resolve.outputs.tag }}
       previous_tag: ${{ steps.resolve.outputs.previous_tag }}
       metadata_json: ${{ steps.resolve.outputs.metadata_json }}
-      upstream_tag: ${{ steps.source.outputs.tag }}
+      release_channel: ${{ steps.resolve.outputs.release_channel }}
     steps:
-      - name: Checkout trusted main history
+      - name: Checkout main HEAD captured for this run
         uses: actions/checkout@v6
         with:
-          ref: main
-          fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - name: Setup resolver Node runtime
         uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
@@ -50,85 +51,42 @@ jobs:
           cache: false
           run-install: false
 
-      - id: source
-        name: Select a checkpoint with the latest published upstream release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          CAPTURED_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          releases="$RUNNER_TEMP/upstream-releases.json"
-          gh api --paginate --slurp /repos/pingdotgg/t3code/releases?per_page=100 > "$releases"
-          tag="$(node scripts/workbench-published-release.ts --releases-file "$releases" | jq -er .tag)"
-          git fetch --no-tags https://github.com/pingdotgg/t3code.git "+refs/tags/$tag:refs/remotes/upstream/published"
-          node scripts/workbench-published-release.ts --releases-file "$releases" \
-            --main "$CAPTURED_SHA" --github-output "$GITHUB_OUTPUT"
-
       - id: resolve
-        name: Resolve daily version and successful checkpoint
-        shell: bash
+        name: Allocate nightly or stable version
         env:
           GH_TOKEN: ${{ github.token }}
-          CAPTURED_SHA: ${{ steps.source.outputs.sha }}
-          SOURCE_ELIGIBLE: ${{ steps.source.outputs.eligible }}
-          UPSTREAM_CHANNEL: ${{ steps.source.outputs.channel }}
+          RELEASE_SHA: ${{ github.sha }}
+          RELEASE_CHANNEL: ${{ inputs.channel || 'nightly' }}
+          VERSION_BUMP: ${{ inputs.bump || 'patch' }}
+          UPSTREAM_TAG: ${{ inputs.upstream_tag }}
           ORIGINAL_RUN_ID: ${{ github.run_id }}
           ORIGINAL_RUN_NUMBER: ${{ github.run_number }}
         run: |
           set -euo pipefail
-          if [[ "$SOURCE_ELIGIBLE" != true || "$UPSTREAM_CHANNEL" != nightly ]]; then
-            printf 'should_release=false\nreason=no-published-nightly-source\n' >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          # Build only a main snapshot whose latest push or dispatch runs passed both fork
-          # gates. A missing, pending or failed run waits for the next schedule.
-          for workflow in workbench-ci.yml workbench-quality.yml; do
-            runs="$RUNNER_TEMP/$workflow-runs.json"
-            gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$CAPTURED_SHA&branch=main&per_page=100" > "$runs"
-            if ! RUNS_FILE="$runs" WORKFLOW_PATH=".github/workflows/$workflow" node --input-type=module -e '
-              import { readFileSync } from "node:fs";
-              const pages = JSON.parse(readFileSync(process.env.RUNS_FILE, "utf8"));
-              const runs = pages.flatMap((page) => page.workflow_runs).filter((run) =>
-                run.path === process.env.WORKFLOW_PATH && ["push", "workflow_dispatch"].includes(run.event) &&
-                run.head_branch === "main" && run.head_sha === process.env.CAPTURED_SHA
-              );
-              runs.sort((a, b) => b.run_number - a.run_number || b.run_attempt - a.run_attempt);
-              const latest = runs[0];
-              if (!latest || latest.status !== "completed" || latest.conclusion !== "success") {
-                process.stdout.write(`Unverified main: ${process.env.WORKFLOW_PATH} ${latest?.status ?? "missing"}/${latest?.conclusion ?? "none"}\n`);
-                process.exitCode = 1;
-              }
-            '; then
-              printf 'should_release=false\nreason=unverified-main\nsha=%s\n' "$CAPTURED_SHA" >> "$GITHUB_OUTPUT"
-              exit 0
-            fi
-          done
-          # created_at survives reruns across midnight; a retry keeps its tag.
           created_at="$(gh api "/repos/$GITHUB_REPOSITORY/actions/runs/$ORIGINAL_RUN_ID" --jq .created_at)"
           date="$(date --utc --date "$created_at" +%Y%m%d)"
           releases="$RUNNER_TEMP/workbench-releases.json"
           gh api --paginate --slurp "/repos/$GITHUB_REPOSITORY/releases?per_page=100" > "$releases"
           node scripts/resolve-workbench-daily-release.ts \
-            --releases-file "$releases" \
-            --date "$date" --run-number "$ORIGINAL_RUN_NUMBER" --run-id "$ORIGINAL_RUN_ID" \
-            --sha "$CAPTURED_SHA" --github-output "$GITHUB_OUTPUT"
+            --releases-file "$releases" --date "$date" \
+            --run-number "$ORIGINAL_RUN_NUMBER" --run-id "$ORIGINAL_RUN_ID" \
+            --sha "$RELEASE_SHA" --channel "$RELEASE_CHANNEL" --bump "$VERSION_BUMP" \
+            --upstream-tag "$UPSTREAM_TAG" --github-output "$GITHUB_OUTPUT"
 
   release:
-    name: Build and publish changed daily checkpoint
+    name: Build and publish Workbench
     needs: resolve
     if: needs.resolve.outputs.should_release == 'true'
-    # A reusable workflow cannot elevate its caller's token permissions. Only
-    # its final release job retains this write permission; builds use read.
     permissions:
       contents: write
+      actions: read
     uses: ./.github/workflows/workbench-release.yml
     with:
       commit_sha: ${{ needs.resolve.outputs.sha }}
       version: ${{ needs.resolve.outputs.version }}
       previous_tag: ${{ needs.resolve.outputs.previous_tag }}
       metadata_json: ${{ needs.resolve.outputs.metadata_json }}
-      upstream_tag: ${{ needs.resolve.outputs.upstream_tag }}
-      release_channel: nightly
+      release_channel: ${{ needs.resolve.outputs.release_channel }}
       release_mode: release
       sign_macos: true
     secrets:
