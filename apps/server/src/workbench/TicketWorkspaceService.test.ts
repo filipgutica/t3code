@@ -98,7 +98,6 @@ const seedTicket = Effect.gen(function* () {
     id: ticketId,
     projectId: workspaceId,
     title: "Prepare repositories",
-    kind: "story",
     markdown: "",
     repositoryProjectIds: [primaryProjectId, secondaryProjectId],
     createdAt,

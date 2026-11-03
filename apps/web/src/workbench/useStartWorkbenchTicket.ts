@@ -82,7 +82,7 @@ const reportTicketStartResult = ({
   if (isAtomCommandInterrupted(result.failure)) return;
   if (result.stage === "repositories") {
     onError(
-      `Repository choices could not be saved. Review the work area and try again. ${commandFailureMessage(result.failure)}`,
+      `Repository choices could not be saved. Review the repositories and try again. ${commandFailureMessage(result.failure)}`,
     );
     return;
   }

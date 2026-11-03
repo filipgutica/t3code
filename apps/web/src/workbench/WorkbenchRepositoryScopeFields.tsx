@@ -42,12 +42,12 @@ export function WorkbenchTicketRepositoryStatus({
   );
 }
 
-const UNLINKED = "No longer linked to this Workspace.";
+const UNLINKED = "No longer linked to this Board.";
 
 const getUnavailableRepositoryMessage = (hasLinkedRepositories: boolean) =>
   hasLinkedRepositories
-    ? `${UNLINKED} Remove it, or link it again with Edit Workspace.`
-    : "Link a repository to this Workbench Workspace before preparing this ticket.";
+    ? `${UNLINKED} Remove it, or link it again with Edit Board.`
+    : "Link a repository to this Board before preparing this ticket.";
 
 /**
  * Edits a ticket's repository scope as a visible list. `savedScope` is the persisted scope, so
@@ -138,8 +138,8 @@ export function WorkbenchRepositoryScopeFields({
   });
   return (
     <fieldset ref={fieldsetRef} className="min-w-0 space-y-2">
-      <legend className="sr-only">Workspace repositories</legend>
-      <ul aria-label="Work area repositories" className="divide-y divide-border/50">
+      <legend className="sr-only">Board repositories</legend>
+      <ul aria-label="Ticket repositories" className="divide-y divide-border/50">
         {rows.map((row) => (
           <li
             key={row.id}

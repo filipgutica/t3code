@@ -9,8 +9,6 @@ const fieldsWith = (
 ): WorkbenchTicketDraftFields => ({
   title: "",
   markdown: "",
-  kind: "story",
-  epicId: null,
   repositoryProjectIds: [],
   ...patch,
 });

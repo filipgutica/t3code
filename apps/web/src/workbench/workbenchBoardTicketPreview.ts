@@ -65,15 +65,13 @@ export function getWorkbenchBoardTicketPreview({
       text: excerpt,
       source: "description" as const,
       statusLabel:
-        ticket.generatedSummary?.status === "pending"
-          ? "Generating summary…"
-          : "Description excerpt",
+        ticket.generatedSummary?.status === "pending" ? "Generating summary…" : "Brief excerpt",
     };
   }
   return ticket.generatedSummary?.status === "pending"
     ? { text: "Generating summary…", source: "summary" as const, statusLabel: null }
     : {
-        text: ticket.markdown.trim() ? "Description available" : "No description added yet",
+        text: ticket.markdown.trim() ? "Brief available" : "No brief added yet",
         source: "description" as const,
         statusLabel: null,
       };

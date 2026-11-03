@@ -60,7 +60,6 @@ it("creates an idempotent local repository fixture", async () => {
     assert.equal(verification.repositoryHeadCount, LOCAL_DEMO_REPOSITORIES.length);
     assert.deepStrictEqual(verification.expectedWorkbenchCounts, {
       projects: 2,
-      epics: 4,
       tickets: 16,
       assignments: 4,
     });

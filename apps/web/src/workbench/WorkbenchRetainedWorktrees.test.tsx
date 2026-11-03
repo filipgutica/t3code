@@ -194,9 +194,7 @@ const snapshot: WorkbenchSnapshot = {
     {
       id: WorkbenchTicketId.make("active-ticket"),
       projectId: WorkbenchProjectId.make("board"),
-      epicId: null,
       title: "Active Ticket",
-      kind: "story",
       markdown: "",
       repositoryProjectIds: [],
       status: "todo",
@@ -206,7 +204,6 @@ const snapshot: WorkbenchSnapshot = {
       updatedAt: timestamp,
     },
   ],
-  epics: [],
   assignments: [],
   reservedThreadIds: [],
   threadRecaps: [],
@@ -379,6 +376,7 @@ it("hides archived Workspaces from actionable results and restores their search 
         id: workspaceId,
         title: "Archived Roadmap",
         linkedProjectIds: [],
+        revision: 0,
         archivedAt: timestamp,
         createdAt: timestamp,
         updatedAt: timestamp,
@@ -402,7 +400,7 @@ it("hides archived Workspaces from actionable results and restores their search 
       </RouterContextProvider>,
     );
   });
-  expect(renderer!.root.findByType("summary").children).toEqual(["Archived Workspaces"]);
+  expect(renderer!.root.findByType("summary").children).toEqual(["Archived Boards"]);
   expect(renderer!.root.findByType("details").props.open).toBeUndefined();
   await act(() => button("Needs attention").props.onClick());
   expect(renderer!.root.findAllByType("summary")).toHaveLength(0);

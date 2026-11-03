@@ -194,7 +194,7 @@ export function useWorkbenchThreadActions({
         (workspace) => workspace.id === ticket.projectId && workspace.archivedAt == null,
       )
     ) {
-      setError("Restore this Workspace before creating a Thread.");
+      setError("Restore this Board before creating a Thread.");
       return null;
     }
     const draft = repositoryScopeDraft?.ticket.id === ticket.id ? repositoryScopeDraft : null;

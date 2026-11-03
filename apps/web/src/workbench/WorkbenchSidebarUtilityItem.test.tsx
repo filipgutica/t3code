@@ -54,7 +54,6 @@ const snapshot: WorkbenchSnapshot = {
   references: [],
   projects: [],
   tickets: [],
-  epics: [],
   assignments: [],
   reservedThreadIds: [],
   threadRecaps: [],
@@ -172,39 +171,17 @@ const openWorkbench = async (router: Awaited<ReturnType<typeof mount>>["router"]
   });
 };
 
-it("returns to the last Workbench Thread after the user leaves for a native Thread", async () => {
-  const workbenchThreadHref = "/workbench-primary/ticket-thread?workbench=true";
-  const { router } = await mount();
+it("returns to the last Board, not a legacy Workbench Thread link", async () => {
+  const boardHref = "/workbench?environmentId=workbench-primary&workbenchProjectId=board-two";
+  const { router } = await mount(boardHref);
   using _tracking = { [Symbol.dispose]: startWorkbenchLocationTracking(router) };
-  await navigateAndResolve({ router, href: workbenchThreadHref });
-  await navigateAndResolve({ router, href: "/core-remote/native-thread" });
+  await navigateAndResolve({ router, href: "/workbench-primary/ticket-thread?workbench=true" });
   await openWorkbench(router);
-  expect(router.state.location.href).toBe(workbenchThreadHref);
+  expect(router.state.location.href).toBe(boardHref);
 });
 
-it.each([null, "/workbench?environmentId=workbench-primary&workbenchProjectId=board-two"])(
-  "forgets a replaced missing Thread and falls back to Board %s",
-  async (boardHref) => {
-    const threadHref = "/workbench-primary/deleted-thread?workbench=true";
-    const { router } = await mount(boardHref ?? threadHref);
-    using _tracking = { [Symbol.dispose]: startWorkbenchLocationTracking(router) };
-    await navigateAndResolve({ router, href: threadHref });
-    await navigateAndResolve({ router, href: "/core-remote/native-thread" });
-    await navigateAndResolve({ router, href: "/", replace: true });
-    await openWorkbench(router);
-    expect(router.state.location.href).toBe(threadHref);
-
-    await navigateAndResolve({ router, href: "/", replace: true });
-    await openWorkbench(router);
-    expect(router.state.location.href).toBe(boardHref ?? "/workbench");
-    await navigateAndResolve({ router, href: "/core-remote/native-thread" });
-    await openWorkbench(router);
-    expect(router.state.location.href).toBe(boardHref ?? "/workbench");
-  },
-);
-
 it.each([
-  { create: "ticket", selection: { epicId: "durable-epic" } },
+  { create: "ticket", selection: {} },
   { create: "workspace", selection: { ticketId: "durable-ticket" } },
 ])(
   "does not replay creation intent when reopening Workbench: $create",
@@ -223,19 +200,15 @@ it.each([
   },
 );
 
-it.each([
-  "/workbench?environmentId=core-remote&workbenchProjectId=remote-board",
-  "/core-remote/remote-thread?workbench=true",
-])(
-  "uses the entry point fallback when the remembered environment disconnects: %s",
-  async (href) => {
-    const { router, render } = await mount(href);
-    using _tracking = { [Symbol.dispose]: startWorkbenchLocationTracking(router) };
-    await navigateAndResolve({ router, href: "/workbench-primary/native-thread" });
-    state.remotePhase = "disconnected";
-    await act(() => renderer!.update(render()));
-    await openWorkbench(router);
-    expect(router.state.location.pathname).toBe("/workbench");
-    expect(router.state.location.search).toEqual({});
-  },
-);
+it("uses the entry point fallback when the remembered environment disconnects", async () => {
+  const { router, render } = await mount(
+    "/workbench?environmentId=core-remote&workbenchProjectId=remote-board",
+  );
+  using _tracking = { [Symbol.dispose]: startWorkbenchLocationTracking(router) };
+  await navigateAndResolve({ router, href: "/workbench-primary/native-thread" });
+  state.remotePhase = "disconnected";
+  await act(() => renderer!.update(render()));
+  await openWorkbench(router);
+  expect(router.state.location.pathname).toBe("/workbench");
+  expect(router.state.location.search).toEqual({});
+});

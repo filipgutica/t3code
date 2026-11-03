@@ -56,10 +56,8 @@ const projects: Project[] = ["Primary", "Additional"].map((title) => ({
 const ticket: WorkbenchTicket = {
   id: WorkbenchTicketId.make("ticket"),
   projectId: WorkbenchProjectId.make("workspace"),
-  epicId: null,
   title: "Ship a change",
   markdown: "",
-  kind: "story",
   repositoryProjectIds: [projects[0]!.id],
   status: "todo",
   blocked: false,
@@ -244,7 +242,7 @@ it("links a picked Workspace repository to the Ticket and starts the Thread ther
   expect(document.body.textContent).toContain(
     "Extra will be linked to this ticket and prepared on its branch.",
   );
-  await act(async () => button("Create work area and Thread").click());
+  await act(async () => button("Create worktrees and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection,
     repositoryProjectId: extra.id,
@@ -282,7 +280,7 @@ it("prepares an unprepared repository before starting there", async () => {
   expect(document.body.textContent).toContain(
     "Creating the Thread prepares a worktree for Additional.",
   );
-  await act(async () => button("Create work area and Thread").click());
+  await act(async () => button("Create worktrees and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection,
     repositoryProjectId: projects[1]!.id,
@@ -293,9 +291,9 @@ it("prepares an unprepared repository before starting there", async () => {
 it("restores prepared choices from an unsaved narrowing draft", async () => {
   await render({ repositoryScope: { repositoryProjectIds: [projects[1]!.id] } });
   expect(document.body.textContent).toContain(
-    "Repository changes apply to this ticket’s work area when you create the Thread.",
+    "Repository changes apply when you create the Thread.",
   );
-  await act(async () => button("Create work area and Thread").click());
+  await act(async () => button("Create worktrees and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection,
     repositoryProjectId: projects[1]!.id,
@@ -309,7 +307,7 @@ it("keeps the saved repository order when only a later repository is prepared", 
     preparedWorkspace: { ...bothPrepared, repositories: [bothPrepared.repositories[1]!] },
   });
   expect(document.body.textContent).not.toContain("Repository changes apply");
-  await act(async () => button("Create work area and Thread").click());
+  await act(async () => button("Create worktrees and Thread").click());
   expect(onStart).toHaveBeenCalledWith({
     modelSelection,
     repositoryProjectId: projects[0]!.id,
@@ -333,7 +331,7 @@ it("blocks starting while a Ticket repository is no longer linked to the Workspa
   const alert = document.querySelector('[role="alert"]')?.textContent ?? "";
   expect(alert).toContain("Link it again");
   expect(alert).not.toContain("Remove");
-  expect(button("Create work area and Thread").disabled).toBe(true);
+  expect(button("Create worktrees and Thread").disabled).toBe(true);
 });
 
 it("shows why a Ticket repository failed to prepare", async () => {

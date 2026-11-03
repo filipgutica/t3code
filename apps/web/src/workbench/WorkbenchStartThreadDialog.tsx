@@ -420,7 +420,7 @@ function WorkbenchStartThreadFooter({
           ? "Preparing thread…"
           : workspaceReady
             ? startLabel
-            : "Create work area and Thread"}
+            : "Create worktrees and Thread"}
       </Button>
     </DialogFooter>
   );
@@ -462,9 +462,7 @@ function WorkbenchStartThreadRepositoryNote({
           {lastUsed ? " Last used by this ticket’s Threads." : null}
         </p>
       )}
-      {ticketScopeChanged ? (
-        <p>Repository changes apply to this ticket’s work area when you create the Thread.</p>
-      ) : null}
+      {ticketScopeChanged ? <p>Repository changes apply when you create the Thread.</p> : null}
       {unavailable ? (
         <p role="alert" className="text-destructive">
           A ticket repository is no longer linked to this Workspace. Link it again with Edit
@@ -476,7 +474,7 @@ function WorkbenchStartThreadRepositoryNote({
           {message}
         </p>
       ))}
-      {locked ? <p role="status">Wait for work area preparation or release to finish.</p> : null}
+      {locked ? <p role="status">Wait for worktree preparation or removal to finish.</p> : null}
     </div>
   );
 }

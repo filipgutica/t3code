@@ -1,11 +1,4 @@
-import {
-  WORKBENCH_JIRA_ISSUE_URL_ERROR,
-  WORKBENCH_WS_METHODS,
-  WorkbenchOperationError,
-  WorkbenchRpcGroup,
-  parseJiraIssueUrl,
-  type WorkbenchSetJiraIssueLinkInput,
-} from "@t3tools/contracts";
+import { WORKBENCH_WS_METHODS, WorkbenchRpcGroup } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
@@ -46,31 +39,6 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   } satisfies WorkbenchRpcServices;
 });
 
-const decodeJiraIssue = (url: string | null) => {
-  if (url === null) return Effect.succeed(null);
-  const issue = parseJiraIssueUrl(url);
-  return issue === null
-    ? Effect.fail(
-        new WorkbenchOperationError({
-          code: "jira_issue_url_invalid",
-          message: WORKBENCH_JIRA_ISSUE_URL_ERROR,
-        }),
-      )
-    : Effect.succeed(issue);
-};
-
-// Untraced: RPC instrumentation already spans every Workbench call, and the store spans the write.
-const setEpicJiraIssueLink = Effect.fnUntraced(function* (
-  workbench: WorkbenchStore.WorkbenchStore["Service"],
-  input: WorkbenchSetJiraIssueLinkInput,
-) {
-  return yield* workbench.setEpicJiraIssueLink({
-    epicId: input.epicId,
-    jiraIssue: yield* decodeJiraIssue(input.url),
-    expectedUpdatedAt: input.expectedUpdatedAt,
-  });
-});
-
 export const makeWorkbenchRpcHandlers = ({
   ticketDrafts,
   ticketContexts,
@@ -97,9 +65,6 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),
     [WORKBENCH_WS_METHODS.workbenchDeleteProject]: (input) => workspaceLifecycle.delete(input),
-    [WORKBENCH_WS_METHODS.workbenchCreateEpic]: (input) => workbench.createEpic(input),
-    [WORKBENCH_WS_METHODS.workbenchUpdateEpic]: (input) => workbench.updateEpic(input),
-    [WORKBENCH_WS_METHODS.workbenchArchiveEpic]: (input) => workbench.archiveEpic(input),
     [WORKBENCH_WS_METHODS.workbenchCreateTicket]: (input) => workbench.createTicket(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: (input) => workbench.updateTicket(input),
     [WORKBENCH_WS_METHODS.workbenchRegenerateTicketSummary]: (input) =>
@@ -118,8 +83,6 @@ export const makeWorkbenchRpcHandlers = ({
       ticketWorkspaces.listWorktrees(input),
     [WORKBENCH_WS_METHODS.workbenchRemoveTicketWorktree]: (input) =>
       ticketWorkspaces.removeWorktree(input),
-    [WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink]: (input) =>
-      setEpicJiraIssueLink(workbench, input),
     [WORKBENCH_WS_METHODS.workbenchAddReference]: (input) =>
       workbench.addReference({ ...input, addedByThreadId: null }),
     [WORKBENCH_WS_METHODS.workbenchRemoveReference]: (input) => workbench.removeReference(input),

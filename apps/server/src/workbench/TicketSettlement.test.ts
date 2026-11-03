@@ -270,6 +270,7 @@ describe("Done Ticket settlement", () => {
             repositoryProjectIds: [thread.projectId],
             status: index === 0 ? "done" : "todo",
             blocked: false,
+            revision: 0,
             archivedAt: null,
             createdAt: DateTime.formatIso(thread.createdAt),
             updatedAt: DateTime.formatIso(thread.updatedAt),
@@ -281,6 +282,10 @@ describe("Done Ticket settlement", () => {
             createdAt: DateTime.formatIso(thread.createdAt),
             supersededAt: null,
           })),
+          reservedThreadIds: [],
+          ticketWorkspaces: [],
+          threadRecaps: [],
+          references: [],
         });
         const current = yield* Ref.make(snapshot);
         const commands = yield* Queue.unbounded<OrchestrationV2ServerCommand>();

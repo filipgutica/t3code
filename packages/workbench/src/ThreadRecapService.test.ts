@@ -77,7 +77,6 @@ const seedTicket = (threads: ReadonlyArray<ThreadId>) =>
       id: ticketId,
       projectId: workspaceId,
       title: "Share progress",
-      kind: "story",
       markdown: "",
       repositoryProjectIds: [projectId],
       createdAt,

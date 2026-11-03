@@ -4,7 +4,6 @@ import {
   ProjectId,
   WorkbenchProjectId,
   WorkbenchTicketId,
-  WorkbenchEpicId,
   type WorkbenchSnapshot,
 } from "@t3tools/contracts";
 import {
@@ -71,7 +70,6 @@ const workspace = {
 const archived = { ...workspace, id: WorkbenchProjectId.make("archived"), archivedAt: timestamp };
 const next = { ...workspace, id: WorkbenchProjectId.make("next") };
 const ticketId = WorkbenchTicketId.make("ticket");
-const epicId = WorkbenchEpicId.make("epic");
 const snapshot: WorkbenchSnapshot = {
   references: [],
   projects: [workspace, archived, next],
@@ -79,25 +77,12 @@ const snapshot: WorkbenchSnapshot = {
     {
       id: ticketId,
       projectId: workspace.id,
-      epicId,
       title: "Ticket",
       markdown: "",
-      kind: "story",
       repositoryProjectIds: [],
       status: "todo",
       blocked: false,
       revision: 0,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    },
-  ],
-  epics: [
-    {
-      id: epicId,
-      projectId: workspace.id,
-      title: "Epic",
-      markdown: "",
-      archivedAt: null,
       createdAt: timestamp,
       updatedAt: timestamp,
     },
@@ -127,7 +112,6 @@ function Harness({ data }: { data: WorkbenchSnapshot }) {
     environmentId: selectedEnvironmentId,
     initialProjectId: search.workbenchProjectId,
     initialTicketId: search.ticketId,
-    initialEpicId: search.epicId,
     snapshot: data,
     tickets: data.tickets,
     pendingAction,
@@ -200,8 +184,6 @@ it("preserves a draft deep link without requiring a Ticket record and falls back
     fields: {
       title: "Try retries",
       markdown: "",
-      kind: "story" as const,
-      epicId: null,
       repositoryProjectIds: [],
     },
   };
@@ -341,7 +323,6 @@ describe("Workspace lifecycle", () => {
         id: workspace.id,
         expectedRevision: 3,
         expectedTicketCount: 1,
-        expectedEpicCount: 1,
         deletedAt: expect.any(String),
       },
     });
@@ -386,7 +367,7 @@ describe("Workspace lifecycle", () => {
     await act(async () => actions.removeWorkspace());
     expect(router.state.location.search).toEqual({ environmentId });
     expect(selection.selectedProject).toBeNull();
-    await update({ ...snapshot, projects: [archived], tickets: [], epics: [] });
+    await update({ ...snapshot, projects: [archived], tickets: [] });
     expect(router.state.location.search).toEqual({ environmentId });
     expect(selection.selectedProject).toBeNull();
   });
@@ -404,70 +385,48 @@ describe("Workspace lifecycle", () => {
     );
     await update({ ...snapshot, projects: [archived, next] });
     expect(selection.selectedProject?.id).toBe(archived.id);
-    await update({ ...snapshot, projects: [next], tickets: [], epics: [] });
+    await update({ ...snapshot, projects: [next], tickets: [] });
     expect(router.state.location.search).toEqual({ environmentId, workbenchProjectId: next.id });
   });
-  it.each([
-    { child: "Ticket", search: "ticketId=ticket", expected: { ticketId } },
-    { child: "Epic", search: "epicId=epic", expected: { epicId } },
-  ])(
-    "preserves a valid $child route when replacing a missing Workspace selection",
-    async ({ search, expected }) => {
-      const { router } = await mount(
-        snapshot,
-        `/workbench?environmentId=remote&workbenchProjectId=missing&${search}`,
-      );
-      expect(router.state.location.search).toEqual({
-        environmentId,
-        workbenchProjectId: workspace.id,
-        ...expected,
-      });
-    },
-  );
-  it.each([
-    { child: "Ticket", search: "ticketId=ticket", expected: { ticketId } },
-    { child: "Epic", search: "epicId=epic", expected: { epicId } },
-  ])(
-    "keeps the environment and $child route when cancelling Workspace creation",
-    async ({ search, expected }) => {
-      const { router } = await mount(
-        snapshot,
-        `/workbench?environmentId=remote&workbenchProjectId=workspace&${search}&create=workspace`,
-      );
-      await act(async () => selection.handleWorkspaceDialogOpenChange(false));
-      expect(router.state.location.search).toEqual({
-        environmentId,
-        workbenchProjectId: workspace.id,
-        ...expected,
-      });
-    },
-  );
-  it.each([
-    { child: "ticket", fallback: true },
-    { child: "ticket", fallback: false },
-    { child: "epic", fallback: true },
-    { child: "epic", fallback: false },
-  ] as const)(
-    "expires creation waits before external Workspace deletion ($child, fallback: $fallback)",
-    async ({ child, fallback }) => {
-      const empty = { ...snapshot, projects: [], tickets: [], epics: [] };
+  it("preserves a valid Ticket route when replacing a missing Workspace selection", async () => {
+    const { router } = await mount(
+      snapshot,
+      "/workbench?environmentId=remote&workbenchProjectId=missing&ticketId=ticket",
+    );
+    expect(router.state.location.search).toEqual({
+      environmentId,
+      workbenchProjectId: workspace.id,
+      ticketId,
+    });
+  });
+  it("keeps the environment and Ticket route when cancelling Workspace creation", async () => {
+    const { router } = await mount(
+      snapshot,
+      "/workbench?environmentId=remote&workbenchProjectId=workspace&ticketId=ticket&create=workspace",
+    );
+    await act(async () => selection.handleWorkspaceDialogOpenChange(false));
+    expect(router.state.location.search).toEqual({
+      environmentId,
+      workbenchProjectId: workspace.id,
+      ticketId,
+    });
+  });
+  it.each([true, false])(
+    "expires creation waits before external Workspace deletion (fallback: %s)",
+    async (fallback) => {
+      const empty = { ...snapshot, projects: [], tickets: [] };
       const { router, update } = await mount(empty, "/workbench?environmentId=remote");
       await act(async () => {
         selection.setAwaitingProjectId(workspace.id);
         selection.setSelectedProjectId(workspace.id);
-        if (child === "ticket") {
-          selection.setAwaitingTicketId(ticketId);
-          selection.setSelectedTicketId(ticketId);
-        } else {
-          selection.setAwaitingEpicId(epicId);
-          selection.setSelectedEpicId(epicId);
-        }
+        selection.setAwaitingTicketId(ticketId);
+        selection.setSelectedTicketId(ticketId);
         await router.navigate({
           to: "/workbench",
           search: {
             environmentId,
             workbenchProjectId: workspace.id,
-            ...(child === "ticket" ? { ticketId } : { epicId }),
+            ticketId,
           },
         });
       });

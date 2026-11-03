@@ -91,7 +91,6 @@ const createTicket = Effect.gen(function* () {
     id: ticketId,
     projectId: workspaceId,
     title: "Validate requests",
-    kind: "bug",
     markdown: "Reject invalid dimensions before querying the provider.",
     repositoryProjectIds: [projectId],
     createdAt,

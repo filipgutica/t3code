@@ -237,7 +237,7 @@ export const prepareStartup = (input: { browser: Browser; home: string; deadline
         .getByRole("heading", { name: "Orbit", exact: true })
         .waitFor({ state: "visible", timeout: remaining() });
       await page
-        .getByRole("list", { name: "Workbench Workspaces", exact: true })
+        .getByRole("list", { name: "Boards", exact: true })
         .waitFor({ state: "visible", timeout: remaining() });
       await scriptIdle();
       if (!sameRuntime(runtime, await readRuntime(home)))

@@ -176,7 +176,7 @@ export function getWorkbenchSidebarSearchResults({
         kind: "workspace",
         key: `workspace:${workspace.id}`,
         title: workspace.title,
-        subtitle: workspace.archivedAt ? "Archived Workspace" : "Workspace overview",
+        subtitle: workspace.archivedAt ? "Archived Board" : "Board overview",
       });
     }
 

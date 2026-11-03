@@ -21,7 +21,6 @@ import { insertVisualMessage, readVisualThread, seedVisualRun } from "./native-p
 import { WORKBENCH_WS_METHODS } from "../../packages/contracts/src/workbenchRpc.ts";
 import {
   WorkbenchAssignmentId,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "../../packages/contracts/src/workbench.ts";
@@ -227,16 +226,6 @@ export const seedAttentionRecords = async ({
 }) => {
   const timestamp = new Date().toISOString();
   const projectId = ProjectId.make("orbit-web");
-  const epicId = WorkbenchEpicId.make(prefix + "epic");
-  await runRpc(wsUrl, token, (client) =>
-    client[WORKBENCH_WS_METHODS.workbenchCreateEpic]({
-      id: epicId,
-      projectId: WorkbenchProjectId.make("orbit"),
-      title: "Synthetic attention fixtures",
-      createdAt: timestamp,
-      markdown: "Synthetic review data. No provider executed and no GitHub request is sent.",
-    }),
-  );
   for (const fixture of fixtures) {
     const ticketId = WorkbenchTicketId.make(prefix + fixture.id);
     const threadId = ThreadId.make(prefix + fixture.id);
@@ -244,9 +233,7 @@ export const seedAttentionRecords = async ({
       client[WORKBENCH_WS_METHODS.workbenchCreateTicket]({
         id: ticketId,
         projectId: WorkbenchProjectId.make("orbit"),
-        epicId,
         title: `[Synthetic attention] ${fixture.title}`,
-        kind: "story",
         repositoryProjectIds:
           fixture.id === "feedback" ? [projectId, ProjectId.make("orbit-api")] : [projectId],
         createdAt: timestamp,

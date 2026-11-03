@@ -3,7 +3,6 @@ import type {
   EnvironmentId,
   ModelSelection,
   ScopedThreadRef,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketDraftFields,
 } from "@t3tools/contracts";
@@ -82,7 +81,6 @@ export function useTicketDraftBegin({
   enabled,
   modelSelection,
   draft,
-  initialEpicId,
   onDraft,
   refreshSnapshot,
   requestedDraftId = null,
@@ -93,14 +91,10 @@ export function useTicketDraftBegin({
   readonly enabled: boolean;
   readonly modelSelection: ModelSelection | null;
   readonly draft: WorkbenchConversationDraft | null;
-  readonly initialEpicId: WorkbenchEpicId | null;
   readonly onDraft: (draft: WorkbenchConversationDraft) => void;
   readonly refreshSnapshot: () => void;
 }) {
   const beginDraft = useAtomCommand(workbenchEnvironment.beginTicketDraft, {
-    reportFailure: false,
-  });
-  const updateDraft = useAtomCommand(workbenchEnvironment.updateTicketDraft, {
     reportFailure: false,
   });
   const [state, setState] = useState<BeginState>({ status: "idle" });
@@ -144,21 +138,7 @@ export function useTicketDraftBegin({
       setState({ status: "failed", message: failureMessage(result) });
       return;
     }
-    // Seed before handing the draft to the editor, so its first save cannot clear the Epic.
-    // A failed seed leaves a valid draft; the Epic remains editable in the form.
-    const seeded =
-      !recovering && initialEpicId !== null
-        ? await updateDraft({
-            environmentId,
-            input: {
-              id: result.value.id,
-              expectedRevision: result.value.revision,
-              fields: { ...result.value.fields, epicId: initialEpicId },
-            },
-          })
-        : null;
-    if (scopeRef.current !== scope) return;
-    onDraft(seeded?._tag === "Success" ? seeded.value : result.value);
+    onDraft(result.value);
     setState({ status: "idle" });
   };
 

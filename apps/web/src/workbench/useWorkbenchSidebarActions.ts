@@ -46,7 +46,7 @@ export function useWorkbenchSidebarActions({
       }
       const workspace = snapshot.projects.find((project) => project.id === ticket.projectId);
       if (!workspace || workspace.archivedAt != null) {
-        setError("Restore this Workspace before changing its planning data.");
+        setError("Restore this Board before changing its planning data.");
         return;
       }
       switch (action.kind) {

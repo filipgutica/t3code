@@ -15,7 +15,6 @@ const snapshot: WorkbenchSnapshot = {
   references: [],
   projects: [],
   tickets: [],
-  epics: [],
   assignments: [],
   reservedThreadIds: [],
   threadRecaps: [],

@@ -1,35 +1,31 @@
 import { test, expect, openWorkbench, snapshot, waitForWorkbench } from "./fixtures.ts";
 
-test("W1 W2: create and rename a Workspace without preparing worktrees", async ({ page, demo }) => {
+test("W1 W2: create and rename a Board without preparing worktrees", async ({ page, demo }) => {
   const before = await snapshot(demo);
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await expect(page.getByRole("heading", { name: "Orbit", exact: true })).toBeVisible();
-  await page.getByRole("button", { name: "Add Workspace", exact: true }).click();
-  const dialog = page.getByRole("dialog", { name: /Workspace/ });
-  await expect(
-    dialog.getByRole("button", { name: "Create Workspace", exact: true }),
-  ).toBeDisabled();
-  await dialog.getByLabel("Workspace title").fill("Regression Workspace");
+  await page.getByRole("button", { name: "Add Board", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: /Board/ });
+  await expect(dialog.getByRole("button", { name: "Create Board", exact: true })).toBeDisabled();
+  await dialog.getByLabel("Board title").fill("Regression Board");
   await dialog.getByRole("checkbox", { name: /Orbit API/ }).check();
   await dialog.getByRole("checkbox", { name: /Orbit Web/ }).check();
-  await dialog.getByRole("button", { name: "Create Workspace", exact: true }).click();
-  await expect(
-    page.getByRole("heading", { name: "Regression Workspace", exact: true }),
-  ).toBeVisible();
+  await dialog.getByRole("button", { name: "Create Board", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Regression Board", exact: true })).toBeVisible();
   const created = await snapshot(demo);
   expect(created.assignments).toEqual(before.assignments);
   expect(
-    created.projects.find((p) => p.title === "Regression Workspace")?.linkedProjectIds,
+    created.projects.find((p) => p.title === "Regression Board")?.linkedProjectIds,
   ).toHaveLength(2);
-  await page.getByRole("button", { name: "Workspace actions" }).click();
-  await page.getByRole("menuitem", { name: "Edit Workspace" }).click();
-  await dialog.getByLabel("Workspace title").fill("Renamed Regression Workspace");
+  await page.getByRole("button", { name: "Board actions" }).click();
+  await page.getByRole("menuitem", { name: "Edit Board" }).click();
+  await dialog.getByLabel("Board title").fill("Renamed Regression Board");
   await expect(dialog.getByRole("checkbox", { name: /Orbit API/ })).toBeDisabled();
   await dialog.getByRole("button", { name: "Save changes" }).click();
   await page.reload();
   await waitForWorkbench(page);
   await expect(
-    page.getByRole("heading", { name: "Renamed Regression Workspace", exact: true }),
+    page.getByRole("heading", { name: "Renamed Regression Board", exact: true }),
   ).toBeVisible();
 });
 
@@ -39,7 +35,7 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
 }) => {
   await openWorkbench(page, demo.workbenchUrl("/workbench?workbenchProjectId=orbit"));
   await page.setViewportSize({ width: 1600, height: 900 });
-  await page.getByRole("button", { name: "New Ticket", exact: true }).click();
+  await page.getByRole("button", { name: "New ticket", exact: true }).click();
   const draft = page.getByRole("group", { name: "Ticket draft", exact: true });
   await draft.getByLabel("Title", { exact: true }).fill("Regression disposable ticket");
   await draft.getByRole("checkbox", { name: /^Orbit Web / }).click();
@@ -70,14 +66,14 @@ test("T1 T2 T5 T6: create, edit, move, archive, restore and delete a Ticket", as
   ).toBeVisible();
   await page.getByRole("button", { name: "Edit", exact: true }).click();
   await page.getByLabel("Title", { exact: true }).fill("Edited regression ticket");
-  await page.getByLabel("Description", { exact: true }).fill("Updated full description.");
+  await page.getByLabel("Brief", { exact: true }).fill("Updated full brief.");
   await page.getByRole("button", { name: "Save Ticket", exact: true }).click();
   await page.reload();
   await waitForWorkbench(page);
   await expect(
     page.getByRole("heading", { name: "Edited regression ticket", exact: true }),
   ).toBeVisible();
-  await expect(page.getByText("Updated full description.", { exact: true })).toBeVisible();
+  await expect(page.getByText("Updated full brief.", { exact: true })).toBeVisible();
   for (const to of ["In Progress", "Done", "To Do"]) {
     await page
       .getByRole("button", { name: "Change status of Edited regression ticket", exact: true })
@@ -161,7 +157,7 @@ test("Ticket wheel scrolling over either stacked column reaches the page", async
     demo.workbenchUrl("/workbench?workbenchProjectId=orbit&ticketId=orbit-001"),
   );
   const form = page.locator("form:has(#workbench-ticket-reading)");
-  for (const heading of ["Description", "Progress"]) {
+  for (const heading of ["Brief", "Progress"]) {
     const target = page.getByRole("heading", { name: heading, exact: true });
     await target.scrollIntoViewIfNeeded();
     await target.hover();
@@ -182,7 +178,7 @@ test("Ticket wheel scrolling keeps side-by-side columns independent", async ({ p
   );
   const reading = page.locator('#workbench-ticket-reading [data-slot="scroll-area-viewport"]');
   const work = page.locator('#workbench-ticket-work [data-slot="scroll-area-viewport"]');
-  await page.getByRole("heading", { name: "Description", exact: true }).hover();
+  await page.getByRole("heading", { name: "Brief", exact: true }).hover();
   await page.mouse.wheel(0, 300);
   await expect.poll(() => reading.evaluate((element) => element.scrollTop)).toBeGreaterThan(0);
   expect(await work.evaluate((element) => element.scrollTop)).toBe(0);
@@ -210,10 +206,9 @@ test("sidebar Threads restores native Thread context and exits a direct board en
   const threadPath = `/${encodeURIComponent(environmentId)}/orbit-001-thread`;
 
   await page.goto(`${demo.origin}${threadPath}?workbench=true`);
-  await waitForWorkbench(page);
-  await page.getByRole("button", { name: "Back to Threads", exact: true }).click();
-  await expect(page).toHaveURL(new RegExp(`${threadPath}$`));
   await expect(page.getByRole("button", { name: "Agent Workbench", exact: true })).toBeVisible();
+  await expect(page.getByRole("list", { name: "Boards", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Back to Threads", exact: true })).toHaveCount(0);
 
   await page.goto(`${demo.origin}${demo.workbenchUrl("/workbench?workbenchProjectId=orbit")}`);
   await waitForWorkbench(page);

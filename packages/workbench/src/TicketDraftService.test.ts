@@ -775,7 +775,6 @@ describe("TicketDraftService", () => {
           id: workspaceId,
           expectedRevision: 0,
           expectedTicketCount: 0,
-          expectedEpicCount: 0,
           deletedAt: timestamp,
         });
         expect(yield* store.getTicketDraftForThread(threadId)).toBeNull();

@@ -48,7 +48,6 @@ export function useWorkbenchWorkspaceActions({
     environmentId: EnvironmentId;
     workspace: WorkbenchProject;
     ticketCount: number;
-    epicCount: number;
   } | null>(null);
   const setArchived = async (workspace: WorkbenchProject) => {
     if (!canArchive || environmentId === null || pendingAction !== null) return;
@@ -59,7 +58,7 @@ export function useWorkbenchWorkspaceActions({
       environmentId,
       input: {
         id: workspace.id,
-        expectedRevision: workspace.revision ?? 0,
+        expectedRevision: workspace.revision,
         archivedAt: workspace.archivedAt != null ? null : updatedAt,
         updatedAt,
       },
@@ -75,7 +74,6 @@ export function useWorkbenchWorkspaceActions({
       environmentId,
       workspace,
       ticketCount: snapshot.tickets.filter((ticket) => ticket.projectId === workspace.id).length,
-      epicCount: snapshot.epics.filter((epic) => epic.projectId === workspace.id).length,
     });
   };
   const removeWorkspace = async () => {
@@ -94,9 +92,8 @@ export function useWorkbenchWorkspaceActions({
         environmentId,
         input: {
           id: deletion.workspace.id,
-          expectedRevision: deletion.workspace.revision ?? 0,
+          expectedRevision: deletion.workspace.revision,
           expectedTicketCount: deletion.ticketCount,
-          expectedEpicCount: deletion.epicCount,
           deletedAt: new Date().toISOString(),
         },
       });
@@ -129,7 +126,7 @@ export function useWorkbenchWorkspaceActions({
       } catch (cause) {
         if (currentEnvironment() === environmentId) {
           const detail = cause instanceof Error ? ` ${cause.message}` : "";
-          setError(`Workspace deleted, but Workbench could not open another Workspace.${detail}`);
+          setError(`Board deleted, but Workbench could not open another Board.${detail}`);
         }
       }
     })().finally(() => {

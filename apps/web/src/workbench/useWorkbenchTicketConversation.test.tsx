@@ -4,7 +4,6 @@ import {
   EnvironmentId,
   ProjectId,
   ThreadId,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
   type ModelSelection,
@@ -53,7 +52,6 @@ vi.mock("../state/entities", () => ({
 
 const environmentId = EnvironmentId.make("environment");
 const workspaceId = WorkbenchProjectId.make("workspace");
-const epicId = WorkbenchEpicId.make("epic");
 const modelSelection = { instanceId: "codex", model: "gpt" } as ModelSelection;
 const time = "2026-10-09T00:00:00.000Z";
 
@@ -68,8 +66,6 @@ const makeDraft = (overrides: Partial<WorkbenchTicketDraft> = {}): WorkbenchTick
   fields: {
     title: "",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt: time,
@@ -93,7 +89,6 @@ const mountBegin = async (options: Partial<BeginOptions> = {}) => {
       enabled: true,
       modelSelection,
       draft: null,
-      initialEpicId: null,
       onDraft,
       refreshSnapshot,
       ...options,
@@ -129,49 +124,20 @@ afterEach(() => {
 });
 
 describe("useTicketDraftBegin", () => {
-  it("hands the editor a draft that already carries the seeded Epic", async () => {
-    const created = makeDraft({ revision: 1 });
-    const seeded = makeDraft({ revision: 2, fields: { ...created.fields, epicId } });
+  it("hands the created draft to the editor", async () => {
+    const created = makeDraft();
     commands.begin.mockResolvedValueOnce(AsyncResult.success(created));
-    commands.update.mockResolvedValueOnce(AsyncResult.success(seeded));
-    const harness = await mountBegin({ initialEpicId: epicId });
+    const harness = await mountBegin();
     try {
       expect(commands.begin).toHaveBeenCalledWith({
         environmentId,
         input: expect.objectContaining({ projectId: workspaceId, modelSelection }),
       });
-      expect(commands.update).toHaveBeenCalledWith({
-        environmentId,
-        input: expect.objectContaining({
-          id: created.id,
-          expectedRevision: 1,
-          fields: expect.objectContaining({ epicId }),
-        }),
-      });
-      // One hand-off, after the seed: an earlier one would let the first edit save epicId null.
-      expect(harness.onDraft).toHaveBeenCalledTimes(1);
-      expect(harness.onDraft).toHaveBeenCalledWith(seeded);
+      expect(harness.onDraft).toHaveBeenCalledExactlyOnceWith(created);
     } finally {
       await harness.unmount();
       vi.unstubAllGlobals();
       commands.begin.mockReset();
-      commands.update.mockReset();
-    }
-  });
-
-  it("keeps the created draft when the Epic seed fails", async () => {
-    const created = makeDraft();
-    commands.begin.mockResolvedValueOnce(AsyncResult.success(created));
-    commands.update.mockResolvedValueOnce(AsyncResult.failure(Cause.fail(new Error("changed"))));
-    const harness = await mountBegin({ initialEpicId: epicId });
-    try {
-      expect(harness.onDraft).toHaveBeenCalledOnce();
-      expect(harness.onDraft).toHaveBeenCalledWith(created);
-    } finally {
-      await harness.unmount();
-      vi.unstubAllGlobals();
-      commands.begin.mockReset();
-      commands.update.mockReset();
     }
   });
 

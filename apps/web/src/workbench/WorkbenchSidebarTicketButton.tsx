@@ -1,17 +1,10 @@
 import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
-import {
-  ArchiveIcon,
-  BookOpenIcon,
-  BugIcon,
-  CircleAlertIcon,
-  FolderGit2Icon,
-  PlusIcon,
-} from "lucide-react";
+import { CircleAlertIcon, FolderGit2Icon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
-import { WORKBENCH_TICKET_KIND_LABELS, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { WorkbenchPullRequestLink } from "./WorkbenchPullRequestLink";
 import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicketActionMenu";
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
@@ -19,7 +12,6 @@ import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.lo
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
 import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
-import { WorkbenchReferenceKindIcon } from "./WorkbenchReferenceKindIcon";
 
 function TicketPullRequestPreview({
   pullRequests,
@@ -62,12 +54,6 @@ function TicketPreview({
             <dd>{details.issue.label}</dd>
           </>
         ) : null}
-        {details ? (
-          <>
-            <dt>Type</dt>
-            <dd>{WORKBENCH_TICKET_KIND_LABELS[details.kind]}</dd>
-          </>
-        ) : null}
         <dt>Status</dt>
         <dd>
           {status}
@@ -85,12 +71,6 @@ function TicketPreview({
             <dd className="min-w-0 break-words">{details.repositories.join(", ")}</dd>
           </>
         ) : null}
-        {details?.epicTitle ? (
-          <>
-            <dt>Epic</dt>
-            <dd className="min-w-0 break-words">{details.epicTitle}</dd>
-          </>
-        ) : null}
         {details ? (
           <>
             <dt>Threads</dt>
@@ -103,31 +83,15 @@ function TicketPreview({
   );
 }
 
-const TICKET_ICON_TONE = {
-  story: "text-info-foreground",
-  bug: "text-destructive-foreground",
-} satisfies Record<WorkbenchSidebarTicketDetails["kind"], string>;
-
 const TICKET_STATUS_DOT_TONE = {
   todo: "bg-sidebar-muted-foreground/55",
   in_progress: "bg-info",
   done: "bg-success",
 } satisfies Record<WorkbenchSidebarTicket["status"], string>;
 
-function WorkbenchSidebarTicketTitle({
-  ticket,
-  details,
-}: {
-  readonly ticket: WorkbenchSidebarTicket;
-  readonly details: WorkbenchSidebarTicketDetails | undefined;
-}) {
-  const kind = details?.kind ?? "story";
-  const Icon = ticket.archivedAt ? ArchiveIcon : kind === "bug" ? BugIcon : BookOpenIcon;
-  const iconTone = ticket.archivedAt ? "text-sidebar-muted-foreground/60" : TICKET_ICON_TONE[kind];
-
+function WorkbenchSidebarTicketTitle({ ticket }: { readonly ticket: WorkbenchSidebarTicket }) {
   return (
     <span data-workbench-sidebar-title="">
-      <Icon aria-hidden className={`size-4 shrink-0 ${iconTone}`} />
       <span className="min-w-0 flex-1 truncate">{ticket.title}</span>
     </span>
   );
@@ -143,22 +107,18 @@ function WorkbenchSidebarTicketStatus({
   readonly status: string;
 }) {
   return (
-    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="1">
+    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="2">
       <span data-workbench-sidebar-metadata-icon="" aria-hidden>
-        {details?.issue ? (
-          <WorkbenchReferenceKindIcon kind={details.issue.kind} className="size-3" />
-        ) : (
-          <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
-        )}
+        <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
       </span>
       <span data-workbench-sidebar-ticket-planning="">
+        <span className="shrink-0">{status}</span>
         {details?.issue ? (
           <>
-            <span className="shrink-0 font-mono">{details.issue.label}</span>
             <span aria-hidden>·</span>
+            <span className="truncate font-mono">{details.issue.label}</span>
           </>
         ) : null}
-        <span className="truncate">{status}</span>
       </span>
       {details?.attentionLabel ? (
         <CircleAlertIcon
@@ -293,8 +253,8 @@ export function WorkbenchSidebarTicketButton({
         openMenu={actions.openMenu}
         preview={<TicketPreview ticket={ticket} details={details} status={status} />}
       >
+        <WorkbenchSidebarTicketTitle ticket={ticket} />
         <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
-        <WorkbenchSidebarTicketTitle ticket={ticket} details={details} />
         <WorkbenchSidebarTicketRepositories details={details} />
       </WorkbenchSidebarRowNavigation>
       <span data-workbench-sidebar-slot={actions.canCreateThread ? "actions" : ""}>

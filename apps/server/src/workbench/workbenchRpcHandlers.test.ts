@@ -1,9 +1,7 @@
 import {
   ProjectId,
-  WORKBENCH_JIRA_ISSUE_URL_ERROR,
   WORKBENCH_REFERENCE_URL_ERROR,
   WORKBENCH_WS_METHODS,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -40,7 +38,6 @@ const TestLayer = Layer.mergeAll(
 );
 
 const ticketId = WorkbenchTicketId.make("jira-link-ticket");
-const epicId = WorkbenchEpicId.make("jira-link-epic");
 
 const seed = Effect.gen(function* () {
   const store = yield* WorkbenchStore;
@@ -57,18 +54,10 @@ const seed = Effect.gen(function* () {
     linkedProjectIds: [projectId],
     createdAt,
   });
-  const epic = yield* store.createEpic({
-    id: epicId,
-    projectId: workspaceId,
-    title: "Linked Epic",
-    markdown: "",
-    createdAt,
-  });
   const ticket = yield* store.createTicket({
     id: ticketId,
     projectId: workspaceId,
     title: "Linked Ticket",
-    kind: "story",
     markdown: "",
     repositoryProjectIds: [projectId],
     createdAt,
@@ -76,9 +65,7 @@ const seed = Effect.gen(function* () {
   const handlers = makeWorkbenchRpcHandlers(yield* acquireWorkbenchRpcServices);
   return {
     store,
-    epic,
     ticket,
-    setLink: handlers[WORKBENCH_WS_METHODS.workbenchSetJiraIssueLink],
     addReference: handlers[WORKBENCH_WS_METHODS.workbenchAddReference],
     removeReference: handlers[WORKBENCH_WS_METHODS.workbenchRemoveReference],
   };
@@ -113,45 +100,6 @@ describe("workbench.references", () => {
         message: WORKBENCH_REFERENCE_URL_ERROR,
       });
       expect((yield* store.getSnapshot).references).toEqual([]);
-    }).pipe(Effect.provide(TestLayer)),
-  );
-});
-
-describe("workbench.setJiraIssueLink", () => {
-  it.effect("links and unlinks an Epic", () =>
-    Effect.gen(function* () {
-      const { epic, setLink } = yield* seed;
-      const linked = yield* setLink({
-        epicId,
-        url: "https://jira.example.com/browse/ORBIT-1",
-        expectedUpdatedAt: epic.updatedAt,
-      });
-      expect(linked).toMatchObject({ id: epicId, jiraIssue: { key: "ORBIT-1" } });
-      const unlinked = yield* setLink({
-        epicId,
-        url: null,
-        expectedUpdatedAt: linked.updatedAt,
-      });
-      expect(unlinked.jiraIssue ?? null).toBeNull();
-    }).pipe(Effect.provide(TestLayer)),
-  );
-
-  it.effect("rejects a URL that is not a Jira issue without writing", () =>
-    Effect.gen(function* () {
-      const { store, epic, setLink } = yield* seed;
-      for (const url of ["javascript:alert(1)//browse/ORBIT-1", "https://example.com/wiki/page"]) {
-        const error = yield* setLink({
-          epicId,
-          url,
-          expectedUpdatedAt: epic.updatedAt,
-        }).pipe(Effect.flip);
-        expect(error).toMatchObject({
-          _tag: "WorkbenchOperationError",
-          code: "jira_issue_url_invalid",
-          message: WORKBENCH_JIRA_ISSUE_URL_ERROR,
-        });
-      }
-      expect(Option.getOrThrow(yield* store.getEpic(epicId))).toEqual(epic);
     }).pipe(Effect.provide(TestLayer)),
   );
 });

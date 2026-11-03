@@ -142,7 +142,7 @@ interface WorkbenchUrlFormProps {
 }
 
 /** A URL form in a popover; the form remounts, and so resets, each time the popover opens. */
-export function WorkbenchUrlPopover({
+function WorkbenchUrlPopover({
   trigger,
   triggerVariant,
   disabled,

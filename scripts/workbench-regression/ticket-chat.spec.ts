@@ -30,7 +30,7 @@ test("C1: the ticket chat embeds the Thread view, opens its terminal on the Tick
     await page.getByRole("button", { name: "Create Thread", exact: true }).click();
     await page
       .getByRole("dialog")
-      .getByRole("button", { name: "Create work area and Thread", exact: true })
+      .getByRole("button", { name: "Create worktrees and Thread", exact: true })
       .click();
     const chat = ticketChat(page);
     const editor = chat.locator('[contenteditable="true"]');

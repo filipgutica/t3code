@@ -31,7 +31,6 @@ import type {
 } from "../../packages/contracts/src/workbench.ts";
 import {
   WorkbenchAssignmentId,
-  WorkbenchEpicId,
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "../../packages/contracts/src/workbench.ts";
@@ -95,23 +94,14 @@ const WORKBENCH_PROJECTS = [
   { id: "beacon", title: "Beacon", repositoryIds: ["beacon-cli", "beacon-docs"] },
 ] as const;
 
-const EPICS = [
-  { id: "orbit-onboarding", projectId: "orbit", title: "A welcoming first run" },
-  { id: "orbit-teams", projectId: "orbit", title: "Better together" },
-  { id: "beacon-first", projectId: "beacon", title: "From install to first check" },
-  { id: "beacon-reliable", projectId: "beacon", title: "Checks you can trust" },
-] as const;
-
 type TicketStatus = "todo" | "in_progress" | "done";
 
 type TicketFixture = {
   id: string;
   projectId: string;
-  epicId: string | null;
   title: string;
   repositoryProjectIds: readonly string[];
   status: TicketStatus;
-  kind?: "story" | "bug";
   archived?: boolean;
   markdown?: string;
 };
@@ -239,7 +229,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-001",
     projectId: "orbit",
-    epicId: "orbit-onboarding",
     title: "Create the welcome checklist",
     repositoryProjectIds: ["orbit-web", "orbit-api"],
     status: "in_progress",
@@ -248,7 +237,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-002",
     projectId: "orbit",
-    epicId: "orbit-onboarding",
     title: "Save onboarding progress",
     repositoryProjectIds: ["orbit-api"],
     status: "todo",
@@ -256,7 +244,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-003",
     projectId: "orbit",
-    epicId: "orbit-onboarding",
     title: "Add helpful empty states",
     repositoryProjectIds: ["orbit-web"],
     status: "done",
@@ -264,16 +251,13 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-004",
     projectId: "orbit",
-    epicId: null,
     title: "Fix focus after creating a project",
     repositoryProjectIds: ["orbit-web"],
     status: "todo",
-    kind: "bug",
   },
   {
     id: "orbit-005",
     projectId: "orbit",
-    epicId: "orbit-teams",
     title: "Invite teammates by email",
     repositoryProjectIds: ["orbit-web"],
     status: "in_progress",
@@ -281,7 +265,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-006",
     projectId: "orbit",
-    epicId: "orbit-teams",
     title: "Expire unused invitation links",
     repositoryProjectIds: ["orbit-api"],
     status: "todo",
@@ -289,7 +272,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-007",
     projectId: "orbit",
-    epicId: "orbit-teams",
     title: "Add a team settings page",
     repositoryProjectIds: ["orbit-web"],
     status: "todo",
@@ -297,7 +279,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "orbit-008",
     projectId: "orbit",
-    epicId: "orbit-teams",
     title: "Validate invitation addresses",
     repositoryProjectIds: ["orbit-api"],
     status: "done",
@@ -305,7 +286,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-009",
     projectId: "beacon",
-    epicId: "beacon-first",
     title: "Build an interactive setup command",
     repositoryProjectIds: ["beacon-cli"],
     status: "in_progress",
@@ -314,7 +294,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-010",
     projectId: "beacon",
-    epicId: "beacon-first",
     title: "Write the five-minute quickstart",
     repositoryProjectIds: ["beacon-docs"],
     status: "todo",
@@ -322,7 +301,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-011",
     projectId: "beacon",
-    epicId: "beacon-first",
     title: "Make CLI errors actionable",
     repositoryProjectIds: ["beacon-cli"],
     status: "done",
@@ -330,7 +308,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-012",
     projectId: "beacon",
-    epicId: "beacon-first",
     title: "Document configuration examples",
     repositoryProjectIds: ["beacon-docs"],
     status: "todo",
@@ -338,7 +315,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-013",
     projectId: "beacon",
-    epicId: "beacon-reliable",
     title: "Retry temporary connection failures",
     repositoryProjectIds: ["beacon-cli"],
     status: "todo",
@@ -346,7 +322,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-014",
     projectId: "beacon",
-    epicId: "beacon-reliable",
     title: "Add structured JSON output",
     repositoryProjectIds: ["beacon-cli"],
     status: "in_progress",
@@ -354,7 +329,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-015",
     projectId: "beacon",
-    epicId: "beacon-reliable",
     title: "Explain exit codes for CI",
     repositoryProjectIds: ["beacon-docs"],
     status: "done",
@@ -362,7 +336,6 @@ const TICKETS: readonly TicketFixture[] = [
   {
     id: "beacon-016",
     projectId: "beacon",
-    epicId: "beacon-reliable",
     title: "Retire the old configuration example",
     repositoryProjectIds: ["beacon-docs"],
     status: "done",
@@ -419,7 +392,6 @@ export interface LocalDemoManifest {
   readonly home: string;
   readonly projects: ReadonlyArray<{ readonly id: string; readonly path: string }>;
   readonly workbenchProjects: ReadonlyArray<string>;
-  readonly epics: ReadonlyArray<string>;
   readonly tickets: ReadonlyArray<string>;
   readonly assignedThreads: ReadonlyArray<string>;
 }
@@ -430,11 +402,10 @@ export interface LocalDemoVerification {
   readonly repositoryHeadCount: number;
   readonly expectedWorkbenchCounts: {
     readonly projects: number;
-    readonly epics: number;
     readonly tickets: number;
     readonly assignments: number;
   };
-  readonly workbench?: Pick<WorkbenchSnapshot, "projects" | "epics" | "tickets" | "assignments">;
+  readonly workbench?: Pick<WorkbenchSnapshot, "projects" | "tickets" | "assignments">;
 }
 
 const manifestPath = (home: string): string => NodePath.join(home, "workbench-demo.json");
@@ -759,24 +730,7 @@ const seedWorkbench = async (
   const afterProjects = await runRpc(options.wsUrl, options.token, (client) =>
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
-  const epicIds = new Set(afterProjects.epics.map((epic) => epic.id));
-  for (const epic of EPICS) {
-    if (epicIds.has(WorkbenchEpicId.make(epic.id))) continue;
-    await runRpc(options.wsUrl, options.token, (client) =>
-      client[WORKBENCH_WS_METHODS.workbenchCreateEpic]({
-        id: WorkbenchEpicId.make(epic.id),
-        projectId: WorkbenchProjectId.make(epic.projectId),
-        title: epic.title,
-        markdown: `## Goal\n\n${epic.title} for the ${epic.projectId} demo workspace.`,
-        createdAt: timestamp,
-      }),
-    );
-  }
-
-  const afterEpics = await runRpc(options.wsUrl, options.token, (client) =>
-    client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
-  );
-  const ticketById = new Map(afterEpics.tickets.map((ticket) => [ticket.id, ticket]));
+  const ticketById = new Map(afterProjects.tickets.map((ticket) => [ticket.id, ticket]));
   for (const fixture of TICKETS) {
     const ticketId = WorkbenchTicketId.make(fixture.id);
     if (ticketById.has(ticketId)) continue;
@@ -789,9 +743,7 @@ const seedWorkbench = async (
       client[WORKBENCH_WS_METHODS.workbenchCreateTicket]({
         id: WorkbenchTicketId.make(ticketId),
         projectId: WorkbenchProjectId.make(fixture.projectId),
-        epicId: fixture.epicId === null ? null : WorkbenchEpicId.make(fixture.epicId),
         title: fixture.title,
-        kind: fixture.kind ?? "story",
         markdown:
           fixture.markdown ??
           `## Goal\n\n${fixture.title} so the next step is clear and reliable.\n\n## Acceptance criteria\n\n${criteria.map((item) => `- [ ] ${item}`).join("\n")}`,
@@ -970,7 +922,6 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
       path: NodePath.join(home, "projects", repository.id),
     })),
     workbenchProjects: WORKBENCH_PROJECTS.map((project) => project.id),
-    epics: EPICS.map((epic) => epic.id),
     tickets: TICKETS.map((ticket) => ticket.id),
     assignedThreads: ASSIGNED_THREADS.map((thread) => thread.id),
   };
@@ -987,7 +938,6 @@ const decodeLocalManifest = Schema.decodeUnknownSync(
       home: Schema.String,
       projects: Schema.Array(Schema.Struct({ id: Schema.String, path: Schema.String })),
       workbenchProjects: Schema.Array(Schema.String),
-      epics: Schema.Array(Schema.String),
       tickets: Schema.Array(Schema.String),
       assignedThreads: Schema.Array(Schema.String),
     }),
@@ -1028,7 +978,6 @@ export const verifyLocal = async (
     );
     for (const [label, expected, actual] of [
       ["workspaces", WORKBENCH_PROJECTS.map((p) => p.id), snapshot.projects.map((p) => p.id)],
-      ["epics", EPICS.map((p) => p.id), snapshot.epics.map((p) => p.id)],
       ["tickets", TICKETS.map((ticket) => ticket.id), snapshot.tickets.map((p) => p.id)],
       [
         "assignments",
@@ -1051,12 +1000,11 @@ export const verifyLocal = async (
         );
     }
     if (
-      !snapshot.tickets.some((item) => item.id === "orbit-004" && item.epicId === null) ||
       !snapshot.tickets.some(
         (item) => item.id === "orbit-001" && item.repositoryProjectIds.length === 2,
       )
     )
-      throw new Error("Ungrouped or multi-repository demo fixture is missing.");
+      throw new Error("Multi-repository demo fixture is missing.");
     const shell = await readShellSnapshot(options.wsUrl, options.token);
     for (const thread of ASSIGNED_THREADS) {
       const found = shell.threads.find((candidate) => candidate.id === thread.id);
@@ -1066,7 +1014,6 @@ export const verifyLocal = async (
     }
     workbench = {
       projects: snapshot.projects,
-      epics: snapshot.epics,
       tickets: snapshot.tickets,
       assignments: snapshot.assignments,
     };
@@ -1077,7 +1024,6 @@ export const verifyLocal = async (
     repositoryHeadCount,
     expectedWorkbenchCounts: {
       projects: WORKBENCH_PROJECTS.length,
-      epics: EPICS.length,
       tickets: TICKETS.length,
       assignments: ASSIGNED_THREADS.length,
     },

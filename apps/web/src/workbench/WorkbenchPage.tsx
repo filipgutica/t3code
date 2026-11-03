@@ -4,7 +4,7 @@ import { useWorkbenchPageTicketWorkflow } from "./useWorkbenchPageTicketWorkflow
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 
-import { useWorkbenchBoardData } from "./useWorkbenchBoardData";
+import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { useWorkbenchPageData } from "./useWorkbenchPageData";
 
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
@@ -12,12 +12,7 @@ import { useWorkbenchPageRefresh } from "./useWorkbenchPageRefresh";
 import { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 import { WorkbenchWorkspaceDeleteDialog } from "./WorkbenchWorkspaceDeleteDialog";
 
-import {
-  EnvironmentId,
-  WorkbenchEpicId,
-  WorkbenchProjectId,
-  WorkbenchTicketId,
-} from "@t3tools/contracts";
+import { EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
 
 import { useState } from "react";
 
@@ -27,7 +22,6 @@ interface WorkbenchPageProps {
   readonly createTicket: boolean;
   readonly initialProjectId: WorkbenchProjectId | undefined;
   readonly initialTicketId: WorkbenchTicketId | undefined;
-  readonly initialEpicId: WorkbenchEpicId | undefined;
 }
 
 export function WorkbenchPage({
@@ -36,7 +30,6 @@ export function WorkbenchPage({
   createTicket,
   initialProjectId,
   initialTicketId,
-  initialEpicId,
 }: WorkbenchPageProps) {
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const environmentId = initialEnvironmentId ?? primaryEnvironmentId;
@@ -49,12 +42,10 @@ export function WorkbenchPage({
       tickets: optimisticStatus.tickets,
       initialProjectId,
       initialTicketId,
-      initialEpicId,
     });
 
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
-    snapshot: pageData.snapshot,
     projects,
     canOperate: pageData.canOperate,
     selection,
@@ -62,7 +53,7 @@ export function WorkbenchPage({
     setError,
   });
 
-  const boardData = useWorkbenchBoardData({ environmentId, pageData, selection });
+  const boardData = getWorkbenchBoardData({ pageData, selection });
 
   const { ticketActions, threadActions } = useWorkbenchPageTicketWorkflow({
     environmentId,
@@ -127,12 +118,7 @@ function WorkbenchPageDeleteConfirmation({
 function useWorkbenchWorkspaceSelection(
   options: Pick<
     Parameters<typeof useWorkbenchPageSelection>[0],
-    | "environmentId"
-    | "initialProjectId"
-    | "initialTicketId"
-    | "initialEpicId"
-    | "snapshot"
-    | "tickets"
+    "environmentId" | "initialProjectId" | "initialTicketId" | "snapshot" | "tickets"
   >,
 ) {
   const [error, setError] = useState<string | null>(null);

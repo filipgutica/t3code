@@ -2,8 +2,6 @@ import {
   RunId,
   WorkbenchAssignment,
   WorkbenchAssignmentId,
-  WorkbenchEpic,
-  WorkbenchEpicId,
   WorkbenchOperationError,
   WorkbenchProject,
   WorkbenchProjectId,
@@ -26,16 +24,12 @@ import {
   type WorkbenchDeleteProjectInput,
   type WorkbenchCreateAssignmentInput,
   type WorkbenchUnlinkAssignmentInput,
-  type WorkbenchArchiveEpicInput,
-  type WorkbenchCreateEpicInput,
   type WorkbenchCreateProjectInput,
   type WorkbenchCreateTicketInput,
   type WorkbenchDeleteTicketInput,
   type WorkbenchReplaceAssignmentInput,
-  type WorkbenchUpdateEpicInput,
   type WorkbenchUpdateProjectInput,
   type WorkbenchUpdateTicketInput,
-  type WorkbenchJiraIssue,
   type WorkbenchAddReferenceInput,
   type WorkbenchReferenceDraft,
   type WorkbenchRemoveReferenceInput,
@@ -77,43 +71,6 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   linkedProjectId: ProjectId,
   position: Schema.Number,
 });
-const JiraIssueColumns = {
-  jiraIssueKey: Schema.NullOr(Schema.String),
-  jiraIssueUrl: Schema.NullOr(Schema.String),
-};
-const jiraIssueFromRow = (row: {
-  readonly jiraIssueKey: string | null;
-  readonly jiraIssueUrl: string | null;
-}): WorkbenchJiraIssue | null =>
-  row.jiraIssueKey !== null && row.jiraIssueUrl !== null
-    ? { key: row.jiraIssueKey, url: row.jiraIssueUrl }
-    : null;
-const WorkbenchEpicRow = Schema.Struct({
-  id: WorkbenchEpicId,
-  projectId: WorkbenchProjectId,
-  title: WorkbenchEpic.fields.title,
-  markdown: WorkbenchEpic.fields.markdown,
-  archivedAt: WorkbenchEpic.fields.archivedAt,
-  ...JiraIssueColumns,
-  createdAt: WorkbenchEpic.fields.createdAt,
-  updatedAt: WorkbenchEpic.fields.updatedAt,
-});
-const epicFromRow = ({
-  jiraIssueKey,
-  jiraIssueUrl,
-  ...epic
-}: typeof WorkbenchEpicRow.Type): WorkbenchEpic =>
-  WorkbenchEpic.make({ ...epic, jiraIssue: jiraIssueFromRow({ jiraIssueKey, jiraIssueUrl }) });
-// Epic versions must advance even within one clock tick or after clock skew.
-const advanceEpicUpdatedAt = (previousUpdatedAt: string, updatedAt: string) =>
-  DateTime.formatIso(
-    DateTime.makeUnsafe(
-      Math.max(
-        DateTime.toEpochMillis(DateTime.makeUnsafe(updatedAt)),
-        DateTime.toEpochMillis(DateTime.makeUnsafe(previousUpdatedAt)) + 1,
-      ),
-    ),
-  );
 
 const WorkbenchTicketRepositoryRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
@@ -146,13 +103,10 @@ const FindProjectLinkInput = Schema.Struct({
   linkedProjectId: ProjectId,
 });
 const FindTicketInput = Schema.Struct({ ticketId: WorkbenchTicketId });
-const FindEpicInput = Schema.Struct({ epicId: WorkbenchEpicId });
 const WorkbenchTicketRow = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
-  epicId: Schema.NullOr(WorkbenchEpicId),
   title: WorkbenchTicket.fields.title,
-  kind: WorkbenchTicket.fields.kind,
   markdown: WorkbenchTicket.fields.markdown,
   // The retired primary column: internal only, it orders checkouts. See workbench-data-model.md.
   anchorProjectId: ProjectId,
@@ -251,9 +205,7 @@ const ticketFromRow = (
   WorkbenchTicket.make({
     id: row.id,
     projectId: row.projectId,
-    epicId: row.epicId,
     title: row.title,
-    kind: row.kind,
     markdown: row.markdown,
     repositoryProjectIds,
     status: row.status,
@@ -504,9 +456,6 @@ interface WorkbenchStoreShape extends Omit<
   readonly getTicket: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicket>, WorkbenchOperationError>;
-  readonly getEpic: (
-    epicId: WorkbenchEpicId,
-  ) => Effect.Effect<Option.Option<WorkbenchEpic>, WorkbenchOperationError>;
   readonly listTicketsNeedingSummary: Effect.Effect<
     ReadonlyArray<WorkbenchTicket>,
     WorkbenchOperationError
@@ -534,15 +483,6 @@ interface WorkbenchStoreShape extends Omit<
   readonly updateProject: (
     input: WorkbenchUpdateProjectInput,
   ) => Effect.Effect<WorkbenchProject, WorkbenchOperationError>;
-  readonly createEpic: (
-    input: WorkbenchCreateEpicInput,
-  ) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
-  readonly updateEpic: (
-    input: WorkbenchUpdateEpicInput,
-  ) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
-  readonly archiveEpic: (
-    input: WorkbenchArchiveEpicInput,
-  ) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
   /** A promoted draft carries its agent-written provenance and Progress onto its Ticket. */
   readonly createTicket: (
     input: WorkbenchCreateTicketInput & WorkbenchTicketAgentFields,
@@ -590,12 +530,6 @@ interface WorkbenchStoreShape extends Omit<
   readonly removeReference: (
     input: WorkbenchRemoveReferenceInput & { readonly actingThreadId?: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
-  /** `null` unlinks. A stale `expectedUpdatedAt` fails with `epic_changed`. */
-  readonly setEpicJiraIssueLink: (input: {
-    readonly epicId: WorkbenchEpicId;
-    readonly jiraIssue: WorkbenchJiraIssue | null;
-    readonly expectedUpdatedAt: string;
-  }) => Effect.Effect<WorkbenchEpic, WorkbenchOperationError>;
   readonly requestTicketSummary: (
     input: WorkbenchRequestTicketSummaryInput,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
@@ -821,25 +755,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ORDER BY workbench_project_id ASC, position ASC
     `,
   });
-  const listEpicRows = SqlSchema.findAll({
-    Request: Schema.Void,
-    Result: WorkbenchEpicRow,
-    execute: () => sql`
-      SELECT
-        epic_id AS "id",
-        workbench_project_id AS "projectId",
-        title,
-        markdown,
-        archived_at AS "archivedAt",
-        jira_issue_key AS "jiraIssueKey",
-        jira_issue_url AS "jiraIssueUrl",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM workbench_epics
-      WHERE workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL)
-      ORDER BY created_at ASC, epic_id ASC
-    `,
-  });
   const listTicketRows = SqlSchema.findAll({
     Request: Schema.Boolean,
     Result: WorkbenchTicketRow,
@@ -847,9 +762,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         ticket_id AS "id",
         workbench_project_id AS "projectId",
-        epic_id AS "epicId",
         title,
-        kind,
         CASE WHEN ${compact ? 1 : 0} AND archived_at IS NOT NULL THEN '' ELSE markdown END AS markdown,
         primary_t3_project_id AS "anchorProjectId",
         status,
@@ -1448,12 +1361,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
     if (Option.isNone(project))
       return yield* new WorkbenchOperationError({
         code: "project_not_found",
-        message: "The Workbench Workspace does not exist.",
+        message: "The Board does not exist.",
       });
     if (project.value.archivedAt !== null)
       return yield* new WorkbenchOperationError({
         code: "project_archived",
-        message: "Archived Workbench Workspaces are read-only. Restore the Workspace first.",
+        message: "Archived Boards are read-only. Restore the Board first.",
       });
     return;
   });
@@ -1470,12 +1383,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
     if (Option.isNone(project))
       return yield* new WorkbenchOperationError({
         code: "project_not_found",
-        message: "The Workbench Workspace does not exist.",
+        message: "The Board does not exist.",
       });
     if (project.value.revision !== input.expectedRevision)
       return yield* new WorkbenchOperationError({
         code: "project_changed",
-        message: "The Workbench Workspace changed. Refresh it and try again.",
+        message: "The Board changed. Refresh it and try again.",
       });
     return project.value;
   });
@@ -1493,13 +1406,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
       return yield* new WorkbenchOperationError({
         code: "ticket_draft_busy",
         message:
-          "Ticket preparation is changing. Finish or retry it before changing the workspace lifecycle.",
+          "Ticket preparation is changing. Finish or retry it before archiving or deleting the Board.",
       });
     if (busy.length > 0)
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_in_use",
         message:
-          "A Ticket Workspace is changing. Wait for it to finish before changing the Workspace lifecycle.",
+          "A Ticket's worktrees are changing. Wait for them to finish before archiving or deleting the Board.",
       });
   });
 
@@ -1523,9 +1436,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         ticket_id AS "id",
         workbench_project_id AS "projectId",
-        epic_id AS "epicId",
         title,
-        kind,
         markdown,
         primary_t3_project_id AS "anchorProjectId",
         status,
@@ -1616,27 +1527,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
     return ticket.value;
   });
-  const findEpicRow = SqlSchema.findOneOption({
-    Request: FindEpicInput,
-    Result: WorkbenchEpicRow,
-    execute: ({ epicId }) => sql`
-      SELECT
-        epic_id AS "id",
-        workbench_project_id AS "projectId",
-        title,
-        markdown,
-        archived_at AS "archivedAt",
-        jira_issue_key AS "jiraIssueKey",
-        jira_issue_url AS "jiraIssueUrl",
-        created_at AS "createdAt",
-        updated_at AS "updatedAt"
-      FROM workbench_epics
-      WHERE epic_id = ${epicId}
-        AND workbench_project_id IN (SELECT project_id FROM workbench_projects WHERE deleted_at IS NULL)
-    `,
-  });
-  const findEpic = (input: typeof FindEpicInput.Type) =>
-    findEpicRow(input).pipe(Effect.map(Option.map(epicFromRow)));
   const findNativeThread = Effect.fn("WorkbenchStore.findNativeThread")(function* ({
     threadId,
   }: {
@@ -1828,13 +1718,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
       if (Option.isNone(workspace)) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_not_found",
-          message: "The Ticket Workspace does not exist.",
+          message: "The Ticket's worktrees do not exist.",
         });
       }
       if (workspace.value.attemptId !== attemptId) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_preparation_changed",
-          message: "The Ticket Workspace preparation changed before it could be updated.",
+          message: "Ticket preparation changed before it could be updated.",
         });
       }
       return workspace.value;
@@ -1847,7 +1737,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         const [
           projectRows,
           linkRows,
-          epicRows,
           ticketRows,
           ticketRepositoryRows,
           assignments,
@@ -1859,7 +1748,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
         ] = yield* Effect.all([
           listProjectRows(),
           listProjectLinkRows(),
-          listEpicRows(),
           listTicketRows(compact),
           listTicketRepositoryRows(),
           listAssignmentRows(),
@@ -1894,7 +1782,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
           workspaceRepositoriesByTicket.set(repository.ticketId, repositories);
         }
         return WorkbenchSnapshot.make({
-          supportsEpicLifecycle: true,
           ticketDrafts: yield* listTicketDrafts.pipe(
             Effect.provideService(WorkbenchNativeAccess, native),
             Effect.provideService(SqlClient.SqlClient, sql),
@@ -1903,7 +1790,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ...project,
             linkedProjectIds: linksByProject.get(project.id) ?? [],
           })),
-          epics: epicRows.map(epicFromRow),
           tickets: ticketRows.map((ticket) => {
             // The Board needs only the counts; the Ticket read carries the list.
             const { progress: _progress, ...snapshotTicket } = ticketFromRow(
@@ -2003,7 +1889,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     function* (input: WorkbenchClaimTicketWorkspaceInput) {
       yield* requireActiveTicket({
         ticketId: input.ticketId,
-        archivedMessage: "Archived Workbench Tickets cannot receive a Workspace.",
+        archivedMessage: "Archived Tickets cannot prepare worktrees.",
       });
       const ticketRepositories = yield* listTicketRepositoryRowsByTicket({
         ticketId: input.ticketId,
@@ -2019,7 +1905,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       if (!repositoryScopeMatches) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_preparation_changed",
-          message: "The Ticket repository scope changed before its Workspace could be prepared.",
+          message: "The Ticket's repositories changed before its worktrees could be prepared.",
         });
       }
     },
@@ -2190,18 +2076,18 @@ const makeWorkbenchStore = Effect.gen(function* () {
             yield* requireTicketRevision({
               ticketId: input.ticketId,
               expectedRevision: input.expectedRevision,
-              revisionMessage: "The Ticket changed before Workspace recovery could start.",
+              revisionMessage: "The Ticket changed before worktree recovery could start.",
               activeOnly: true,
             });
             yield* requireActiveTicket({
               ticketId: input.ticketId,
-              archivedMessage: "Archived Workbench Tickets cannot recover a Workspace.",
+              archivedMessage: "Archived Tickets cannot recover worktrees.",
             });
             const workspace = yield* requireTicketWorkspaceAttempt(input);
             if (workspace.status !== "failed") {
               return yield* new WorkbenchOperationError({
                 code: "ticket_workspace_preparation_changed",
-                message: "The Ticket Workspace changed before recovery could start.",
+                message: "The Ticket's worktrees changed before recovery could start.",
               });
             }
             yield* sql`
@@ -2231,20 +2117,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
           if (branchOwner.length > 0) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_preparation_failed",
-              message: `The Ticket Workspace branch ${input.branchName} is already assigned to another Ticket.`,
+              message: `The Ticket branch ${input.branchName} is already assigned to another Ticket.`,
             });
           }
           const existing = yield* findTicketWorkspaceRow({ ticketId: input.ticketId });
           if (Option.isSome(existing) && existing.value.status === "preparing") {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_preparation_in_progress",
-              message: "The Ticket Workspace is already being prepared.",
+              message: "The Ticket's worktrees are already being prepared.",
             });
           }
           if (Option.isSome(existing) && existing.value.status === "releasing") {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_preparation_in_progress",
-              message: "The Ticket Workspace is being released.",
+              message: "The Ticket's worktrees are being released.",
             });
           }
           const existingRepositories = Option.isSome(existing)
@@ -2279,7 +2165,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     if (workspace.status !== "preparing")
       return yield* new WorkbenchOperationError({
         code: "ticket_workspace_preparation_changed",
-        message: "The Ticket Workspace is no longer being prepared.",
+        message: "The Ticket's worktrees are no longer being prepared.",
       });
   });
 
@@ -2307,7 +2193,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             if (updated.length === 0) {
               return yield* new WorkbenchOperationError({
                 code: "ticket_workspace_repository_not_found",
-                message: "The Ticket Workspace repository does not exist.",
+                message: "The Ticket repository does not exist.",
               });
             }
             yield* sql`
@@ -2337,7 +2223,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_preparation_failed",
-              message: "Every Ticket repository must be ready before its Workspace is ready.",
+              message: "Every Ticket repository must be ready before preparation completes.",
             });
           }
           yield* sql`
@@ -2375,7 +2261,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             if (updated.length === 0) {
               return yield* new WorkbenchOperationError({
                 code: "ticket_workspace_repository_not_found",
-                message: "The Ticket Workspace repository does not exist.",
+                message: "The Ticket repository does not exist.",
               });
             }
           }
@@ -2419,7 +2305,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             if (updated.length === 0) {
               return yield* new WorkbenchOperationError({
                 code: "ticket_workspace_repository_not_found",
-                message: "The Ticket Workspace repository does not exist.",
+                message: "The Ticket repository does not exist.",
               });
             }
             yield* sql`
@@ -2448,8 +2334,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ) {
         return yield* new WorkbenchOperationError({
           code: "ticket_workspace_in_use",
-          message:
-            "The Ticket Workspace cannot be reset while a native Thread still uses one of its worktrees.",
+          message: "The Ticket's worktrees cannot be reset while a Thread still uses one of them.",
         });
       }
     }
@@ -2471,7 +2356,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     if (ticket.deletedAt === null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_changed",
-        message: "Only a deleted Ticket's retained Workspace can be removed.",
+        message: "Only a deleted Ticket's retained worktrees can be removed.",
       });
     }
   });
@@ -2493,7 +2378,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           if (input.requireActiveTicket === true) {
             yield* requireActiveTicket({
               ticketId: input.ticketId,
-              archivedMessage: "Archived Workbench Tickets cannot release a Workspace.",
+              archivedMessage: "Archived Tickets cannot release worktrees.",
             });
           }
           if (input.requireDeletedTicket === true) {
@@ -2503,7 +2388,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             yield* requireTicketRevision({
               ticketId: input.ticketId,
               expectedRevision: input.expectedRevision,
-              revisionMessage: "The Ticket changed before Workspace recovery could start.",
+              revisionMessage: "The Ticket changed before worktree recovery could start.",
               activeOnly: true,
             });
           }
@@ -2514,7 +2399,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           if (workspace.status === "preparing") {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_preparation_in_progress",
-              message: "The Ticket Workspace is still being prepared.",
+              message: "The Ticket's worktrees are still being prepared.",
             });
           }
           const assignment = yield* input.requireNoLinkedThreads
@@ -2524,8 +2409,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
               message: input.requireNoLinkedThreads
-                ? "The Ticket Workspace cannot be reset while it has linked Agent Threads, including archived or historical Threads."
-                : "The Ticket Workspace cannot be released while it has an active Agent Thread.",
+                ? "The Ticket's worktrees cannot be reset while it has linked Threads, including archived or historical Threads."
+                : "The Ticket's worktrees cannot be released while it has an active Thread.",
             });
           }
           if (input.requireNoLinkedThreads === true) {
@@ -2661,7 +2546,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           return yield* new WorkbenchOperationError({
             code: "ticket_draft_busy",
             message:
-              "Stop or finish the planning conversation before deleting its Ticket or workspace.",
+              "Stop or finish the planning conversation before deleting its Ticket or Board.",
           });
         }
       }
@@ -2681,18 +2566,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
           }>`SELECT thread_id AS "threadId"
             FROM workbench_ticket_drafts WHERE workbench_project_id = ${input.id} AND phase <> 'working'`;
           yield* requireIdlePlanningThreads(planningThreads.map((row) => row.threadId));
-          const counts = yield* sql<{ readonly ticketCount: number; readonly epicCount: number }>`
-        SELECT (SELECT COUNT(*) FROM workbench_tickets WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL) AS "ticketCount",
-          (SELECT COUNT(*) FROM workbench_epics WHERE workbench_project_id = ${input.id}) AS "epicCount"
+          const counts = yield* sql<{ readonly ticketCount: number }>`
+        SELECT COUNT(*) AS "ticketCount" FROM workbench_tickets
+        WHERE workbench_project_id = ${input.id} AND deleted_at IS NULL
       `;
-          if (
-            counts[0]?.ticketCount !== input.expectedTicketCount ||
-            counts[0]?.epicCount !== input.expectedEpicCount
-          )
+          if (counts[0]?.ticketCount !== input.expectedTicketCount)
             return yield* new WorkbenchOperationError({
               code: "project_changed",
               message:
-                "The Workspace planning data changed. Review the updated deletion counts and try again.",
+                "The Board planning data changed. Review the updated deletion counts and try again.",
             });
           // Tombstones preserve Assignment reservations and retained worktree ownership.
           yield* sql`
@@ -2740,7 +2622,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           if (Option.isNone(current)) {
             return yield* new WorkbenchOperationError({
               code: "project_not_found",
-              message: "The Workbench Workspace does not exist.",
+              message: "The Board does not exist.",
             });
           }
 
@@ -2751,7 +2633,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           )
             return yield* new WorkbenchOperationError({
               code: "project_changed",
-              message: "The Workbench Workspace changed. Refresh it and try again.",
+              message: "The Board changed. Refresh it and try again.",
             });
           const currentLinks = (yield* listProjectLinkRows()).filter(
             (link) => link.projectId === input.id,
@@ -2808,113 +2690,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
-  const requireMutableEpic = Effect.fnUntraced(function* (epicId: WorkbenchEpicId) {
-    yield* sql`UPDATE workbench_epics SET updated_at = updated_at WHERE epic_id = ${epicId}`;
-    const epic = yield* findEpic({ epicId });
-    if (Option.isNone(epic))
-      return yield* new WorkbenchOperationError({
-        code: "epic_not_found",
-        message: "The Workbench Epic does not exist.",
-      });
-    yield* requireActiveProject(epic.value.projectId);
-    return epic.value;
-  });
-
-  const createEpic: WorkbenchStoreShape["createEpic"] = Effect.fn("WorkbenchStore.createEpic")(
-    (input) =>
-      sql
-        .withTransaction(
-          Effect.gen(function* () {
-            yield* lockProject(input.projectId);
-            yield* requireActiveProject(input.projectId);
-            yield* sql`
-      INSERT INTO workbench_epics (
-        epic_id,
-        workbench_project_id,
-        title,
-        markdown,
-        archived_at,
-        created_at,
-        updated_at
-      ) VALUES (
-        ${input.id},
-        ${input.projectId},
-        ${input.title},
-        ${input.markdown},
-        NULL,
-        ${input.createdAt},
-        ${input.createdAt}
-      )
-    `.pipe(Effect.mapError(persistenceError));
-            return WorkbenchEpic.make({
-              ...input,
-              archivedAt: null,
-              jiraIssue: null,
-              updatedAt: input.createdAt,
-            });
-          }),
-        )
-        .pipe(Effect.mapError(workbenchStoreError)),
-  );
-
-  const updateEpic: WorkbenchStoreShape["updateEpic"] = Effect.fn("WorkbenchStore.updateEpic")(
-    (input) =>
-      sql
-        .withTransaction(
-          Effect.gen(function* () {
-            const current = yield* requireMutableEpic(input.id);
-            const updatedAt = advanceEpicUpdatedAt(current.updatedAt, input.updatedAt);
-            yield* sql`
-      UPDATE workbench_epics
-      SET
-        title = ${input.title},
-        markdown = ${input.markdown},
-        updated_at = ${updatedAt}
-      WHERE epic_id = ${input.id}
-    `.pipe(Effect.mapError(persistenceError));
-            const updated = yield* findEpic({ epicId: input.id }).pipe(
-              Effect.mapError(persistenceError),
-            );
-            return Option.getOrThrow(updated);
-          }),
-        )
-        .pipe(Effect.mapError(workbenchStoreError)),
-  );
-
-  const archiveEpic: WorkbenchStoreShape["archiveEpic"] = Effect.fn("WorkbenchStore.archiveEpic")(
-    (input) =>
-      sql
-        .withTransaction(
-          Effect.gen(function* () {
-            const current = yield* requireMutableEpic(input.id);
-            if (
-              input.expectedUpdatedAt !== undefined &&
-              input.expectedUpdatedAt !== current.updatedAt
-            ) {
-              return yield* new WorkbenchOperationError({
-                code: "epic_changed",
-                message: "The Workbench Epic changed. Refresh it and try again.",
-              });
-            }
-            const updatedAt = advanceEpicUpdatedAt(
-              current.updatedAt,
-              DateTime.formatIso(yield* DateTime.now),
-            );
-            yield* sql`
-      UPDATE workbench_epics
-      SET archived_at = ${input.archivedAt}, updated_at = ${updatedAt}
-      WHERE epic_id = ${input.id}
-    `.pipe(Effect.mapError(persistenceError));
-            return WorkbenchEpic.make({
-              ...current,
-              archivedAt: input.archivedAt,
-              updatedAt,
-            });
-          }),
-        )
-        .pipe(Effect.mapError(workbenchStoreError)),
-  );
-
   const validateTicketRepositoryScope = Effect.fn("WorkbenchStore.validateTicketRepositoryScope")(
     function* ({
       projectId,
@@ -2931,45 +2706,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
         if (Option.isNone(link)) {
           return yield* new WorkbenchOperationError({
             code: "repository_not_linked",
-            message: "A Ticket repository is not linked to its Workbench Workspace.",
+            message: "A Ticket repository is not linked to its Board.",
           });
         }
       }
       return normalizedRepositoryProjectIds;
     },
   );
-
-  const validateTicketEpic = Effect.fn("WorkbenchStore.validateTicketEpic")(function* ({
-    projectId,
-    epicId,
-    allowArchived = false,
-  }: {
-    projectId: WorkbenchProjectId;
-    epicId: WorkbenchEpicId | null;
-    allowArchived?: boolean;
-  }) {
-    if (epicId === null) return null;
-    const epic = yield* findEpic({ epicId }).pipe(Effect.mapError(persistenceError));
-    if (Option.isNone(epic)) {
-      return yield* new WorkbenchOperationError({
-        code: "epic_not_found",
-        message: "The Workbench Epic does not exist.",
-      });
-    }
-    if (epic.value.projectId !== projectId) {
-      return yield* new WorkbenchOperationError({
-        code: "epic_project_mismatch",
-        message: "The Workbench Epic belongs to a different Workspace.",
-      });
-    }
-    if (epic.value.archivedAt !== null && !allowArchived) {
-      return yield* new WorkbenchOperationError({
-        code: "epic_archived",
-        message: "Archived Workbench Epics cannot receive Tickets.",
-      });
-    }
-    return epicId;
-  });
 
   const createTicket: WorkbenchStoreShape["createTicket"] = Effect.fn(
     "WorkbenchStore.createTicket",
@@ -2982,15 +2725,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ...ticketInput
     } = input;
     const references = yield* normalizeStagedReferences(stagedReferences);
-    const { epicId, repositoryProjectIds } = yield* sql
+    const repositoryProjectIds = yield* sql
       .withTransaction(
         Effect.gen(function* () {
           yield* lockProject(input.projectId);
           yield* requireActiveProject(input.projectId);
-          const epicId = yield* validateTicketEpic({
-            projectId: input.projectId,
-            epicId: input.epicId ?? null,
-          });
           const repositoryProjectIds = yield* validateTicketRepositoryScope({
             projectId: input.projectId,
             repositoryProjectIds: input.repositoryProjectIds,
@@ -2999,9 +2738,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             INSERT INTO workbench_tickets (
               ticket_id,
               workbench_project_id,
-              epic_id,
               title,
-              kind,
               markdown,
               primary_t3_project_id,
               status,
@@ -3021,9 +2758,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ) VALUES (
               ${input.id},
               ${input.projectId},
-              ${epicId},
               ${input.title},
-              ${input.kind},
               ${input.markdown},
               ${repositoryProjectIds[0]},
               'todo',
@@ -3059,14 +2794,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
               createdAt: input.createdAt,
             });
           }
-          return { epicId, repositoryProjectIds };
+          return repositoryProjectIds;
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
 
     const ticket = WorkbenchTicket.make({
       ...ticketInput,
-      epicId,
       repositoryProjectIds,
       updatedByThreadId,
       ...progressFields({ progress, progressUpdatedByThreadId }),
@@ -3093,9 +2827,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     readonly input: WorkbenchUpdateTicketInput;
     readonly current: typeof WorkbenchTicketRow.Type;
   }) => ({
-    epicId: input.epicId === undefined ? current.epicId : input.epicId,
     title: input.title ?? current.title,
-    kind: input.kind ?? current.kind,
     markdown: input.markdown ?? current.markdown,
     status: input.status ?? current.status,
     blocked: input.blocked ?? current.blocked === 1,
@@ -3201,18 +2933,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const currentRepositories = yield* listTicketRepositoryRowsByTicket({
             ticketId: input.id,
           });
-          const {
-            epicId: requestedEpicId,
-            title,
-            kind,
-            markdown,
-            status,
-            blocked,
-          } = resolveTicketUpdateFields({ input, current });
-          const epicId = yield* validateTicketEpic({
-            projectId: current.projectId,
-            epicId: requestedEpicId,
-            allowArchived: requestedEpicId === current.epicId,
+          const { title, markdown, status, blocked } = resolveTicketUpdateFields({
+            input,
+            current,
           });
           const currentRepositoryProjectIds = currentRepositories.map(
             (repository) => repository.repositoryProjectId,
@@ -3240,7 +2963,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "Ticket repository scope cannot change while its Workspace is changing.",
+              message:
+                "Ticket repositories cannot change while the Ticket's worktrees are changing.",
             });
           }
           yield* requireRemovedRepositoriesIdle({
@@ -3257,8 +2981,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
             UPDATE workbench_tickets
             SET
               title = ${title},
-              epic_id = ${epicId},
-              kind = ${kind},
               markdown = ${markdown},
               primary_t3_project_id = ${anchorProjectId},
               status = ${status},
@@ -3298,9 +3020,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticket: WorkbenchTicket.make({
               id: current.id,
               projectId: current.projectId,
-              epicId,
               title,
-              kind,
               markdown,
               repositoryProjectIds,
               status,
@@ -3552,33 +3272,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
-  const setEpicJiraIssueLink: WorkbenchStoreShape["setEpicJiraIssueLink"] = Effect.fn(
-    "WorkbenchStore.setEpicJiraIssueLink",
-  )(function* ({ epicId, jiraIssue, expectedUpdatedAt }) {
-    const now = DateTime.formatIso(yield* DateTime.now);
-    return yield* sql
-      .withTransaction(
-        Effect.gen(function* () {
-          const current = yield* requireMutableEpic(epicId);
-          if (current.updatedAt !== expectedUpdatedAt) {
-            return yield* new WorkbenchOperationError({
-              code: "epic_changed",
-              message: "The Workbench Epic changed. Refresh it and try again.",
-            });
-          }
-          const updatedAt = advanceEpicUpdatedAt(current.updatedAt, now);
-          yield* sql`
-            UPDATE workbench_epics
-            SET jira_issue_key = ${jiraIssue?.key ?? null}, jira_issue_url = ${jiraIssue?.url ?? null},
-              updated_at = ${updatedAt}
-            WHERE epic_id = ${epicId}
-          `;
-          return WorkbenchEpic.make({ ...current, jiraIssue, updatedAt });
-        }),
-      )
-      .pipe(Effect.mapError(workbenchStoreError));
-  });
-
   const requestTicketSummary: WorkbenchStoreShape["requestTicketSummary"] = Effect.fn(
     "WorkbenchStore.requestTicketSummary",
   )(function* (input) {
@@ -3727,7 +3420,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "The Ticket Workspace is changing and cannot be archived.",
+              message: "The Ticket's worktrees are changing, so the Ticket cannot be archived.",
             });
           }
           yield* sql`
@@ -3795,7 +3488,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "The Ticket Workspace is changing and cannot be deleted.",
+              message: "The Ticket's worktrees are changing, so the Ticket cannot be deleted.",
             });
           }
           yield* sql`
@@ -3875,7 +3568,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "The Ticket Workspace is changing and cannot receive an Assignment.",
+              message: "The Ticket's worktrees are changing, so a Thread cannot be linked.",
             });
           }
           yield* requireAssignableThread({
@@ -3910,7 +3603,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "The Ticket Workspace is changing and cannot unlink an Agent Thread.",
+              message: "The Ticket's worktrees are changing, so a Thread cannot be unlinked.",
             });
           }
           // Remove historical rows too so the native Thread can be linked to
@@ -3951,7 +3644,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ) {
             return yield* new WorkbenchOperationError({
               code: "ticket_workspace_in_use",
-              message: "The Ticket Workspace is changing and cannot replace an Agent Thread.",
+              message: "The Ticket's worktrees are changing, so a Thread cannot be replaced.",
             });
           }
           const assignment = yield* findActiveAssignmentByTicketAndThread({
@@ -4042,9 +3735,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
       NodeSqliteClient.readOnly,
       Effect.mapError(persistenceError),
     ),
-    getEpic: Effect.fn("WorkbenchStore.getEpic")((epicId) =>
-      findEpic({ epicId }).pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError)),
-    ),
     getSnapshot: getSnapshot(false).pipe(NodeSqliteClient.readOnly),
     getCompactSnapshot: getSnapshot(true).pipe(NodeSqliteClient.readOnly),
     listTicketsNeedingSummary: listTicketsNeedingSummary(),
@@ -4057,9 +3747,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     deleteProject,
     createProject,
     updateProject,
-    createEpic,
-    updateEpic,
-    archiveEpic,
     createTicket,
     updateTicket,
     initializeTicketExecution,
@@ -4067,7 +3754,6 @@ const makeWorkbenchStore = Effect.gen(function* () {
     addReference,
     updateReference,
     removeReference,
-    setEpicJiraIssueLink,
     requestTicketSummary,
     completeTicketSummary,
     failTicketSummary,

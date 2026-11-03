@@ -123,7 +123,6 @@ export const seed = Effect.gen(function* () {
     id: ticketId,
     projectId: workspaceId,
     title: "Restart",
-    kind: "story",
     markdown: "Restart",
     repositoryProjectIds: [projectId],
     createdAt: now,

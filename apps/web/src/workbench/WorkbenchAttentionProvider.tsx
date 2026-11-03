@@ -14,9 +14,9 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { useWorkbenchAttention } from "./useWorkbenchAttention";
 import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
-import { useWorkbenchSidebar } from "./useWorkbenchSidebar";
 import { workbenchEnvironment } from "./state";
 import { activeWorkbenchAttentionAssignments } from "./workbenchAttention.logic";
+import { shouldShowWorkbenchSidebar } from "./workbenchNavigation";
 
 type Attention = ReturnType<typeof useWorkbenchAttention>;
 const emptyAttention: Attention = {
@@ -46,12 +46,9 @@ export function WorkbenchAttentionProvider({ children }: { children: ReactNode }
   });
   const activeThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
   const primaryEnvironmentId = usePrimaryEnvironmentId();
-  const { isOnWorkbench, context } = useWorkbenchSidebar(pathname);
+  const isOnWorkbench = shouldShowWorkbenchSidebar(pathname);
   const environmentId =
-    context?.environmentId ??
-    activeThreadRef?.environmentId ??
-    search.environmentId ??
-    primaryEnvironmentId;
+    activeThreadRef?.environmentId ?? search.environmentId ?? primaryEnvironmentId;
   const needsSnapshot = isOnWorkbench || activeThreadRef !== null;
   const query = useEnvironmentQuery(
     !needsSnapshot || environmentId === null

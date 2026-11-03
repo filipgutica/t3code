@@ -95,7 +95,7 @@ export function WorkbenchThreadRepositoryPicker({
               </MenuSubTrigger>
               <MenuSubPopup>
                 <MenuGroup>
-                  <MenuGroupLabel>Workspace repositories</MenuGroupLabel>
+                  <MenuGroupLabel>Board repositories</MenuGroupLabel>
                   {candidates.map((project) => (
                     <MenuItem
                       key={project.id}

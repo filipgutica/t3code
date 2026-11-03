@@ -123,7 +123,7 @@ function TicketFloatingChat(props: Omit<WorkbenchTicketFloatingChatProps, "enabl
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
   const threadContext = {
     recaps,
-    ticket: { id: ticketId, key: props.ticketKey ?? null, title: ticket.title, kind: ticket.kind },
+    ticket: { id: ticketId, key: props.ticketKey ?? null, title: ticket.title },
     localVisits,
   };
   const resolved = resolveWorkbenchFloatingChat({

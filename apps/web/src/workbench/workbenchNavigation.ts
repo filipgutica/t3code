@@ -1,27 +1,10 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
-export const parseWorkbenchThreadSearch = (
-  search: Record<string, unknown>,
-): { workbench?: true } => (search.workbench === true ? { workbench: true } : {});
-
 export const withWorkbenchEnvironmentSearch = <Search extends Record<string, unknown>>(
   environmentId: EnvironmentId | null,
   search: Search,
 ): Search & { readonly environmentId?: EnvironmentId } =>
   environmentId === null ? search : { environmentId, ...search };
 
-const isWorkbenchSidebarPage = (pathname: string): boolean => pathname === "/workbench";
-
-export const shouldShowWorkbenchSidebar = ({
-  pathname,
-  search,
-  hasTicketContext,
-  isContextPending = false,
-}: {
-  pathname: string;
-  search: Record<string, unknown>;
-  hasTicketContext: boolean;
-  isContextPending?: boolean;
-}) =>
-  isWorkbenchSidebarPage(pathname) ||
-  (search.workbench === true && (hasTicketContext || isContextPending));
+/** Only the Board route shows the Workbench sidebar; Thread pages keep the native one. */
+export const shouldShowWorkbenchSidebar = (pathname: string) => pathname === "/workbench";

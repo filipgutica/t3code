@@ -1,4 +1,4 @@
-import { WorkbenchProjectId, WorkbenchEpicId } from "@t3tools/contracts";
+import { WorkbenchProjectId } from "@t3tools/contracts";
 import {
   createMemoryHistory,
   createRootRoute,
@@ -10,7 +10,7 @@ import { describe, expect, it } from "vite-plus/test";
 import { parseWorkbenchSearch, redirectLegacyWorkbenchSearch } from "./workbenchSearch";
 
 describe("Workbench route search", () => {
-  it("preserves existing workspace links and selects a ticket before an epic", () => {
+  it("preserves existing workspace links and drops retired Epic links", () => {
     expect(
       parseWorkbenchSearch({
         environmentId: "remote",
@@ -27,7 +27,6 @@ describe("Workbench route search", () => {
     });
     expect(parseWorkbenchSearch({ projectId: "workspace", epicId: "epic" })).toEqual({
       workbenchProjectId: "workspace",
-      epicId: "epic",
     });
   });
 
@@ -61,10 +60,9 @@ describe("Workbench route search", () => {
       to: "/workbench",
       search: {
         workbenchProjectId: WorkbenchProjectId.make("another"),
-        epicId: WorkbenchEpicId.make("epic"),
       },
     });
-    expect(router.state.location.search).toEqual({ workbenchProjectId: "another", epicId: "epic" });
+    expect(router.state.location.search).toEqual({ workbenchProjectId: "another" });
   });
 
   it("uses namespaced values when old and new parameters are both present", () => {
@@ -82,7 +80,6 @@ describe("Workbench route search", () => {
         environmentId: 1,
         projectId: [],
         ticketId: null,
-        epicId: {},
         create: true,
         q: "native search",
       }),

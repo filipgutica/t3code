@@ -61,7 +61,7 @@ import {
   type WorkbenchPageHosts,
 } from "./WorkbenchPagePanel";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
-import { WorkbenchTicketKindIcon } from "./WorkbenchTicketMetadata";
+import { WorkbenchTicketIcon } from "./WorkbenchTicketMetadata";
 import { useWorkbenchThreadSettlement } from "./useWorkbenchThreadSettlement";
 import {
   useWorkbenchFloatingChatSize,
@@ -511,7 +511,7 @@ function NewThreadItems({
     <>
       {ticketThread ? (
         <MenuItem disabled={ticketThread.disabled} onClick={ticketThread.onStart}>
-          <WorkbenchTicketKindIcon kind={ticketThread.ticket.kind} />
+          <WorkbenchTicketIcon />
           <MenuItemLabel>
             New Thread on {ticketThread.ticket.key ?? ticketThread.ticket.title}
           </MenuItemLabel>

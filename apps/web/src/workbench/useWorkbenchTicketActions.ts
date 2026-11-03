@@ -23,10 +23,7 @@ import {
 } from "./workbenchRepositoryScope";
 
 type WorkbenchTicketPatch = Partial<
-  Pick<
-    WorkbenchTicket,
-    "title" | "markdown" | "kind" | "epicId" | "repositoryProjectIds" | "status" | "blocked"
-  >
+  Pick<WorkbenchTicket, "title" | "markdown" | "repositoryProjectIds" | "status" | "blocked">
 >;
 
 export function useWorkbenchTicketActions({
@@ -161,7 +158,7 @@ export function useWorkbenchTicketActions({
         });
         if (
           reportWorkbenchCommandFailure(prepared, (message) =>
-            setError(`Repository choices saved. Workspace preparation failed: ${message}`),
+            setError(`Repository choices saved. Worktree preparation failed: ${message}`),
           )
         ) {
           setWorkspacePreparationFailure(savedTicket.id);
@@ -274,7 +271,7 @@ export function useWorkbenchTicketActions({
       });
       if (
         reportWorkbenchCommandFailure(preparation, (message) =>
-          setError(`Repository selection saved. Workspace preparation failed: ${message}`),
+          setError(`Repository selection saved. Worktree preparation failed: ${message}`),
         )
       ) {
         setWorkspacePreparationFailure(ticket.id);

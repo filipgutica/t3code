@@ -40,7 +40,7 @@ profile for other repositories: set `DEMO_HOME` for setup and run, or pass
 
 ## Update synthetic local data
 
-Edit the repository, Workspace, Epic, Ticket, and assigned Thread fixtures in
+Edit the repository, Board, Ticket, and assigned Thread fixtures in
 [`local.mts`](local.mts). Each Ticket has an explicit stable ID; assigned Threads
 refer to that ID. Keep an existing ID when changing a title or moving a fixture
 row, because browser regressions and prepared worktrees refer to those IDs.
@@ -54,8 +54,8 @@ use a read-only GitHub adapter.
 
 ## Attention fixtures
 
-Every fresh local run and private PR preview seeds the **Synthetic attention
-fixtures** Epic in Orbit. Ticket and Thread titles start with `[Synthetic
+Every fresh local run and private PR preview seeds synthetic attention Tickets
+in Orbit. Ticket and Thread titles start with `[Synthetic
 attention]`. No provider ran: interrupted/completed turn outcomes are labelled,
 projection-only demo data written while the seeding server is stopped.
 
@@ -145,7 +145,7 @@ inline values. Local runs and private previews consume these same fixtures.
 Local runs and private previews seed References with
 [`issue-links.mts`](issue-links.mts) while the server is stopped. `orbit-001`,
 `orbit-002`, and `orbit-005` reference synthetic Jira issues on
-`jira.example.invalid`, and the **A welcoming first run** Epic links to one.
+`jira.example.invalid`.
 `orbit-001` also shows the other kinds: issue #1 on the pinned `orbit-web`
 repository, which does not exist and returns 404, a design link on `example.com`, and a file
 Reference to a synthetic plan written into its artifacts folder. Workbench shows

@@ -59,10 +59,8 @@ const createdAt = "2026-10-25T00:00:00.000Z";
 const ticket: WorkbenchTicket = {
   id: WorkbenchTicketId.make("ticket"),
   projectId,
-  epicId: null,
   title: "Fix board chat",
   markdown: "",
-  kind: "story",
   repositoryProjectIds: [repositoryId],
   status: "todo",
   blocked: false,
@@ -82,8 +80,6 @@ const draft: WorkbenchTicketDraft = {
   fields: {
     title: "Plan board chat",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt,
@@ -322,7 +318,7 @@ describe("resolveWorkbenchFloatingChat", () => {
   it("moves to the ticket's next Thread each time the picked one is settled, and back when unsettled", () => {
     const onTicket = (id: string, ticketId: string, settledAtTime: string | null = null) =>
       thread(id, null, {
-        ticket: { id: WorkbenchTicketId.make(ticketId), key: null, title: ticketId, kind: "story" },
+        ticket: { id: WorkbenchTicketId.make(ticketId), key: null, title: ticketId },
         settledAt: settledAtTime,
       });
     const settledAgain = "2026-10-31T00:00:00.000Z";
@@ -445,13 +441,11 @@ describe("getWorkbenchFloatingChatPickerRow", () => {
     id: WorkbenchTicketId.make("a"),
     key: "WB-1",
     title: "First",
-    kind: "bug" as const,
   };
   const unkeyed = {
     id: WorkbenchTicketId.make("b"),
     key: null,
     title: "Second",
-    kind: "story" as const,
   };
   const row = (title: string, ticket: WorkbenchFloatingChatThread["ticket"], board: boolean) => {
     const { ticketLabel, title: rowTitle } = getWorkbenchFloatingChatPickerRow(
@@ -489,7 +483,6 @@ describe("filterWorkbenchFloatingChatThreads", () => {
         id: WorkbenchTicketId.make("t"),
         key: "MA-5360",
         title: "Validate filters",
-        kind: "story",
       },
     }),
     thread("b", null, { title: "Update chart", recap: "Rendered the token usage series." }),
@@ -509,7 +502,6 @@ describe("getWorkbenchFloatingChatThreadLabel", () => {
       id: WorkbenchTicketId.make(title),
       key,
       title,
-      kind: "story" as const,
     });
     expect(
       getWorkbenchFloatingChatThreadLabel(

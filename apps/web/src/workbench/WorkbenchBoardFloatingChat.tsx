@@ -3,7 +3,6 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import type {
   EnvironmentId,
   WorkbenchAssignment,
-  WorkbenchEpicId,
   WorkbenchTicket,
   WorkbenchTicketDraft,
 } from "@t3tools/contracts";
@@ -73,7 +72,6 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
     readonly id: WorkbenchTicketId | null;
     readonly draft: WorkbenchConversationDraft | null;
   } | null;
-  readonly initialEpicId?: WorkbenchEpicId | null;
   readonly onNewDraft: () => void;
   readonly onDraftPrepared: (draft: WorkbenchConversationDraft) => void;
   readonly onCreateManually: () => void;
@@ -81,7 +79,6 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   readonly refreshSnapshot: () => void;
   /** Opens a draft's planning conversation; promoted drafts share the ticket's id. */
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
-  readonly onCreateEpic: (onCreated: (epicId: WorkbenchEpicId) => void) => void;
   /** Opens a ticket's Thread on its route, restoring it first when archived. */
   readonly onOpenThread: (threadId: ThreadId) => void;
   /** Starts another Thread on a ticket through the start-Thread dialog. */
@@ -356,7 +353,6 @@ function WorkbenchBoardDraftRequest({
       draft={draft}
       modelSelection={modelSelection}
       enabled={page.canStartDrafts}
-      initialEpicId={page.initialEpicId ?? null}
       onDraft={onDraft}
       refreshSnapshot={page.refreshSnapshot}
       unavailable={!page.canStartDrafts || (modelSelection === null && page.providers.length > 0)}
@@ -473,7 +469,7 @@ const useIsUntouchedDraft = (
 /** What an unsaved draft's card needs beyond the draft itself. */
 type DraftCardContext = Pick<
   WorkbenchBoardFloatingChatProps,
-  "referencesByTicket" | "threadsById" | "archivedThreadsById" | "onCreateEpic"
+  "referencesByTicket" | "threadsById" | "archivedThreadsById"
 >;
 
 /**
@@ -596,7 +592,7 @@ function BoardDraftCard({
   ...props
 }: Omit<
   Parameters<typeof WorkbenchDraftCard>[0],
-  "updatedBy" | "linkedProjects" | "epics" | "references" | "referenceCount" | "onCreateEpic"
+  "updatedBy" | "linkedProjects" | "references" | "referenceCount"
 > & {
   readonly environmentId: EnvironmentId;
   readonly card: DraftCardContext;
@@ -613,7 +609,6 @@ function BoardDraftCard({
         card.archivedThreadsById,
       )}
       linkedProjects={createContext.linkedProjects}
-      epics={createContext.epics}
       references={
         <WorkbenchDraftReferences
           environmentId={environmentId}
@@ -630,7 +625,6 @@ function BoardDraftCard({
         />
       }
       referenceCount={references.length}
-      onCreateEpic={card.onCreateEpic}
     >
       {children}
     </WorkbenchDraftCard>

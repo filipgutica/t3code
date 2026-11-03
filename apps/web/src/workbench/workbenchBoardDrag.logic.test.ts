@@ -1,14 +1,12 @@
-import { WorkbenchEpicId, type WorkbenchTicketStatus } from "@t3tools/contracts";
+import type { WorkbenchTicketStatus } from "@t3tools/contracts";
 import { describe, expect, it } from "vite-plus/test";
 
 import { canMoveWorkbenchBoardTicket } from "./workbenchBoardDrag.logic";
 
-const epicId = WorkbenchEpicId.make("epic-1");
 const move = {
-  ticket: { status: "todo" as const, epicId, archivedAt: null },
+  ticket: { status: "todo" as const, archivedAt: null },
   sourceColumnId: "todo",
-  target: { columnId: "in_progress", status: "in_progress" as const, epicId },
-  groupByEpic: true,
+  target: { columnId: "in_progress", status: "in_progress" as const },
   pending: false,
 };
 describe("Workbench board status drops", () => {
@@ -21,15 +19,15 @@ describe("Workbench board status drops", () => {
             ...move,
             ticket: { ...move.ticket, status: source },
             sourceColumnId: source,
-            target: { ...move.target, columnId: destination, status: destination },
+            target: { columnId: destination, status: destination },
           }),
         ).toBe(source !== destination);
       }
     }
   });
 
-  it("rejects pending, archived, removed, and cross-Epic moves", () => {
-    expect(canMoveWorkbenchBoardTicket({ ...move, ticket: { status: "todo", epicId } })).toBe(true);
+  it("rejects pending, archived, and removed moves", () => {
+    expect(canMoveWorkbenchBoardTicket({ ...move, ticket: { status: "todo" } })).toBe(true);
     expect(canMoveWorkbenchBoardTicket({ ...move, pending: true })).toBe(false);
     expect(
       canMoveWorkbenchBoardTicket({
@@ -38,21 +36,5 @@ describe("Workbench board status drops", () => {
       }),
     ).toBe(false);
     expect(canMoveWorkbenchBoardTicket({ ...move, sourceColumnId: undefined })).toBe(false);
-    expect(canMoveWorkbenchBoardTicket({ ...move, target: { ...move.target, epicId: null } })).toBe(
-      false,
-    );
-    expect(
-      canMoveWorkbenchBoardTicket({
-        ...move,
-        target: { ...move.target, epicId: WorkbenchEpicId.make("epic-2") },
-      }),
-    ).toBe(false);
-    expect(
-      canMoveWorkbenchBoardTicket({
-        ...move,
-        groupByEpic: false,
-        target: { ...move.target, epicId: null },
-      }),
-    ).toBe(true);
   });
 });

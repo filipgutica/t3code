@@ -6,7 +6,6 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketDraft,
   WorkbenchTicketId,
-  WorkbenchTicketKind,
 } from "@t3tools/contracts";
 
 import { getAssignmentsForTicket } from "./workbench.logic";
@@ -27,7 +26,6 @@ export interface WorkbenchFloatingChatTicket {
   /** The first issue Reference label. */
   readonly key: string | null;
   readonly title: string;
-  readonly kind: WorkbenchTicketKind;
 }
 
 export interface WorkbenchFloatingChatThread {
@@ -104,7 +102,6 @@ export const getWorkbenchBoardChatThreads = ({
             id: ticket.id,
             key: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id))?.label ?? null,
             title: ticket.title,
-            kind: ticket.kind,
           }
         : null,
       recap: recaps.get(threadId) ?? null,

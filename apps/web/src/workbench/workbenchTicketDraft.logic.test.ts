@@ -44,8 +44,6 @@ const makeDraft = (
   fields: {
     title: "",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [],
   },
   createdAt: time,
@@ -57,7 +55,6 @@ const makeSnapshot = (drafts?: ReadonlyArray<WorkbenchConversationDraft>): Workb
   references: [],
   projects: [],
   ...(drafts === undefined ? {} : { ticketDrafts: drafts }),
-  epics: [],
   tickets: [],
   assignments: [],
   reservedThreadIds: [],

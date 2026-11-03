@@ -33,14 +33,14 @@ function Harness({
 it("opens and switches modes without changing the description", async () => {
   const onChange = vi.fn();
   await using _screen = await render(<Harness initial={source} onChange={onChange} />);
-  const editor = page.getByRole("textbox", { name: "Description" });
+  const editor = page.getByRole("textbox", { name: "Brief" });
   await expect.element(editor).toBeVisible();
   expect(editor.element().textContent).toContain("Intro with");
   // The bare URL shows as the Reference chip the saved description uses.
   await expect.element(page.getByRole("link", { name: "example.com" })).toBeVisible();
 
   await page.getByRole("button", { name: "Markdown" }).click();
-  await expect.element(page.getByRole("textbox", { name: "Description" })).toHaveValue(source);
+  await expect.element(page.getByRole("textbox", { name: "Brief" })).toHaveValue(source);
   await page.getByRole("button", { name: "Rich text" }).click();
   await expect.element(editor).toBeVisible();
   expect(onChange).not.toHaveBeenCalled();
@@ -51,7 +51,7 @@ it("puts the caret at the start of the description when asked", async () => {
   await using _screen = await render(
     <Harness initial="Draft brief" autoFocus onChange={onChange} />,
   );
-  await expect.element(page.getByRole("textbox", { name: "Description" })).toHaveFocus();
+  await expect.element(page.getByRole("textbox", { name: "Brief" })).toHaveFocus();
   await userEvent.keyboard("New ");
   expect(onChange).toHaveBeenLastCalledWith("New Draft brief");
 });
@@ -72,9 +72,7 @@ it("opens Jira wiki markup as Markdown source", async () => {
   await using _screen = await render(
     <WorkbenchTicketDescriptionEditor markdown={"h2. Goal\n"} jira onChange={() => {}} />,
   );
-  await expect
-    .element(page.getByRole("textbox", { name: "Description" }))
-    .toHaveValue("h2. Goal\n");
+  await expect.element(page.getByRole("textbox", { name: "Brief" })).toHaveValue("h2. Goal\n");
 });
 
 it("ignores typing while disabled", async () => {
@@ -91,7 +89,7 @@ it("ignores typing while disabled", async () => {
   await userEvent.keyboard(" more");
   expect(onChange).not.toHaveBeenCalled();
   await expect
-    .element(page.getByRole("textbox", { name: "Description" }))
+    .element(page.getByRole("textbox", { name: "Brief" }))
     .toHaveAttribute("contenteditable", "false");
 });
 
@@ -115,7 +113,7 @@ it("pastes Markdown as rich text", async () => {
   const data = new DataTransfer();
   data.setData("text/plain", "\n\n- Run `vp test`\n- See [plan](/Users/me/plan.md)");
   page
-    .getByRole("textbox", { name: "Description" })
+    .getByRole("textbox", { name: "Brief" })
     .element()
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
   await expect.element(page.getByRole("button", { name: "plan" })).toBeVisible();
@@ -148,7 +146,7 @@ it.each([
   const data = new DataTransfer();
   data.setData("text/plain", pasted);
   page
-    .getByRole("textbox", { name: "Description" })
+    .getByRole("textbox", { name: "Brief" })
     .element()
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
   expect(onChange).toHaveBeenLastCalledWith(saved);
@@ -161,7 +159,7 @@ it("pastes a URL into inline code as text", async () => {
   const data = new DataTransfer();
   data.setData("text/plain", "https://example.com");
   page
-    .getByRole("textbox", { name: "Description" })
+    .getByRole("textbox", { name: "Brief" })
     .element()
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
   expect(onChange.mock.lastCall?.[0]).toMatch(/^Run `[a-z]*https:\/\/example\.com[a-z]*` now$/);
@@ -176,7 +174,7 @@ it("pastes a URL as text after turning on inline code", async () => {
   const data = new DataTransfer();
   data.setData("text/plain", "https://example.com");
   page
-    .getByRole("textbox", { name: "Description" })
+    .getByRole("textbox", { name: "Brief" })
     .element()
     .dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true }));
   expect(onChange).toHaveBeenLastCalledWith("Run `https://example.com`");

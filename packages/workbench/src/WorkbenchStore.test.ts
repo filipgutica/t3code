@@ -1,11 +1,9 @@
 import {
-  WorkbenchArchiveEpicInput,
   RunId,
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchProjectId,
-  WorkbenchEpicId,
   WorkbenchTicketWorkspaceAttemptId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -19,8 +17,6 @@ import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Ref from "effect/Ref";
-import * as Schema from "effect/Schema";
-import * as TestClock from "effect/testing/TestClock";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as Stream from "effect/Stream";
 
@@ -32,7 +28,6 @@ import {
   type WorkbenchThreadContextSnapshot,
 } from "./WorkbenchStore.ts";
 
-const decodeArchiveEpicInput = Schema.decodeEffect(WorkbenchArchiveEpicInput);
 const orbitIssue = (number: number) => ({
   key: `ORBIT-${number}`,
   url: `https://acme.atlassian.net/browse/ORBIT-${number}`,
@@ -119,7 +114,6 @@ const seedTicket = (input: {
       id: input.ticketId,
       projectId: input.workspaceId,
       title: input.title ?? "Validate requests",
-      kind: "bug",
       markdown: input.markdown ?? "Reject invalid dimensions before querying the provider.",
       repositoryProjectIds: [input.projectId],
       createdAt,
@@ -178,7 +172,6 @@ describe("WorkbenchStore package boundary", () => {
         id: doneTicketId,
         projectId: workspaceId,
         title: "Already done",
-        kind: "story",
         markdown: "Keep the terminal status.",
         repositoryProjectIds: [projectId],
         createdAt: "2026-09-07T10:00:00.000Z",
@@ -611,7 +604,6 @@ describe("WorkbenchStore package boundary", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Original title",
-        kind: "story",
         markdown: "Original markdown",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -829,7 +821,6 @@ describe("WorkbenchStore package boundary", () => {
           id: ticketId,
           projectId: workspaceId,
           title: "Scope ticket",
-          kind: "story",
           markdown: "",
           repositoryProjectIds: [web, api, docs],
           createdAt: at,
@@ -900,7 +891,6 @@ describe("WorkbenchStore package boundary", () => {
         id: ticketId,
         projectId: workspaceId,
         title: "Assignment ticket",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt,
@@ -970,7 +960,6 @@ describe("Workbench Thread roster", () => {
         id: loneTicketId,
         projectId: workspaceId,
         title: "Alone",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt: "2026-10-20T10:00:00.000Z",
@@ -1073,19 +1062,11 @@ describe("Workbench Workspace lifecycle", () => {
   const projectId = ProjectId.make("lifecycle-native-project");
   const workspaceId = WorkbenchProjectId.make("lifecycle-workspace");
   const ticketId = WorkbenchTicketId.make("lifecycle-ticket");
-  const epicId = WorkbenchEpicId.make("lifecycle-epic");
   const threadId = ThreadId.make("lifecycle-thread");
   const now = "2026-10-09T10:00:00.000Z";
   const setup = Effect.gen(function* () {
     const store = yield* WorkbenchStore;
     yield* seedTicket({ store, projectId, workspaceId, ticketId });
-    yield* store.createEpic({
-      id: epicId,
-      projectId: workspaceId,
-      title: "Keep this Epic",
-      markdown: "Planning",
-      createdAt: now,
-    });
     yield* store.createAssignment({
       id: WorkbenchAssignmentId.make("lifecycle-assignment"),
       ticketId,
@@ -1108,174 +1089,8 @@ describe("Workbench Workspace lifecycle", () => {
     id: workspaceId,
     expectedRevision: 0,
     expectedTicketCount: 1,
-    expectedEpicCount: 1,
     deletedAt: now,
   };
-
-  it.effect("advertises reversible Epic lifecycle support in the host snapshot", () =>
-    Effect.gen(function* () {
-      const store = yield* setup;
-      expect(yield* store.getSnapshot).toHaveProperty("supportsEpicLifecycle", true);
-    }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect("rejects a replayed restore after a newer archive and clock-skewed content save", () =>
-    Effect.gen(function* () {
-      const store = yield* setup;
-      yield* TestClock.setTime(Date.parse("2026-10-09T12:00:01.000Z"));
-      const archived = yield* store.archiveEpic({ id: epicId, archivedAt: now });
-      const restore = yield* decodeArchiveEpicInput({
-        id: epicId,
-        archivedAt: null,
-        expectedUpdatedAt: archived.updatedAt,
-      });
-      yield* TestClock.setTime(Date.parse("2026-10-09T12:00:03.000Z"));
-      const restored = yield* store.archiveEpic(restore);
-      const rearchived = yield* store.archiveEpic(
-        yield* decodeArchiveEpicInput({
-          id: epicId,
-          archivedAt: now,
-          expectedUpdatedAt: restored.updatedAt,
-        }),
-      );
-      const saved = yield* store.updateEpic({
-        id: epicId,
-        title: "Saved after rearchive",
-        markdown: "Content from a client whose clock is behind",
-        updatedAt: archived.updatedAt,
-      });
-      const error = yield* Effect.flip(store.archiveEpic(restore));
-      expect(error.code).toBe("epic_changed");
-      expect(Date.parse(saved.updatedAt)).toBeGreaterThan(Date.parse(rearchived.updatedAt));
-      expect(saved.archivedAt).toBe(rearchived.archivedAt);
-      expect(restored.updatedAt).not.toBe(archived.updatedAt);
-      expect(rearchived.updatedAt).not.toBe(archived.updatedAt);
-      expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(saved);
-      const admission = yield* Effect.flip(
-        store.createTicket({
-          id: WorkbenchTicketId.make("stale-restore-child"),
-          projectId: workspaceId,
-          epicId,
-          title: "Blocked child",
-          kind: "story",
-          markdown: "",
-          repositoryProjectIds: [projectId],
-          createdAt: now,
-        }),
-      );
-      expect(admission.code).toBe("epic_archived");
-    }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect(
-    "archives and restores local Epics while preserving children and enforcing admission",
-    () =>
-      Effect.gen(function* () {
-        const store = yield* setup;
-        const child = {
-          id: WorkbenchTicketId.make("epic-child"),
-          projectId: workspaceId,
-          epicId,
-          title: "Child",
-          kind: "story" as const,
-          markdown: "",
-          repositoryProjectIds: [projectId],
-          createdAt: now,
-        };
-        yield* store.createTicket(child);
-        const archived = yield* store.archiveEpic({ id: epicId, archivedAt: now });
-        expect(archived.archivedAt).toBe(now);
-        const blocked = yield* Effect.flip(
-          store.createTicket({ ...child, id: WorkbenchTicketId.make("blocked-child") }),
-        );
-        expect(blocked.code).toBe("epic_archived");
-        const restore = yield* decodeArchiveEpicInput({
-          id: epicId,
-          archivedAt: null,
-        });
-        const restoredAt = "2026-10-10T10:00:00.000Z";
-        yield* TestClock.setTime(Date.parse(restoredAt));
-        const restored = yield* store.archiveEpic(restore);
-        expect(restored).toMatchObject({
-          archivedAt: null,
-          title: "Keep this Epic",
-          markdown: "Planning",
-          createdAt: now,
-        });
-        expect(restored.updatedAt).toBe(restoredAt);
-        expect((yield* store.getSnapshot).epics.find((epic) => epic.id === epicId)).toEqual(
-          restored,
-        );
-        yield* store.createTicket({ ...child, id: WorkbenchTicketId.make("restored-child") });
-        expect(
-          (yield* store.getSnapshot).tickets.find((ticket) => ticket.id === child.id)?.epicId,
-        ).toBe(epicId);
-      }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect("lets former Jira Epics archive, restore, and rename like local Epics", () =>
-    Effect.gen(function* () {
-      const store = yield* setup;
-      const importedId = WorkbenchEpicId.make("jira:binding:epic:123");
-      yield* store.createEpic({
-        id: importedId,
-        projectId: workspaceId,
-        title: "Imported",
-        markdown: "",
-        createdAt: now,
-      });
-      const archived = yield* store.archiveEpic({ id: importedId, archivedAt: now });
-      expect(archived.archivedAt).toBe(now);
-      expect(
-        (yield* store.archiveEpic({ id: importedId, archivedAt: null })).archivedAt,
-      ).toBeNull();
-      const renamed = yield* store.updateEpic({
-        id: importedId,
-        title: "Renamed locally",
-        markdown: "Local body",
-        updatedAt: now,
-      });
-      expect(renamed).toMatchObject({ title: "Renamed locally", markdown: "Local body" });
-    }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect("links, changes, and unlinks a Jira issue on an Epic by its version", () =>
-    Effect.gen(function* () {
-      const store = yield* setup;
-      const epic = Option.getOrThrow(yield* store.getEpic(epicId));
-      expect(epic.jiraIssue).toBeNull();
-      const linked = yield* store.setEpicJiraIssueLink({
-        epicId,
-        jiraIssue: orbitIssue(375),
-        expectedUpdatedAt: epic.updatedAt,
-      });
-      expect(linked.jiraIssue).toEqual(orbitIssue(375));
-      expect(linked.updatedAt).not.toBe(epic.updatedAt);
-      const stale = yield* Effect.flip(
-        store.setEpicJiraIssueLink({
-          epicId,
-          jiraIssue: orbitIssue(376),
-          expectedUpdatedAt: epic.updatedAt,
-        }),
-      );
-      expect(stale.code).toBe("epic_changed");
-      const changed = yield* store.setEpicJiraIssueLink({
-        epicId,
-        jiraIssue: orbitIssue(376),
-        expectedUpdatedAt: linked.updatedAt,
-      });
-      expect(
-        (yield* store.getSnapshot).epics.find((candidate) => candidate.id === epicId)?.jiraIssue,
-      ).toEqual(orbitIssue(376));
-      const unlinked = yield* store.setEpicJiraIssueLink({
-        epicId,
-        jiraIssue: null,
-        expectedUpdatedAt: changed.updatedAt,
-      });
-      expect(Option.getOrThrow(yield* store.getEpic(epicId))).toEqual(unlinked);
-      expect(unlinked.jiraIssue).toBeNull();
-    }).pipe(Effect.provide(layer())),
-  );
 
   it.effect("preserves archived planning and rejects every planning mutation until restored", () =>
     Effect.gen(function* () {
@@ -1287,7 +1102,6 @@ describe("Workbench Workspace lifecycle", () => {
       expect(Option.getOrThrow(yield* store.getProject(workspaceId))).toEqual(archived);
       const snapshot = yield* store.getSnapshot;
       expect(snapshot.tickets).toEqual(before.tickets);
-      expect(snapshot.epics).toEqual(before.epics);
       expect(snapshot.assignments).toEqual(before.assignments);
       const mutations = [
         store.updateProject({
@@ -1296,21 +1110,10 @@ describe("Workbench Workspace lifecycle", () => {
           linkedProjectIds: [projectId],
           updatedAt: now,
         }),
-        store.createEpic({
-          id: WorkbenchEpicId.make("blocked-epic"),
-          projectId: workspaceId,
-          title: "Blocked",
-          markdown: "",
-          createdAt: now,
-        }),
-        store.updateEpic({ id: epicId, title: "Blocked", markdown: "", updatedAt: now }),
-        store.archiveEpic({ id: epicId, archivedAt: now }),
-        store.archiveEpic({ id: epicId, archivedAt: null }),
         store.createTicket({
           id: WorkbenchTicketId.make("blocked-ticket"),
           projectId: workspaceId,
           title: "Blocked",
-          kind: "story",
           markdown: "",
           repositoryProjectIds: [projectId],
           createdAt: now,
@@ -1320,11 +1123,6 @@ describe("Workbench Workspace lifecycle", () => {
           expectedRevision: request.revision,
           title: "Blocked",
           updatedAt: now,
-        }),
-        store.setEpicJiraIssueLink({
-          epicId,
-          jiraIssue: orbitIssue(1),
-          expectedUpdatedAt: now,
         }),
         store.archiveTicket({
           ticketId,
@@ -1418,13 +1216,11 @@ describe("Workbench Workspace lifecycle", () => {
         archivedAt: now,
         updatedAt: now,
       });
-      yield* store.archiveEpic({ id: epicId, archivedAt: now });
       const before = yield* store.getSnapshot;
       yield* store.archiveProject(archive);
       yield* store.archiveProject({ ...archive, expectedRevision: 1, archivedAt: null });
       const restored = yield* store.getSnapshot;
       expect(restored.tickets).toEqual(before.tickets);
-      expect(restored.epics).toEqual(before.epics);
       expect(
         (yield* Effect.flip(
           store.updateProject({
@@ -1520,7 +1316,6 @@ describe("Workbench Workspace lifecycle", () => {
         const snapshot = yield* store.getSnapshot;
         expect(snapshot.projects).toEqual([]);
         expect(snapshot.tickets).toEqual([]);
-        expect(snapshot.epics).toEqual([]);
         expect(snapshot.assignments).toEqual([]);
         expect(snapshot.reservedThreadIds).toEqual([threadId]);
         expect(snapshot.ticketWorkspaces).toHaveLength(1);
@@ -1534,7 +1329,6 @@ describe("Workbench Workspace lifecycle", () => {
               id: WorkbenchTicketId.make("deleted-parent-ticket"),
               projectId: workspaceId,
               title: "Blocked",
-              kind: "story",
               markdown: "",
               repositoryProjectIds: [projectId],
               createdAt: now,
@@ -1649,7 +1443,6 @@ describe("Workbench Workspace lifecycle", () => {
           id: WorkbenchTicketId.make(id),
           projectId: workspaceId,
           title: id,
-          kind: "story",
           markdown: "",
           repositoryProjectIds: [projectId],
           references: urls.map((url) => ({ url, title: `Title ${url}` })),
@@ -1696,7 +1489,6 @@ describe("Workbench Workspace lifecycle", () => {
         id: importedId,
         projectId: workspaceId,
         title: "Imported",
-        kind: "story",
         markdown: "",
         repositoryProjectIds: [projectId],
         createdAt: now,
@@ -1748,7 +1540,6 @@ describe("Workbench Workspace lifecycle", () => {
             id: WorkbenchTicketId.make(id),
             projectId: workspaceId,
             title: id,
-            kind: "story",
             markdown: "",
             repositoryProjectIds: [projectId],
             createdAt: now,

@@ -235,7 +235,6 @@ it("opens a collapsed section to focus its waiting Thread from the pill", async 
     id: WorkbenchTicketId.make(id),
     key,
     title: `Ticket ${key}`,
-    kind: "story" as const,
   });
   const onTicket = (base: WorkbenchFloatingChatThread, key: string) => ({
     ...base,
@@ -272,7 +271,6 @@ it("scrolls to the showing Thread whenever the menu opens, even after its sectio
       id: WorkbenchTicketId.make(`ticket-${index}`),
       key: `PAY-${index}`,
       title: `Ticket ${index}`,
-      kind: "story" as const,
     },
   }));
   await using screen = await render(
@@ -297,7 +295,6 @@ it("moves keyboard focus to the showing Thread it scrolls to", async () => {
     id: WorkbenchTicketId.make("pay-1"),
     key: "PAY-1",
     title: "Refunds",
-    kind: "story" as const,
   };
   const threads = [
     ...["d1", "d2", "d3"].map((id) => thread(id, null, `Recap ${id}`)),
@@ -322,7 +319,6 @@ it("collapses a section in search results, and forgets it with the search", asyn
     id: WorkbenchTicketId.make("pay-2"),
     key: "PAY-2",
     title: "Payouts",
-    kind: "story" as const,
   };
   const threads = ["a", "b", "c", "d", "e", "f", "g", "h"].map((id) => ({
     ...thread(id),

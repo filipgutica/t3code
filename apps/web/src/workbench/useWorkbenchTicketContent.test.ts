@@ -26,9 +26,7 @@ const environmentId = EnvironmentId.make("archive-host");
 const ticket: WorkbenchTicket = {
   id: WorkbenchTicketId.make("archived-ticket"),
   projectId: WorkbenchProjectId.make("workspace"),
-  epicId: null,
   title: "Archived content",
-  kind: "story",
   markdown: "Original markdown",
   repositoryProjectIds: [],
   status: "done",

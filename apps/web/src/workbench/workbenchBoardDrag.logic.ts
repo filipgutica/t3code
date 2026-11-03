@@ -1,21 +1,18 @@
-import type { WorkbenchEpicId, WorkbenchTicket, WorkbenchTicketStatus } from "@t3tools/contracts";
+import type { WorkbenchTicket, WorkbenchTicketStatus } from "@t3tools/contracts";
 
 export const canMoveWorkbenchBoardTicket = ({
   ticket,
   sourceColumnId,
   target,
-  groupByEpic,
   pending,
 }: {
-  ticket: Pick<WorkbenchTicket, "status" | "epicId" | "archivedAt">;
+  ticket: Pick<WorkbenchTicket, "status" | "archivedAt">;
   sourceColumnId: string | undefined;
-  target: { columnId: string; status: WorkbenchTicketStatus; epicId: WorkbenchEpicId | null };
-  groupByEpic: boolean;
+  target: { columnId: string; status: WorkbenchTicketStatus };
   pending: boolean;
 }): boolean =>
   !pending &&
   ticket.archivedAt == null &&
   sourceColumnId !== undefined &&
   sourceColumnId !== target.columnId &&
-  ticket.status !== target.status &&
-  (!groupByEpic || ticket.epicId === target.epicId);
+  ticket.status !== target.status;

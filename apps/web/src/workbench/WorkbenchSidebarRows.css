@@ -41,7 +41,7 @@ button[data-workbench-sidebar-disclosure] {
   padding-top: calc(var(--sidebar-content-inset) + 3px);
 }
 
-/* Tickets use native's three lines: context and slot, title, repositories and PRs. */
+/* Tickets use three lines: title, status and slot, repositories and PRs. */
 [data-workbench-sidebar-detail-row] {
   position: relative;
   display: grid;
@@ -99,7 +99,6 @@ button[data-workbench-sidebar-disclosure] {
 
 [data-workbench-sidebar-detail-row="ticket"] [data-workbench-sidebar-title] {
   grid-column: 1 / -1;
-  grid-row: 2;
   font-weight: 500;
 }
 
@@ -117,8 +116,7 @@ button[data-workbench-sidebar-disclosure] {
   white-space: nowrap;
 }
 
-[data-workbench-sidebar-metadata-label][data-workbench-sidebar-line="1"] {
-  grid-row: 1;
+[data-workbench-sidebar-metadata-label][data-workbench-sidebar-line="2"] {
   line-height: 20px;
 }
 
@@ -163,6 +161,10 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-slot] {
   grid-row: 1;
   font-size: var(--text-xs);
+}
+
+[data-workbench-sidebar-detail-row="ticket"] [data-workbench-sidebar-slot] {
+  grid-row: 2;
 }
 
 [data-workbench-sidebar-metadata-controls] {

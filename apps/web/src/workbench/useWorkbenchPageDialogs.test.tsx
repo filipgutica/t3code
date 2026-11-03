@@ -3,7 +3,6 @@ import {
   ProjectId,
   ThreadId,
   WorkbenchProjectId,
-  WorkbenchEpicId,
   WorkbenchTicketId,
   type WorkbenchSnapshot,
   type WorkbenchTicketDraft,
@@ -21,7 +20,6 @@ import { create } from "react-test-renderer";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
-import { parseWorkbenchThreadSearch } from "./workbenchNavigation";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 const command = vi.hoisted(() => vi.fn());
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => command }));
@@ -36,13 +34,14 @@ const snapshot: WorkbenchSnapshot = {
       id: workspaceId,
       title: "Workspace",
       linkedProjectIds: [ProjectId.make("repo")],
+      archivedAt: null,
+      revision: 0,
       createdAt: time,
       updatedAt: time,
     },
   ],
   tickets: [],
   assignments: [],
-  epics: [],
   reservedThreadIds: [],
   threadRecaps: [],
   ticketWorkspaces: [],
@@ -63,7 +62,6 @@ function Harness({
     environmentId,
     initialProjectId: search.workbenchProjectId,
     initialTicketId: undefined,
-    initialEpicId: undefined,
     snapshot: data,
     tickets: [],
     pendingAction: null,
@@ -71,7 +69,6 @@ function Harness({
   });
   const dialogs = useWorkbenchPageDialogs({
     environmentId,
-    snapshot: data,
     projects: [],
     canOperate,
     selection,
@@ -101,8 +98,6 @@ const draft: WorkbenchTicketDraft = {
   fields: {
     title: "Planned",
     markdown: "",
-    kind: "story",
-    epicId: null,
     repositoryProjectIds: [ProjectId.make("repo")],
   },
   createdAt: time,
@@ -118,7 +113,6 @@ const mountRouter = async (entry: string) => {
   const thread = createRoute({
     getParentRoute: () => root,
     path: "/$environmentId/$threadId",
-    validateSearch: parseWorkbenchThreadSearch,
   });
   const router = createRouter({
     routeTree: root.addChildren([workbench, thread]),
@@ -161,62 +155,20 @@ describe("ticket planning conversation navigation", () => {
       await settle();
       await act(async () => {
         expect(await latestDialogs.saveWorkspace("Edited", [ProjectId.make("repo")])).toBe(false);
-        expect(await latestDialogs.submitEpic("Epic", "Description")).toBe(false);
         expect(await latestDialogs.submitProject("Workspace", [ProjectId.make("repo")])).toBe(
           false,
         );
         latestDialogs.openTicketDialog();
-        latestDialogs.openEpicDialog();
         latestDialogs.openTicketConversation();
       });
       expect(command).not.toHaveBeenCalled();
       expect(latestDialogs.ticketDialogOpen).toBe(false);
-      expect(latestDialogs.epicDialogOpen).toBe(false);
       expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
       expect(router.state.location.href).toBe(workspaceEntry);
     } finally {
       await unmount();
     }
   });
-
-  it.each([undefined, false, true])(
-    "requires host lifecycle support (%s) and sends the displayed Epic version",
-    async (supported) => {
-      const { settle, unmount } = await mount(workspaceEntry, {
-        ...snapshot,
-        ...(supported === undefined ? {} : { supportsEpicLifecycle: supported }),
-      });
-      const epic = {
-        id: WorkbenchEpicId.make("epic"),
-        projectId: workspaceId,
-        title: "Epic",
-        markdown: "",
-        archivedAt: null,
-        createdAt: time,
-        updatedAt: time,
-      };
-      command.mockResolvedValue({ _tag: "Success", value: epic });
-      try {
-        await settle();
-        for (const archivedAt of [time, null]) {
-          await act(async () => {
-            expect(await latestDialogs.setEpicArchived(epic, archivedAt)).toBe(supported === true);
-          });
-          if (supported === true) {
-            expect(command).toHaveBeenLastCalledWith({
-              environmentId,
-              input: { id: epic.id, archivedAt, expectedUpdatedAt: time },
-            });
-          } else {
-            expect(command).not.toHaveBeenCalled();
-          }
-        }
-      } finally {
-        await unmount();
-        vi.unstubAllGlobals();
-      }
-    },
-  );
 
   it("keeps create=ticket in the URL so reload and history resume the conversation", async () => {
     const { router, mounted, settle, unmount } = await mount(`${workspaceEntry}&create=ticket`);
@@ -231,7 +183,7 @@ describe("ticket planning conversation navigation", () => {
     }
   });
 
-  it("opens the Workspace conversation and keeps the draft when it closes", async () => {
+  it("opens the Board conversation and keeps the draft when it closes", async () => {
     const { router, settle, unmount } = await mount(workspaceEntry);
     try {
       await settle();
