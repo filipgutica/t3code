@@ -265,12 +265,9 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   }) => (
     <WorkbenchDraftThread
       key={draft.id}
-      environmentId={environmentId}
-      workspace={workspace}
+      context={props}
       snapshotDraft={draft}
       ticket={props.tickets.find((candidate) => candidate.id === draft.id) ?? null}
-      createContext={props.createContext}
-      refreshSnapshot={props.refreshSnapshot}
       onOpenDraft={props.onCreateManually}
       neverRan={props.threadsById.get(draft.threadId)?.latestRun == null}
       onDiscarded={() => discarded(draft.threadId)}
@@ -302,34 +299,24 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
       ticketThread={getNewTicketThread(chat.selected, planningDrafts, props)}
       draftStart={
         startingDraft ? (
-          requestedDraft && requestedDraft.phase !== "creating" ? (
-            renderDraft({
-              draft: requestedDraft,
-              conversation: (
-                <p role="status" className="p-3 text-sm text-muted-foreground">
-                  Planning Thread is unavailable.
-                </p>
-              ),
-              withCard: false,
-            })
-          ) : (
-            <WorkbenchBoardDraftStart
-              key={startingDraft.id ?? "new"}
-              environmentId={environmentId}
-              workspaceId={projectId}
-              request={startingDraft}
-              draft={requestedDraft}
-              modelSelection={modelSelection}
-              enabled={props.canStartDrafts}
-              initialEpicId={props.initialEpicId ?? null}
-              onDraft={draftPrepared}
-              refreshSnapshot={props.refreshSnapshot}
-              unavailable={
-                !props.canStartDrafts || (modelSelection === null && props.providers.length > 0)
-              }
-              onCreateManually={props.onCreateManually}
-            />
-          )
+          <WorkbenchBoardDraftRequest
+            page={props}
+            request={startingDraft}
+            draft={requestedDraft}
+            modelSelection={modelSelection}
+            onDraft={draftPrepared}
+            renderUnavailable={(draft) =>
+              renderDraft({
+                draft,
+                conversation: (
+                  <p role="status" className="p-3 text-sm text-muted-foreground">
+                    Planning Thread is unavailable.
+                  </p>
+                ),
+                withCard: false,
+              })
+            }
+          />
         ) : undefined
       }
       planning={{
@@ -340,6 +327,40 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
           return renderDraft({ draft, conversation, withCard: true });
         },
       }}
+    />
+  );
+}
+
+function WorkbenchBoardDraftRequest({
+  page,
+  request,
+  draft,
+  modelSelection,
+  onDraft,
+  renderUnavailable,
+}: {
+  readonly page: WorkbenchBoardFloatingChatProps;
+  readonly request: NonNullable<WorkbenchBoardFloatingChatProps["draftRequest"]>;
+  readonly draft: WorkbenchConversationDraft | null;
+  readonly modelSelection: Parameters<typeof useTicketDraftBegin>[0]["modelSelection"];
+  readonly onDraft: (draft: WorkbenchConversationDraft) => void;
+  readonly renderUnavailable: (draft: WorkbenchConversationDraft) => ReactNode;
+}) {
+  if (draft && draft.phase !== "creating") return renderUnavailable(draft);
+  return (
+    <WorkbenchBoardDraftStart
+      key={request.id ?? "new"}
+      environmentId={page.environmentId}
+      workspaceId={page.workspace.id}
+      request={request}
+      draft={draft}
+      modelSelection={modelSelection}
+      enabled={page.canStartDrafts}
+      initialEpicId={page.initialEpicId ?? null}
+      onDraft={onDraft}
+      refreshSnapshot={page.refreshSnapshot}
+      unavailable={!page.canStartDrafts || (modelSelection === null && page.providers.length > 0)}
+      onCreateManually={page.onCreateManually}
     />
   );
 }
@@ -461,12 +482,9 @@ type DraftCardContext = Pick<
  * conversation it is the strip alone.
  */
 export function WorkbenchDraftThread({
-  environmentId,
-  workspace,
+  context,
   snapshotDraft,
   ticket,
-  createContext,
-  refreshSnapshot,
   onOpenDraft,
   neverRan,
   onDiscarded,
@@ -475,12 +493,12 @@ export function WorkbenchDraftThread({
   onDraftEditor,
   children,
 }: {
-  readonly environmentId: EnvironmentId;
-  readonly workspace: WorkbenchBoardFloatingChatProps["workspace"];
+  readonly context: Pick<
+    WorkbenchBoardFloatingChatProps,
+    "environmentId" | "workspace" | "createContext" | "refreshSnapshot"
+  >;
   readonly snapshotDraft: WorkbenchConversationDraft;
   readonly ticket: WorkbenchTicket | null;
-  readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
-  readonly refreshSnapshot: () => void;
   readonly onOpenDraft: () => void;
   /** No message was ever sent, so the conversation holds nothing to lose. */
   readonly neverRan: boolean;
@@ -492,6 +510,7 @@ export function WorkbenchDraftThread({
   ) => void;
   readonly children?: ReactNode;
 }) {
+  const { environmentId, workspace, createContext, refreshSnapshot } = context;
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;

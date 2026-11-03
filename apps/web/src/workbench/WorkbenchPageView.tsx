@@ -463,15 +463,17 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
     planning ? (
       <WorkbenchDraftThread
         key={planning.id}
-        environmentId={environmentId}
-        workspace={selectedProject}
+        context={{
+          environmentId,
+          workspace: selectedProject,
+          createContext: {
+            linkedProjects: linkedT3Projects,
+            epics: boardData.activeProjectEpics,
+          },
+          refreshSnapshot: pageData.refreshWorkbenchSnapshot,
+        }}
         snapshotDraft={planning}
         ticket={selectedTicket}
-        createContext={{
-          linkedProjects: linkedT3Projects,
-          epics: boardData.activeProjectEpics,
-        }}
-        refreshSnapshot={pageData.refreshWorkbenchSnapshot}
         onOpenDraft={() => props.dialogs.openTicketDialog()}
         neverRan={threadsById.get(planning.threadId)?.latestRun == null}
         onDiscarded={closeWorkItem}

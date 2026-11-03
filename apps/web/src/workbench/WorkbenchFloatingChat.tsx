@@ -316,11 +316,9 @@ function FloatingChatThread({
  * read. Otherwise only an expanded chat mounts it.
  */
 function FloatingChatBody({
-  environmentId,
+  chatProps,
   copy,
-  label,
   selected,
-  draftStart,
   hasHistory,
   expanded,
   mounted,
@@ -328,15 +326,9 @@ function FloatingChatBody({
   hosts,
   threadDetails,
   onExpand,
-  onOpenThread,
-  onNewThread,
-  newThreadDisabled,
-  planning,
 }: {
-  readonly environmentId: EnvironmentId;
+  readonly chatProps: WorkbenchFloatingChatProps;
   readonly copy: ChatCopy;
-  readonly label: string;
-  readonly draftStart?: ReactNode;
   readonly selected: WorkbenchFloatingChatThread | null;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
@@ -345,11 +337,16 @@ function FloatingChatBody({
   readonly hosts: WorkbenchPageHosts;
   readonly threadDetails: FloatingChatThreadDetails;
   readonly onExpand: () => void;
-  readonly onOpenThread: (threadId: ThreadId) => void;
-  readonly onNewThread: () => void;
-  readonly newThreadDisabled: boolean;
-  readonly planning: WorkbenchFloatingChatPlanning | undefined;
 }) {
+  const {
+    environmentId,
+    label,
+    draftStart,
+    onOpenThread,
+    onNewThread,
+    newThreadDisabled,
+    planning,
+  } = chatProps;
   if (draftStart) return <div hidden={!expanded}>{draftStart}</div>;
   if (selected === null) {
     return (
@@ -852,8 +849,13 @@ export function WorkbenchFloatingChat(props: WorkbenchFloatingChatProps) {
   return useBoardTicketHandoff(props) ? <FloatingChatPanel {...props} /> : null;
 }
 
+const isBoardPlanningThread = ({ kind, chat, planning }: WorkbenchFloatingChatProps) =>
+  kind === "board" &&
+  chat.selected !== null &&
+  planning?.threadIds.has(chat.selected.threadId) === true;
+
 function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
-  const { environmentId, label, chat, onOpenThread, onNewThread, newThreadDisabled } = props;
+  const { environmentId, label, chat } = props;
   const copy = CHAT_COPY[props.kind];
   const { mode, focusRequest, expand, collapse, minimize, restore } =
     useWorkbenchFloatingChatStore();
@@ -872,10 +874,7 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
     change();
   };
   const pageHosts = useWorkbenchPageHosts();
-  const boardDraftShown =
-    props.kind === "board" &&
-    selectedThreadId !== null &&
-    props.planning?.threadIds.has(selectedThreadId) === true;
+  const boardDraftShown = isBoardPlanningThread(props);
   const hosts = boardDraftShown
     ? { ...pageHosts, terminalHost: null, controlsHost: null }
     : pageHosts;
@@ -917,9 +916,8 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
           onMinimize={() => changeMode(minimize)}
         />
         <FloatingChatBody
-          environmentId={environmentId}
+          chatProps={props}
           copy={copy}
-          label={label}
           selected={selected}
           hasHistory={hasHistory}
           expanded={expanded}
@@ -928,11 +926,6 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
           hosts={hosts}
           threadDetails={threadDetails}
           onExpand={() => expand()}
-          onOpenThread={onOpenThread}
-          onNewThread={onNewThread}
-          newThreadDisabled={newThreadDisabled}
-          planning={props.planning}
-          draftStart={props.draftStart}
         />
       </FloatingChatFrame>
     </>
