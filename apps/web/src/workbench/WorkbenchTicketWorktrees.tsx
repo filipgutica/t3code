@@ -120,15 +120,7 @@ function WorkbenchTicketCheckoutRow({
   const status = useEnvironmentQuery(vcsEnvironment.status({ environmentId, input: { cwd } }));
   const branch = status.data?.isRepo ? status.data.refName : null;
   const hasChanges = status.data?.hasWorkingTreeChanges === true;
-  const canRemove = useAtomValue(
-    workbenchEnvironment.removeTicketWorktree.permissionAtom(environmentId),
-  );
   const [confirmingRemove, setConfirmingRemove] = useState(false);
-  const { copyToClipboard } = useCopyToClipboard<{ title: string }>({
-    onCopy: ({ title }) => toastManager.add({ type: "success", title }),
-    onError: (error) =>
-      toastManager.add({ type: "error", title: "Copy failed", description: error.message }),
-  });
   const name = cwd.replace(/\\/g, "/").replace(/\/+$/, "").split("/").at(-1);
 
   return (
@@ -147,67 +139,24 @@ function WorkbenchTicketCheckoutRow({
         </Badge>
       ) : null}
       {status.data?.pr ? (
-        <WorkbenchPullRequestLink environmentId={environmentId} pullRequest={status.data.pr} />
+        <WorkbenchPullRequestLink
+          environmentId={environmentId}
+          pullRequest={status.data.pr}
+          compact
+        />
       ) : null}
       {isArchived ? null : (
-        // Shown on hover, keyboard focus, an open menu, and always on touch screens.
-        <span className="hidden shrink-0 items-center gap-1 pe-0.5 group-focus-within/checkout:flex group-hover/checkout:flex group-has-[[data-popup-open]]/checkout:flex pointer-coarse:flex">
-          {canOpen ? (
-            <OpenInPicker
-              environmentId={environmentId}
-              keybindings={keybindings}
-              availableEditors={availableEditors}
-              openInCwd={cwd}
-              compact
-              enableShortcut={false}
-            />
-          ) : null}
-          <Menu>
-            <MenuTrigger
-              render={
-                <Button
-                  aria-label={`Actions for worktree ${name}`}
-                  size="icon-sm"
-                  variant="ghost"
-                />
-              }
-            >
-              <MoreHorizontalIcon />
-            </MenuTrigger>
-            <MenuPopup align="end">
-              <MenuItem onClick={() => copyToClipboard(cwd, { title: "Path copied" })}>
-                <CopyIcon /> Copy path
-              </MenuItem>
-              <MenuItem
-                disabled={!branch}
-                onClick={() => branch && copyToClipboard(branch, { title: "Branch copied" })}
-              >
-                <GitBranchIcon /> Copy branch
-              </MenuItem>
-              {removal && canRemove ? (
-                <>
-                  <MenuSeparator />
-                  {/* A hint only: the server refuses removal while Git reports changes or a Thread works there. */}
-                  <MenuItem
-                    variant="destructive"
-                    disabled={hasChanges}
-                    onClick={() => setConfirmingRemove(true)}
-                  >
-                    <Trash2Icon />
-                    <MenuItemLabel>
-                      Remove worktree
-                      {hasChanges ? (
-                        <span className="block text-xs text-muted-foreground">
-                          Has uncommitted changes
-                        </span>
-                      ) : null}
-                    </MenuItemLabel>
-                  </MenuItem>
-                </>
-              ) : null}
-            </MenuPopup>
-          </Menu>
-        </span>
+        <WorkbenchCheckoutRowActions
+          environmentId={environmentId}
+          cwd={cwd}
+          name={name}
+          branch={branch}
+          canOpen={canOpen}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          hasChanges={hasChanges}
+          {...(removal ? { onRemove: () => setConfirmingRemove(true) } : {})}
+        />
       )}
       {removal ? (
         <WorkbenchRemoveWorktreeDialog
@@ -221,6 +170,86 @@ function WorkbenchTicketCheckoutRow({
         />
       ) : null}
     </li>
+  );
+}
+
+/** Shown on hover, keyboard focus, an open menu, and always on touch screens. */
+function WorkbenchCheckoutRowActions({
+  environmentId,
+  cwd,
+  name,
+  branch,
+  canOpen,
+  keybindings,
+  availableEditors,
+  hasChanges,
+  onRemove,
+}: Omit<CheckoutRowProps, "isArchived"> & {
+  readonly cwd: string;
+  readonly name: string | undefined;
+  readonly branch: string | null;
+  readonly canOpen: boolean;
+  readonly hasChanges: boolean;
+  readonly onRemove?: () => void;
+}) {
+  const canRemove = useAtomValue(
+    workbenchEnvironment.removeTicketWorktree.permissionAtom(environmentId),
+  );
+  const { copyToClipboard } = useCopyToClipboard<{ title: string }>({
+    onCopy: ({ title }) => toastManager.add({ type: "success", title }),
+    onError: (error) =>
+      toastManager.add({ type: "error", title: "Copy failed", description: error.message }),
+  });
+  return (
+    <span className="hidden shrink-0 items-center gap-1 pe-0.5 group-focus-within/checkout:flex group-hover/checkout:flex group-has-[[data-popup-open]]/checkout:flex pointer-coarse:flex">
+      {canOpen ? (
+        <OpenInPicker
+          environmentId={environmentId}
+          keybindings={keybindings}
+          availableEditors={availableEditors}
+          openInCwd={cwd}
+          compact
+          enableShortcut={false}
+        />
+      ) : null}
+      <Menu>
+        <MenuTrigger
+          render={
+            <Button aria-label={`Actions for worktree ${name}`} size="icon-sm" variant="ghost" />
+          }
+        >
+          <MoreHorizontalIcon />
+        </MenuTrigger>
+        <MenuPopup align="end">
+          <MenuItem onClick={() => copyToClipboard(cwd, { title: "Path copied" })}>
+            <CopyIcon /> Copy path
+          </MenuItem>
+          <MenuItem
+            disabled={!branch}
+            onClick={() => branch && copyToClipboard(branch, { title: "Branch copied" })}
+          >
+            <GitBranchIcon /> Copy branch
+          </MenuItem>
+          {onRemove && canRemove ? (
+            <>
+              <MenuSeparator />
+              {/* A hint only: the server refuses removal while Git reports changes or a Thread works there. */}
+              <MenuItem variant="destructive" disabled={hasChanges} onClick={onRemove}>
+                <Trash2Icon />
+                <MenuItemLabel>
+                  Remove worktree
+                  {hasChanges ? (
+                    <span className="block text-xs text-muted-foreground">
+                      Has uncommitted changes
+                    </span>
+                  ) : null}
+                </MenuItemLabel>
+              </MenuItem>
+            </>
+          ) : null}
+        </MenuPopup>
+      </Menu>
+    </span>
   );
 }
 
