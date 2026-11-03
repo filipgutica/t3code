@@ -9,9 +9,9 @@ import {
   CheckIcon,
   ChevronDownIcon,
   ChevronUpIcon,
+  EllipsisIcon,
   FilePenLineIcon,
   MessageCircleIcon,
-  MinusIcon,
   PlusIcon,
   RotateCcwIcon,
   SquareArrowOutUpRightIcon,
@@ -30,8 +30,9 @@ import {
 
 import ChatView from "../components/ChatView";
 import { Button } from "../components/ui/button";
-import { MenuItem, MenuItemLabel } from "../components/ui/menu";
-import { PopoverCreateHandle, PopoverTrigger } from "../components/ui/popover";
+import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "../components/ui/menu";
+import { PopoverCreateHandle } from "../components/ui/popover";
+import { Separator } from "../components/ui/separator";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { useMediaQuery } from "../hooks/useMediaQuery";
 import { useStableCallback } from "../hooks/useStableCallback";
@@ -147,14 +148,12 @@ function FloatingChatLauncher({
   copy,
   label,
   attentionCount,
-  buttonRef,
   overPanel,
   onRestore,
 }: {
   readonly copy: ChatCopy;
   readonly label: string;
   readonly attentionCount: number;
-  readonly buttonRef: Ref<HTMLButtonElement>;
   readonly overPanel: boolean;
   readonly onRestore: () => void;
 }) {
@@ -163,7 +162,6 @@ function FloatingChatLauncher({
       <TooltipTrigger
         render={
           <button
-            ref={buttonRef}
             type="button"
             aria-label={
               attentionCount > 0
@@ -381,12 +379,10 @@ function FloatingChatBody({
 function FloatingChatToggle({
   copy,
   expanded,
-  buttonRef,
   onToggle,
 }: {
   readonly copy: ChatCopy;
   readonly expanded: boolean;
-  readonly buttonRef: Ref<HTMLButtonElement>;
   readonly onToggle: () => void;
 }) {
   const chatName = copy.title.toLowerCase();
@@ -396,7 +392,6 @@ function FloatingChatToggle({
       label={label}
       render={
         <Button
-          ref={buttonRef}
           variant="ghost"
           size="icon-sm"
           aria-label={label}
@@ -557,66 +552,57 @@ function FloatingChatSettleAction({
   );
 }
 
-function FloatingChatThreadActions({
+/**
+ * Thread details and Open full Thread. Details open once the menu has closed, so the menu's
+ * focus return to its trigger doesn't count as focus leaving the details popover.
+ */
+function FloatingChatThreadMenu({
   environmentId,
   threadId,
-  copy,
-  expanded,
-  detailsHandle,
-  toggleRef,
+  detailsAvailable,
   onOpenThread,
-  onToggle,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
-  readonly copy: ChatCopy;
-  readonly expanded: boolean;
-  /** Null while the conversation, which renders the details, is collapsed. */
-  readonly detailsHandle: FloatingChatThreadDetails["handle"] | null;
-  readonly toggleRef: Ref<HTMLButtonElement>;
+  /** False while the conversation, which renders the details, is collapsed. */
+  readonly detailsAvailable: boolean;
   readonly onOpenThread: () => void;
-  readonly onToggle: () => void;
 }) {
+  const detailsRequestedRef = useRef(false);
+  const openRequestedDetails = (open: boolean) => {
+    if (open || !detailsRequestedRef.current) return;
+    detailsRequestedRef.current = false;
+    useRightPanelStore
+      .getState()
+      .setThreadPanelOpen(scopeThreadRef(environmentId, threadId), "popover", true);
+  };
   return (
-    <>
-      {detailsHandle ? (
-        <FloatingChatAction label="Thread details" render={<span className="flex shrink-0" />}>
-          <PopoverTrigger
-            handle={detailsHandle}
-            render={<Button variant="ghost" size="icon-sm" aria-label="Thread details" />}
-          >
-            <SquareMenuIcon />
-          </PopoverTrigger>
-        </FloatingChatAction>
-      ) : null}
-      <FloatingChatSettleAction environmentId={environmentId} threadId={threadId} />
-      <FloatingChatAction
-        label="Open full Thread"
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open full Thread"
-            onClick={onOpenThread}
-          />
-        }
-      >
-        <SquareArrowOutUpRightIcon />
+    <Menu onOpenChangeComplete={openRequestedDetails}>
+      <FloatingChatAction label="Thread actions" render={<span className="flex shrink-0" />}>
+        <MenuTrigger render={<Button variant="ghost" size="icon-sm" aria-label="Thread actions" />}>
+          <EllipsisIcon />
+        </MenuTrigger>
       </FloatingChatAction>
-      <FloatingChatToggle
-        copy={copy}
-        expanded={expanded}
-        buttonRef={toggleRef}
-        onToggle={onToggle}
-      />
-    </>
+      <MenuPopup align="end">
+        {detailsAvailable ? (
+          <MenuItem onClick={() => (detailsRequestedRef.current = true)}>
+            <SquareMenuIcon />
+            <MenuItemLabel>Thread details</MenuItemLabel>
+          </MenuItem>
+        ) : null}
+        <MenuItem onClick={onOpenThread}>
+          <SquareArrowOutUpRightIcon />
+          <MenuItemLabel>Open full Thread</MenuItemLabel>
+        </MenuItem>
+      </MenuPopup>
+    </Menu>
   );
 }
 
 /**
  * The chat's layout around the showing Thread's page panel. Publishes the Thread so page pull
  * request links open in its panel. Narrow windows show the panel as the native sheet, which
- * minimizes the chat.
+ * hides the chat behind its launcher.
  */
 function useFloatingChatLayout(
   environmentId: EnvironmentId,
@@ -641,10 +627,9 @@ function useFloatingChatLayout(
     sheetLayout && open && !maximized && threadRef
       ? () => useRightPanelStore.getState().close(threadRef)
       : null;
-  const launcher = mode === "launcher" || closeSheet !== null;
-  const expanded = !launcher && mode === "expanded" && (threadId !== null || hasDraftStart);
+  const expanded =
+    closeSheet === null && mode === "expanded" && (threadId !== null || hasDraftStart);
   return {
-    launcher,
     expanded,
     mounted: expanded || open || keepMounted,
     maximized,
@@ -697,23 +682,17 @@ function FloatingChatHeader({
   copy,
   hasHistory,
   expanded,
-  detailsHandle,
   detailsAnchorRef,
-  toggleRef,
   onSelect,
   onToggle,
-  onMinimize,
 }: {
   readonly chatProps: WorkbenchFloatingChatProps;
   readonly copy: ChatCopy;
   readonly hasHistory: boolean;
   readonly expanded: boolean;
-  readonly detailsHandle: FloatingChatThreadDetails["handle"];
   readonly detailsAnchorRef: Ref<HTMLDivElement>;
-  readonly toggleRef: Ref<HTMLButtonElement>;
   readonly onSelect: (threadId: ThreadId) => void;
   readonly onToggle: () => void;
-  readonly onMinimize: () => void;
 }) {
   const { chat, onOpenThread } = chatProps;
   const { selected } = chat;
@@ -744,58 +723,27 @@ function FloatingChatHeader({
           }
         />
       )}
-      {selected === null ? (
-        chatProps.draftStart ? (
-          <FloatingChatToggle
-            copy={copy}
-            expanded={expanded}
-            buttonRef={toggleRef}
-            onToggle={onToggle}
+      {selected === null ? null : (
+        <>
+          <FloatingChatSettleAction
+            environmentId={chatProps.environmentId}
+            threadId={selected.threadId}
           />
-        ) : null
-      ) : (
-        <FloatingChatThreadActions
-          environmentId={chatProps.environmentId}
-          threadId={selected.threadId}
-          copy={copy}
-          expanded={expanded}
-          // The hidden conversation measures 0px, which would strip the details card.
-          detailsHandle={expanded ? detailsHandle : null}
-          toggleRef={toggleRef}
-          onOpenThread={() => onOpenThread(selected.threadId)}
-          onToggle={onToggle}
-        />
+          <FloatingChatThreadMenu
+            environmentId={chatProps.environmentId}
+            threadId={selected.threadId}
+            // The hidden conversation measures 0px, which would strip the details card.
+            detailsAvailable={expanded}
+            onOpenThread={() => onOpenThread(selected.threadId)}
+          />
+          <Separator orientation="vertical" className="h-4 mx-1" />
+        </>
       )}
-      <FloatingChatAction
-        label={`Minimize ${copy.title.toLowerCase()}`}
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label={`Minimize ${copy.title.toLowerCase()}`}
-            onClick={onMinimize}
-          />
-        }
-      >
-        <MinusIcon />
-      </FloatingChatAction>
+      {selected !== null || chatProps.draftStart ? (
+        <FloatingChatToggle copy={copy} expanded={expanded} onToggle={onToggle} />
+      ) : null}
     </div>
   );
-}
-
-/** Moves focus to the control a mode change mounts, only after a user action asked for it. */
-function useModeChangeFocus(mode: WorkbenchFloatingChatMode) {
-  const expandButtonRef = useRef<HTMLButtonElement>(null);
-  const launcherRef = useRef<HTMLButtonElement>(null);
-  // Set by the control that changes the mode, so focus moves only after a user action.
-  const pendingFocusRef = useRef(false);
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- focuses the newly mounted chat control after the requested expand/minimize DOM change commits
-  useEffect(() => {
-    if (!pendingFocusRef.current) return;
-    pendingFocusRef.current = false;
-    (mode === "launcher" ? launcherRef : expandButtonRef).current?.focus();
-  }, [mode]);
-  return { expandButtonRef, launcherRef, pendingFocusRef };
 }
 
 /**
@@ -857,9 +805,7 @@ const isBoardPlanningThread = ({ kind, chat, planning }: WorkbenchFloatingChatPr
 function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
   const { environmentId, label, chat } = props;
   const copy = CHAT_COPY[props.kind];
-  const { mode, focusRequest, expand, collapse, minimize, restore } =
-    useWorkbenchFloatingChatStore();
-  const { expandButtonRef, launcherRef, pendingFocusRef } = useModeChangeFocus(mode);
+  const { mode, focusRequest, expand, collapse } = useWorkbenchFloatingChatStore();
 
   const { selected } = chat;
   const selectedThreadId = selected?.threadId ?? null;
@@ -868,17 +814,16 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
     composerFocus.release();
     props.onSelectThread(threadId);
   };
-  const changeMode = (change: () => void) => {
+  const collapseChat = () => {
     composerFocus.release();
-    pendingFocusRef.current = true;
-    change();
+    collapse();
   };
   const pageHosts = useWorkbenchPageHosts();
   const boardDraftShown = isBoardPlanningThread(props);
   const hosts = boardDraftShown
     ? { ...pageHosts, terminalHost: null, controlsHost: null }
     : pageHosts;
-  const { launcher, expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
+  const { expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
     environmentId,
     selectedThreadId,
     mode,
@@ -892,28 +837,29 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
   const hasHistory = chat.settled.length > 0 || chat.archived.length > 0;
   return (
     <>
-      {launcher ? (
+      {closeSheet ? (
         <FloatingChatLauncher
           copy={copy}
           label={label}
           attentionCount={chat.attentionCount}
-          buttonRef={launcherRef}
           overPanel={maximized}
-          onRestore={closeSheet ?? (() => changeMode(restore))}
+          onRestore={closeSheet}
         />
       ) : null}
-      <FloatingChatFrame label={label} expanded={expanded} hidden={launcher} overPanel={maximized}>
+      <FloatingChatFrame
+        label={label}
+        expanded={expanded}
+        hidden={closeSheet !== null}
+        overPanel={maximized}
+      >
         <FloatingChatHeader
           chatProps={props}
           copy={copy}
           hasHistory={hasHistory}
           expanded={expanded}
-          detailsHandle={detailsHandle}
           detailsAnchorRef={detailsAnchorRef}
-          toggleRef={expandButtonRef}
           onSelect={selectThread}
-          onToggle={expanded ? () => changeMode(collapse) : () => expand()}
-          onMinimize={() => changeMode(minimize)}
+          onToggle={expanded ? collapseChat : () => expand()}
         />
         <FloatingChatBody
           chatProps={props}

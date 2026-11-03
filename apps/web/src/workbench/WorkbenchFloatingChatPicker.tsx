@@ -1,11 +1,6 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
-import {
-  ArchiveRestoreIcon,
-  ChevronDownIcon,
-  ChevronRightIcon,
-  FilePenLineIcon,
-} from "lucide-react";
+import { ArchiveRestoreIcon, ChevronRightIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 
 import { ProviderInstanceIcon } from "../components/chat/ProviderInstanceIcon";
@@ -34,11 +29,9 @@ import {
   type resolveWorkbenchFloatingChat,
   WORKBENCH_ATTENTION_KINDS,
   type WorkbenchFloatingChatPickerRow,
-  type WorkbenchFloatingChatTicket,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchSidebarThreadRowData } from "./WorkbenchSidebarThreadRow.logic";
-import { WorkbenchTicketIcon } from "./WorkbenchTicketMetadata";
 import {
   WorkbenchThreadExecutionStatus,
   WorkbenchThreadExecutionStatusIcon,
@@ -182,31 +175,25 @@ function PickerArchived({
   );
 }
 
-/** A ticket mark, or the draft mark for a Thread with no ticket yet. */
-function PickerTicketIcon({ ticket }: { readonly ticket: WorkbenchFloatingChatTicket | null }) {
-  return ticket ? (
-    <WorkbenchTicketIcon />
-  ) : (
-    <FilePenLineIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />
-  );
-}
-
 /**
- * The showing Thread's PR and provider, as on its native sidebar row; icons only inside the
- * trigger. The trigger's own label hides its content, so the text also goes in a description.
+ * The showing Thread, led by its provider, as on its native sidebar row, then its PR. The
+ * Board's trigger keeps the Ticket key, since its Threads come from many Tickets. The trigger's
+ * own label hides its content, so the PR and provider also go in a description.
  */
-function PickerTriggerThreadContext({
+function PickerTriggerThread({
   environmentId,
-  threadId,
+  grouped,
+  selected,
   descriptionId,
 }: {
   readonly environmentId: EnvironmentId;
-  readonly threadId: ThreadId;
+  readonly grouped: boolean;
+  readonly selected: WorkbenchFloatingChatThread;
   readonly descriptionId: string;
 }) {
   const data = useWorkbenchSidebarThreadRowData({
     thread: { environmentId },
-    threadRef: scopeThreadRef(environmentId, threadId),
+    threadRef: scopeThreadRef(environmentId, selected.threadId),
   });
   const pullRequest = resolveThreadPullRequestBadgePresentation({
     badge: data.pullRequestBadge,
@@ -219,6 +206,30 @@ function PickerTriggerThreadContext({
       <span id={descriptionId} className="sr-only">
         {[pullRequest?.label, data.providerEntry?.displayName].filter(Boolean).join(", ")}
       </span>
+      {data.providerEntry ? (
+        <ProviderInstanceIcon
+          driverKind={data.providerEntry.driverKind}
+          displayName={data.providerEntry.displayName}
+          className="size-3.5 shrink-0 opacity-75"
+          iconClassName="size-3.5"
+        />
+      ) : null}
+      {grouped && selected.ticket?.key ? (
+        <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">
+          {selected.ticket.key}
+        </span>
+      ) : null}
+      <span className="min-w-0 truncate text-xs font-medium">
+        {grouped ? selected.title : getWorkbenchFloatingChatPickerRow(selected, false).title}
+      </span>
+      {selected.planning ? <span className="text-2xs text-muted-foreground">Planning</span> : null}
+      {selected.status ? (
+        <WorkbenchThreadExecutionStatus
+          compact
+          status={selected.status.presentation}
+          startedAt={selected.status.startedAt}
+        />
+      ) : null}
       {pullRequest ? (
         <span
           aria-hidden
@@ -230,14 +241,6 @@ function PickerTriggerThreadContext({
           <pullRequest.Icon aria-hidden className="size-3 shrink-0" />
           {pullRequest.text}
         </span>
-      ) : null}
-      {data.providerEntry ? (
-        <ProviderInstanceIcon
-          driverKind={data.providerEntry.driverKind}
-          displayName={data.providerEntry.displayName}
-          className="size-3.5 shrink-0 opacity-75"
-          iconClassName="size-3.5"
-        />
       ) : null}
     </>
   );
@@ -259,35 +262,17 @@ function PickerTriggerContent({
 }) {
   return (
     <>
-      {selected === null ? null : <PickerTicketIcon ticket={selected.ticket} />}
-      {selected?.ticket?.key ? (
-        <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">
-          {selected.ticket.key}
-        </span>
-      ) : null}
-      <span className="min-w-0 truncate text-xs font-medium">
-        {selected === null
-          ? title
-          : grouped
-            ? selected.title
-            : getWorkbenchFloatingChatPickerRow(selected, false).title}
-      </span>
-      {selected?.planning ? <span className="text-2xs text-muted-foreground">Planning</span> : null}
-      {selected?.status ? (
-        <WorkbenchThreadExecutionStatus
-          compact
-          status={selected.status.presentation}
-          startedAt={selected.status.startedAt}
-        />
-      ) : null}
-      {selected === null ? null : (
-        <PickerTriggerThreadContext
+      {selected === null ? (
+        <span className="min-w-0 truncate text-xs font-medium">{title}</span>
+      ) : (
+        <PickerTriggerThread
           environmentId={environmentId}
-          threadId={selected.threadId}
+          grouped={grouped}
+          selected={selected}
           descriptionId={descriptionId}
         />
       )}
-      <ChevronDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
+      <ChevronsUpDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
     </>
   );
 }
