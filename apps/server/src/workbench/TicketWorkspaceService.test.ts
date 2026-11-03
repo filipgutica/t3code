@@ -1291,7 +1291,7 @@ describe("TicketWorkspaceService", () => {
       const { fileSystem, path } = fixture;
       const primary = fixture.repositories[0]!;
       const workspaceDirectory = path.dirname(primary.worktreePath);
-      for (const name of ["pr-clean", "pr-dirty", "pr-used"]) {
+      for (const name of ["pr-clean", "pr-dirty", "pr-used", "pr-project"]) {
         yield* fixture.git(primary.sourcePath, [
           "worktree",
           "add",
@@ -1327,11 +1327,29 @@ describe("TicketWorkspaceService", () => {
           worktreePath: path.join(alias, "pr-used"),
           archivedAt: createdAt,
         });
+        // A native Project opened on the worktree runs its Threads there with no worktreePath.
+        const worktreeProjectId = ProjectId.make("project-worktree");
+        const sql = yield* SqlClient.SqlClient;
+        yield* sql`
+          INSERT INTO projection_projects (
+            project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+          ) VALUES (
+            ${worktreeProjectId}, 'Worktree', ${listed.get("pr-project")!}, '[]',
+            ${createdAt}, ${createdAt}, NULL
+          )
+        `;
+        yield* seedNativeThread({
+          threadId: ThreadId.make("thread-project-root"),
+          projectId: worktreeProjectId,
+          createdAt,
+        });
 
         const dirty = yield* Effect.flip(remove(listed.get("pr-dirty")!));
         expect(dirty.message).toContain("has local changes");
         const used = yield* Effect.flip(remove(listed.get("pr-used")!));
         expect(used.code).toBe("ticket_workspace_in_use");
+        const projectRoot = yield* Effect.flip(remove(listed.get("pr-project")!));
+        expect(projectRoot.code).toBe("ticket_workspace_in_use");
         const prepared = yield* Effect.flip(remove(primary.worktreePath));
         expect(prepared.code).toBe("ticket_workspace_repository_not_found");
         expect(fixture.removals).toEqual([]);
@@ -1342,7 +1360,7 @@ describe("TicketWorkspaceService", () => {
           (yield* service.listWorktrees({ ticketId })).map((worktree) =>
             path.basename(worktree.path),
           ),
-        ).toEqual(["pr-dirty", "pr-used"]);
+        ).toEqual(["pr-dirty", "pr-project", "pr-used"]);
         expect(yield* fixture.git(primary.sourcePath, ["branch", "--list", "pr-clean"])).toBe(
           "pr-clean",
         );

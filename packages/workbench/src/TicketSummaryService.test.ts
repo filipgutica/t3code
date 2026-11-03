@@ -31,7 +31,7 @@ const storeLayer = WorkbenchStoreLive.pipe(
       isRepository: () => Effect.succeed(true),
       findThread: () => Effect.succeedNone,
       hasThreadAtWorktreePath: () => Effect.succeed(false),
-      listThreadWorktreePaths: Effect.succeed([]),
+      listThreadWorkspacePaths: Effect.succeed([]),
       findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
       findRun: () => Effect.succeedNone,

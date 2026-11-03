@@ -1388,8 +1388,8 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         });
       }
       // Threads may record the worktree through a symlinked path, so compare real paths.
-      for (const threadWorktreePath of yield* store.listThreadWorktreePaths) {
-        if ((yield* canonicalizePath(threadWorktreePath)) === requested) {
+      for (const threadWorkspacePath of yield* store.listThreadWorkspacePaths) {
+        if ((yield* canonicalizePath(threadWorkspacePath)) === requested) {
           return yield* new WorkbenchOperationError({
             code: "ticket_workspace_in_use",
             message:

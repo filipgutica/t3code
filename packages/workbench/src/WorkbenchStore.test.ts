@@ -73,7 +73,7 @@ const nativeLayer = (options?: {
         );
       },
       hasThreadAtWorktreePath: () => Effect.succeed(false),
-      listThreadWorktreePaths: Effect.succeed([]),
+      listThreadWorkspacePaths: Effect.succeed([]),
       findStartingRun: () => Effect.succeedNone,
       contextMarker: () => Effect.succeed(0),
       findRun: () => Effect.succeedNone,

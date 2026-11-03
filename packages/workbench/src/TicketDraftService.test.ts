@@ -76,7 +76,7 @@ const fixture = (options?: {
             : Option.none();
         }),
       hasThreadAtWorktreePath: (value) => Effect.sync(() => [...paths.values()].includes(value)),
-      listThreadWorktreePaths: Effect.sync(() =>
+      listThreadWorkspacePaths: Effect.sync(() =>
         [...paths.values()].filter((value) => value !== null),
       ),
       findStartingRun: () => Effect.succeedNone,

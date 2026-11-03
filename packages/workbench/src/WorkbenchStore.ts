@@ -623,7 +623,7 @@ interface WorkbenchStoreShape extends Omit<
   readonly hasThreadAtWorktreePath: (
     worktreePath: string,
   ) => Effect.Effect<boolean, WorkbenchOperationError>;
-  readonly listThreadWorktreePaths: Effect.Effect<ReadonlyArray<string>, WorkbenchOperationError>;
+  readonly listThreadWorkspacePaths: Effect.Effect<ReadonlyArray<string>, WorkbenchOperationError>;
   readonly getTicketWorkspace: (
     ticketId: WorkbenchTicketId,
   ) => Effect.Effect<Option.Option<WorkbenchTicketWorkspace>, WorkbenchOperationError>;
@@ -4077,7 +4077,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     unlinkAssignment,
     replaceAssignment,
     hasThreadAtWorktreePath,
-    listThreadWorktreePaths: native.listThreadWorktreePaths,
+    listThreadWorkspacePaths: native.listThreadWorkspacePaths,
     getTicketWorkspace,
     getThreadRoster,
     getTicketRoster,
