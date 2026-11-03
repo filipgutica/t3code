@@ -95,7 +95,6 @@ vi.mock("../components/ChatView", async () => {
 const setup = () => {
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",
-    restoreMode: "collapsed",
     focusRequest: { id: 0, threadId: null },
     pageChat: null,
     shownThread: null,
@@ -356,18 +355,6 @@ it("filters a long Thread list by title or recap", async () => {
     .not.toBeInTheDocument();
 });
 
-it("restores an expanded panel from the launcher without moving focus into the composer", async () => {
-  setup();
-  await using screen = await render(<Harness threads={[thread("a")]} />);
-  await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
-  await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
-
-  await userEvent.click(screen.getByRole("button", { name: "Show PAY-1 chat" }));
-
-  await expect.element(screen.getByLabelText("Composer for a")).toBeInTheDocument();
-  await expect.element(screen.getByRole("button", { name: "Collapse ticket chat" })).toHaveFocus();
-});
-
 it("collapses on a page click, but not for clicks in the chat or its menus", async () => {
   setup();
   await using screen = await render(
@@ -388,7 +375,7 @@ it("collapses on a page click, but not for clicks in the chat or its menus", asy
   // Collapsing on a page click leaves focus where the user clicked.
   await expect.element(screen.getByRole("button", { name: "Page action" })).toHaveFocus();
 
-  // A collapsed chat stays collapsed; only its minimize control hides it.
+  // A collapsed chat stays collapsed.
   await userEvent.click(screen.getByRole("button", { name: "Page action" }));
   await expect.element(expand).toBeVisible();
 
@@ -410,7 +397,7 @@ it("keeps the page's composer handle for native chats", async () => {
     .toHaveAttribute("data-composer-handle", "own");
 });
 
-it("returns focus to the control that brings the panel back", async () => {
+it("keeps focus on the toggle when the panel collapses", async () => {
   setup();
   await using screen = await render(<Harness threads={[thread("a")]} />);
   await userEvent.click(screen.getByRole("button", { name: "Expand ticket chat" }));
@@ -418,13 +405,6 @@ it("returns focus to the control that brings the panel back", async () => {
   await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
   await expect.element(screen.getByLabelText("Composer for a")).not.toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
-  const launcher = screen.getByRole("button", { name: "Show PAY-1 chat" });
-  await expect.element(launcher).toHaveFocus();
-
-  await userEvent.click(launcher);
-  await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toHaveFocus();
 });
 
 it("offers Start Thread when the ticket has no Threads, without a Thread picker", async () => {
@@ -516,7 +496,7 @@ function Page({ children }: { readonly children: ReactNode }) {
   );
 }
 
-it("opens a file from the embed in the page's panel and keeps it through collapse and minimize", async () => {
+it("opens a file from the embed in the page's panel and keeps it through collapse", async () => {
   setup();
   await page.viewport(1280, 800);
   const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("a"));
@@ -534,18 +514,19 @@ it("opens a file from the embed in the page's panel and keeps it through collaps
   await expect.element(panel).toBeVisible();
   expect(panel.element().closest("[data-workbench-panel-host]")).not.toBeNull();
   expect(onOpenThread).not.toHaveBeenCalled();
-  await expect.element(screen.getByRole("button", { name: "Thread details" })).toBeVisible();
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await expect.element(screen.getByRole("menuitem", { name: "Thread details" })).toBeVisible();
+  await userEvent.keyboard("{Escape}");
 
   await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
   await expect.element(panel).toBeVisible();
   await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
+  // The hidden conversation can't lay out the details card, so only Open full Thread remains.
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await expect.element(screen.getByRole("menuitem", { name: "Open full Thread" })).toBeVisible();
   await expect
-    .element(screen.getByRole("button", { name: "Thread details" }))
+    .element(screen.getByRole("menuitem", { name: "Thread details" }))
     .not.toBeInTheDocument();
-
-  await userEvent.click(screen.getByRole("button", { name: "Minimize ticket chat" }));
-  await expect.element(panel).toBeVisible();
-  await expect.element(screen.getByRole("button", { name: "Show PAY-1 chat" })).toBeVisible();
 });
 
 it("floats the chat over a maximized panel without covering the panel's controls", async () => {
@@ -572,7 +553,7 @@ it("floats the chat over a maximized panel without covering the panel's controls
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toBeVisible();
 });
 
-it("minimizes the chat while a narrow window shows the panel as a sheet, and the chat closes it", async () => {
+it("hides the chat behind its launcher while a narrow window shows the panel as a sheet", async () => {
   setup();
   await page.viewport(900, 800);
   const threadRef = scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("a"));
@@ -715,7 +696,6 @@ it("keeps a settled Thread the Board showed when its Ticket opens", async () => 
   // The Board chat showed settled Thread t, picked from its Settled section, as it unmounted.
   useWorkbenchFloatingChatStore.setState({
     mode: "expanded",
-    restoreMode: "expanded",
     boardHandoff: { thread: scopeThreadRef(EnvironmentId.make("environment"), ThreadId.make("t")) },
   });
   const settled = { ...thread("t"), settledAt: "2026-11-02T00:00:00.000Z" };
@@ -741,17 +721,6 @@ it("collapses, without showing it, when the opened Ticket lacks the Board's Thre
   await expect.element(screen.getByRole("button", { name: "Expand ticket chat" })).toBeVisible();
   // The Ticket's own Thread never mounted expanded, so it is not marked read.
   expect(chatMount).not.toHaveBeenCalled();
-});
-
-it("keeps a minimized chat minimized and on the Board's Thread when its Ticket opens", async () => {
-  setup();
-  await using screen = await renderBoardShowing([thread("a"), thread("t")]);
-  await userEvent.click(screen.getByRole("button", { name: "Minimize board chat" }));
-
-  await screen.rerender(ticketChat([thread("p"), thread("t")]));
-
-  await userEvent.click(screen.getByRole("button", { name: "Show PAY-1 chat" }));
-  await expect.element(screen.getByLabelText("Composer for t")).toBeInTheDocument();
 });
 
 it("lets an explicit request to show a Thread outrank the Board's handoff", async () => {

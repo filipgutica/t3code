@@ -10,8 +10,7 @@ import { create } from "zustand";
 import { readThreadShell } from "../state/entities";
 import type { WorkbenchFloatingChatPick } from "./workbenchFloatingChat.logic";
 
-type WorkbenchFloatingChatPanel = "collapsed" | "expanded";
-export type WorkbenchFloatingChatMode = WorkbenchFloatingChatPanel | "launcher";
+export type WorkbenchFloatingChatMode = "collapsed" | "expanded";
 
 /** An explicit request to expand and focus a composer: `threadId`'s, or the selected Thread's. */
 export interface WorkbenchFloatingChatFocusRequest {
@@ -30,8 +29,6 @@ type WorkbenchPageChat = {
 // A client-session preference shared by page chats, like the board view state.
 export const useWorkbenchFloatingChatStore = create<{
   readonly mode: WorkbenchFloatingChatMode;
-  /** The panel the launcher restores. */
-  readonly restoreMode: WorkbenchFloatingChatPanel;
   readonly focusRequest: WorkbenchFloatingChatFocusRequest;
   /** The page chat on screen, which shows a new Thread instead of navigating to it. */
   readonly pageChat: WorkbenchPageChat | null;
@@ -52,11 +49,8 @@ export const useWorkbenchFloatingChatStore = create<{
   readonly pickThread: (pageChatKey: string, thread: ScopedThreadRef | null) => void;
   readonly expand: (threadId?: ThreadId) => void;
   readonly collapse: () => void;
-  readonly minimize: () => void;
-  readonly restore: () => void;
 }>((set) => ({
   mode: "collapsed",
-  restoreMode: "collapsed",
   focusRequest: { id: 0, threadId: null },
   pageChat: null,
   shownThread: null,
@@ -80,13 +74,10 @@ export const useWorkbenchFloatingChatStore = create<{
   expand: (threadId) =>
     set((state) => ({
       mode: "expanded",
-      restoreMode: "expanded",
       boardHandoff: null,
       focusRequest: { id: state.focusRequest.id + 1, threadId: threadId ?? null },
     })),
-  collapse: () => set({ mode: "collapsed", restoreMode: "collapsed" }),
-  minimize: () => set({ mode: "launcher" }),
-  restore: () => set((state) => ({ mode: state.restoreMode })),
+  collapse: () => set({ mode: "collapsed" }),
 }));
 
 /** Resolves the mounted page after creation, since the user may have changed pages or hosts. */

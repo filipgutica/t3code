@@ -202,9 +202,9 @@ Files, diffs, side chats, and pull requests you open from the chat open in the
 Thread's side panel beside it, and you stay on the page. While the chat shows a
 Thread, pull requests you open on the page open there too. Maximize the panel to
 fill the page; the chat stays over it. In a smaller window the panel opens as a
-sheet and the chat minimizes until you close it. The details button in the chat
-header shows the Thread's details, as on a Thread page. Terminal commands and
-**Open full Thread** open the Thread itself. The chat is not available on narrow
+sheet, and the chat becomes a button that closes the sheet. The chat header's ⋯
+menu has **Thread details**, as on a Thread page, and **Open full Thread**.
+Terminal commands also open the Thread itself. The chat is not available on narrow
 screens, and a Ticket that is still being planned shows its conversation in the
 page instead.
 

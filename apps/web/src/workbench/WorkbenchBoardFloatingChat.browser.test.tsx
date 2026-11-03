@@ -429,7 +429,6 @@ const setup = async () => {
   mocks.otherCommand.mockReset();
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",
-    restoreMode: "collapsed",
     focusRequest: { id: 0, threadId: null },
     pageChat: null,
     pickedThreads: {},
@@ -743,11 +742,13 @@ it("opens the full native Thread only when explicitly requested", async () => {
     />,
   );
   await pickThread(screen, /Thread first/);
-  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("first");
   await pickThread(screen, /Plan exports/);
   onOpenDraft.mockClear();
-  await userEvent.click(screen.getByRole("button", { name: "Open full Thread" }));
+  await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
+  await userEvent.click(screen.getByRole("menuitem", { name: "Open full Thread" }));
   expect(onOpenThread).toHaveBeenCalledWith("draft-thread");
   expect(onOpenDraft).not.toHaveBeenCalled();
 });
