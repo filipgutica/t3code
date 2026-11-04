@@ -23,6 +23,11 @@
   --workbench-sidebar-row-surface: var(--sidebar-row-active);
 }
 
+/* Native active rows add this hairline in light mode, where the fill alone is faint. */
+[data-workbench-sidebar-surface][data-active="true"]:not(.dark *) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-border) 70%, transparent);
+}
+
 [data-workbench-sidebar-disclosure] {
   display: grid;
   place-items: center;
@@ -115,7 +120,7 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-surface]:not(:hover, :focus-within)
   [data-workbench-sidebar-recede]
   [data-workbench-sidebar-title] {
-  color: color-mix(in srgb, var(--sidebar-muted-foreground) 75%, transparent);
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
   font-weight: 400;
 }
 
@@ -329,7 +334,9 @@ button[data-workbench-sidebar-disclosure] {
     display: flex;
   }
 
+  /* Wide enough that the enlarged + target below never overlaps the attention badge. */
   [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
+    gap: 8px;
     padding-inline-end: 0;
   }
 
