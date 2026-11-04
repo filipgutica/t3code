@@ -7,6 +7,9 @@ import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 // spaces render differently from their source, so a source match may not be the selection.
 const INLINE_MARKUP = /[*_`[\]<>\\~&\0]|[^\S ]| {2}|:\/\/|www\./i;
 
+/** Drops blank lines around `text` but keeps leading indentation, which can make a code block. */
+const trimBlankLines = (text: string) => text.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
+
 /**
  * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`. A selection
  * found exactly once in plain blocks is rewritten alone, so the model cannot touch the rest;
@@ -61,5 +64,7 @@ export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(f
       context: input.context,
     });
   }
-  return `${input.markdown.slice(0, input.start)}${rewritten.trim()}${input.markdown.slice(input.end)}`.trim();
+  return trimBlankLines(
+    `${input.markdown.slice(0, input.start)}${trimBlankLines(rewritten)}${input.markdown.slice(input.end)}`,
+  );
 });

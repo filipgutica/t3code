@@ -302,6 +302,34 @@ describe("AskForChangeService", () => {
     );
   });
 
+  it.effect("keeps the indentation that makes a rewritten block code", () => {
+    const block = "    old_code()";
+    const markdown = `## Goal\n\n${goal}\n\n${block}\n\nTail.`;
+    const at = markdown.indexOf(block);
+    return Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const service = yield* AskForChangeService;
+      const seeded = yield* seedTicket;
+      const ticket = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: seeded.revision,
+        markdown,
+        updatedAt: createdAt,
+        writer: { kind: "user" },
+      });
+      const saved = yield* service.askForTicketChange({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        start: at,
+        end: at + block.length,
+        blockSource: block,
+        selectedText: "",
+        instruction: "Call the new function.",
+      });
+      expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\n    new_code()\n\nTail.`);
+    }).pipe(Effect.provide(withHost(() => Effect.succeed("\n    new_code()\n"))));
+  });
+
   it.effect("rejects a block source that no longer matches without generating", () => {
     let rewrites = 0;
     return Effect.gen(function* () {
