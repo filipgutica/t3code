@@ -40,15 +40,27 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
-/* Tickets use native multiline geometry: title and status, then planning and PRs. */
+/* Tickets use native multiline geometry: title and status, then planning and PRs. Each line
+   sizes its own trailing controls, so a wide status never truncates the line below. */
 [data-workbench-sidebar-detail-row] {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 24px 16px;
-  gap: 2px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
   padding: 6px var(--workbench-sidebar-row-end-inset, 8px) 6px var(--workbench-sidebar-child-inset);
+}
+
+[data-workbench-sidebar-line] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+}
+
+[data-workbench-sidebar-line="2"] {
+  height: 16px;
 }
 
 [data-workbench-sidebar-navigation] {
@@ -65,13 +77,18 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
-/* Subgrid lets the slot and PR controls sit beside the lines without nesting buttons. */
 [data-workbench-sidebar-navigation="detail"] {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-row: 1 / -1;
-  grid-template-columns: subgrid;
-  grid-template-rows: subgrid;
+  display: flex;
+  flex: 1;
+}
+
+/* Like native rows, the whole highlighted surface selects the Ticket. Controls sit above it,
+   so nothing nests inside the button. */
+[data-workbench-sidebar-navigation="detail"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 [data-workbench-sidebar-navigation="compact"] {
@@ -84,9 +101,8 @@ button[data-workbench-sidebar-disclosure] {
 }
 
 [data-workbench-sidebar-title] {
-  grid-column: 1;
-  grid-row: 1;
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 6px;
   min-width: 0;
@@ -95,10 +111,17 @@ button[data-workbench-sidebar-disclosure] {
   white-space: nowrap;
 }
 
+/* Like native settled rows, Done and archived Tickets recede until hovered or focused. */
+[data-workbench-sidebar-surface]:not(:hover, :focus-within)
+  [data-workbench-sidebar-recede]
+  [data-workbench-sidebar-title] {
+  color: color-mix(in srgb, var(--sidebar-muted-foreground) 75%, transparent);
+  font-weight: 400;
+}
+
 [data-workbench-sidebar-metadata-label] {
-  grid-column: 1;
-  grid-row: 2;
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 4px;
   min-width: 0;
@@ -129,13 +152,16 @@ button[data-workbench-sidebar-disclosure] {
 :is([data-workbench-sidebar-slot], [data-workbench-sidebar-metadata-controls]) {
   position: relative;
   z-index: 1;
-  grid-column: 2;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  min-width: 0;
   pointer-events: none;
+}
+
+[data-workbench-sidebar-metadata-controls]:empty {
+  display: none;
 }
 
 [data-workbench-sidebar-slot] :is(button, a),
@@ -145,13 +171,11 @@ button[data-workbench-sidebar-disclosure] {
 
 /* Reserves the quick action's width so hover swaps the status without reflowing the title. */
 [data-workbench-sidebar-slot] {
-  grid-row: 1;
   min-width: 20px;
   font-size: var(--text-xs);
 }
 
 [data-workbench-sidebar-metadata-controls] {
-  grid-row: 2;
   gap: 2px;
 }
 
@@ -163,7 +187,7 @@ button[data-workbench-sidebar-disclosure] {
 }
 
 /* Like native rows, hover swaps a plain status for the row's quick action in place. An
-   attention badge is a control, so the action sits beside it instead. */
+   attention badge is a control, so it keeps room beside it for the action instead. */
 [data-workbench-sidebar-quick-actions] {
   position: absolute;
   inset-block: 0;
@@ -173,10 +197,8 @@ button[data-workbench-sidebar-disclosure] {
   gap: 2px;
 }
 
-[data-workbench-sidebar-slot]:has([data-workbench-attention-badge])
-  [data-workbench-sidebar-quick-actions] {
-  position: static;
-  margin-inline-end: -4px;
+[data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
+  padding-inline-end: 22px;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
@@ -305,6 +327,21 @@ button[data-workbench-sidebar-disclosure] {
   [data-workbench-sidebar-quick-actions] {
     position: static;
     display: flex;
+  }
+
+  [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
+    padding-inline-end: 0;
+  }
+
+  /* Extends the tap target past the 20px glyph without changing the row layout. */
+  [data-workbench-sidebar-quick-action] {
+    position: relative;
+  }
+
+  [data-workbench-sidebar-quick-action]::after {
+    content: "";
+    position: absolute;
+    inset: -4px -8px;
   }
 
   [data-workbench-sidebar-navigation="compact"],

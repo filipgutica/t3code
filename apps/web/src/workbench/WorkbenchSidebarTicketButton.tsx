@@ -1,6 +1,6 @@
 import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
 import { CircleAlertIcon, PlusIcon } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
 import { Popover, PopoverPopup, PopoverTrigger } from "../components/ui/popover";
@@ -211,6 +211,7 @@ export function WorkbenchSidebarTicketButton({
       />
     </span>
   ) : null;
+  const rowRef = useRef<HTMLDivElement>(null);
   const actions = useWorkbenchSidebarTicketActionMenu({
     environmentId: details?.environmentId,
     ticket,
@@ -219,50 +220,58 @@ export function WorkbenchSidebarTicketButton({
   });
   return (
     <div
+      ref={rowRef}
       data-workbench-sidebar-item-row=""
       data-workbench-sidebar-detail-row="ticket"
+      data-workbench-sidebar-recede={ticket.status === "done" || ticket.archivedAt ? "" : undefined}
       className="min-w-0 flex-1"
       onContextMenu={(event) => {
         event.preventDefault();
         actions.openMenu({ x: event.clientX, y: event.clientY });
       }}
     >
-      <WorkbenchSidebarRowNavigation
-        label={ticket.title}
-        isActive={isActive}
-        onSelect={onSelect}
-        openMenu={actions.openMenu}
-        preview={<TicketPreview ticket={ticket} details={details} status={status} />}
-      >
-        <WorkbenchSidebarTicketTitle ticket={ticket} />
-        <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
-      </WorkbenchSidebarRowNavigation>
-      <span data-workbench-sidebar-slot={actions.canCreateThread ? "actions" : ""}>
-        {details?.environmentId ? (
-          <WorkbenchTicketAttentionBadge
-            environmentId={details.environmentId}
-            ticketId={ticket.id}
-            ticketTitle={ticket.title}
-            nativeStatusKind={details.executionStatus?.kind ?? null}
-            nativeStatus={executionStatus}
-            side="right"
-          />
-        ) : (
-          executionStatus
-        )}
-        {actions.canCreateThread ? (
-          <span data-workbench-sidebar-quick-actions="">
-            <WorkbenchSidebarQuickAction
-              label={`New Thread for ${ticket.title}`}
-              Icon={PlusIcon}
-              onSelect={actions.newThread}
+      <div data-workbench-sidebar-line="1">
+        <WorkbenchSidebarRowNavigation
+          label={ticket.title}
+          isActive={isActive}
+          onSelect={onSelect}
+          openMenu={actions.openMenu}
+          preview={<TicketPreview ticket={ticket} details={details} status={status} />}
+          previewAnchor={rowRef}
+        >
+          <WorkbenchSidebarTicketTitle ticket={ticket} />
+        </WorkbenchSidebarRowNavigation>
+        <span data-workbench-sidebar-slot={actions.canCreateThread ? "actions" : ""}>
+          {details?.environmentId ? (
+            <WorkbenchTicketAttentionBadge
+              environmentId={details.environmentId}
+              ticketId={ticket.id}
+              ticketTitle={ticket.title}
+              nativeStatusKind={details.executionStatus?.kind ?? null}
+              nativeStatus={executionStatus}
+              side="right"
+              compact
             />
-          </span>
-        ) : null}
-      </span>
-      <span data-workbench-sidebar-metadata-controls="">
-        <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
-      </span>
+          ) : (
+            executionStatus
+          )}
+          {actions.canCreateThread ? (
+            <span data-workbench-sidebar-quick-actions="">
+              <WorkbenchSidebarQuickAction
+                label={`New Thread for ${ticket.title}`}
+                Icon={PlusIcon}
+                onSelect={actions.newThread}
+              />
+            </span>
+          ) : null}
+        </span>
+      </div>
+      <div data-workbench-sidebar-line="2">
+        <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
+        <span data-workbench-sidebar-metadata-controls="">
+          <WorkbenchSidebarTicketPrControl ticket={ticket} details={details} />
+        </span>
+      </div>
     </div>
   );
 }
