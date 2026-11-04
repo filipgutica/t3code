@@ -325,9 +325,11 @@ const markdownBlockLabel = (kind: MarkdownBlock["kind"]) => BLOCK_KIND_LABELS[ki
 export function describeMarkdownReview({
   titleChanged,
   review,
+  accepted = false,
 }: {
   readonly titleChanged: boolean;
   readonly review: MarkdownReview;
+  readonly accepted?: boolean;
 }): { readonly heading: string; readonly detail: string | null } {
   const blocks =
     review.changedBlocks === 0
@@ -338,7 +340,7 @@ export function describeMarkdownReview({
   const parts = [titleChanged ? "title" : null, blocks].filter((part) => part !== null);
   const count = (titleChanged ? 1 : 0) + review.changedBlocks;
   return {
-    heading: count > 1 ? "Unreviewed changes" : "Unreviewed change",
+    heading: `${accepted ? "Accepted" : "Unreviewed"} ${count > 1 ? "changes" : "change"}`,
     detail: parts.length === 0 ? null : parts.join(" and "),
   };
 }

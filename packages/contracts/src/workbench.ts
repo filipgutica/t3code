@@ -229,6 +229,9 @@ export const WorkbenchTicket = Schema.Struct({
   // `workbench.tickets.get` carries the base they are reviewed against.
   reviewPending: Schema.optionalKey(Schema.Boolean),
   reviewBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
+  // The last accepted change stays viewable until the next content change; the same split applies.
+  acceptedChange: Schema.optionalKey(Schema.Boolean),
+  acceptedBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
   // Only agents write Progress. Snapshots carry the counts; `workbench.tickets.get` carries the list.
   progress: Schema.optionalKey(WorkbenchProgress),
   progressDone: Schema.optionalKey(NonNegativeInt),
@@ -319,6 +322,7 @@ export const WorkbenchTicketDraft = Schema.Struct({
   updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
   updatedByAskForChange: Schema.optionalKey(Schema.Boolean),
   reviewBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
+  acceptedBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
   // Outside `fields`, which clients write; only the planning agent writes Progress.
   progress: Schema.optionalKey(WorkbenchProgress),
   createdAt: IsoDateTime,

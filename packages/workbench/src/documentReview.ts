@@ -45,7 +45,10 @@ export const documentProvenance = (writer: DocumentWriter) => ({
   updatedByAskForChange: writer.kind === "askForChange",
 });
 
-/** A write's provenance and review base; a write that changes no content keeps both. */
+/**
+ * A write's provenance and review state; a write that changes no content keeps all of it.
+ * Any content change ends the accepted change, so it never feeds the next review.
+ */
 export const documentWrite = ({
   writer,
   before,
@@ -53,7 +56,10 @@ export const documentWrite = ({
 }: {
   readonly writer: DocumentWriter;
   readonly before: ReviewDocument &
-    ReturnType<typeof documentProvenance> & { readonly reviewBase: ReviewDocument | null };
+    ReturnType<typeof documentProvenance> & {
+      readonly reviewBase: ReviewDocument | null;
+      readonly acceptedBase: ReviewDocument | null;
+    };
   readonly after: ReviewDocument;
 }) => {
   const contentChanged = !sameDocument(before, after);
@@ -66,5 +72,12 @@ export const documentWrite = ({
           updatedByAskForChange: before.updatedByAskForChange,
         }),
     reviewBase: nextReviewBase({ writer, base: before.reviewBase, before, after }),
+    acceptedBase: contentChanged ? null : before.acceptedBase,
   };
 };
+
+/** Accept keeps the base so the accepted change can be shown again; Undo drops it. */
+export const resolvedReview = (resolution: "accept" | "undo", reviewBase: ReviewDocument) => ({
+  reviewBase: null,
+  acceptedBase: resolution === "accept" ? reviewBase : null,
+});

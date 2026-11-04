@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { useState } from "react";
 import type {
   EnvironmentId,
   WorkbenchReviewBase,
@@ -10,6 +11,7 @@ import {
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
 
+import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { descriptionUsesJiraMarkup } from "./workbenchDescriptionEditor.logic";
@@ -37,14 +39,31 @@ const reviewOutcome = (result: Result, action: "accept" | "undo"): MarkdownRevie
     : { kind: "failed", message: failureMessage(result) };
 };
 
+/** The last accepted change: whether there is one, whether it is shown, and its base once loaded. */
+type AcceptedChange = {
+  readonly available: boolean;
+  readonly shown: boolean;
+  readonly base: WorkbenchReviewBase | null;
+  readonly toggle: () => void;
+};
+
+/** Shows an accepted change for the revision it was asked on; a newer revision hides it. */
+const useAcceptedToggle = (revision: number) => {
+  const [shownFor, setShownFor] = useState<number | null>(null);
+  const shown = shownFor === revision;
+  return { shown, toggle: () => setShownFor(shown ? null : revision) };
+};
+
 /**
  * The review and Ask for change of a Ticket's or draft's title and brief. The commands name the
  * revision the person is looking at, so a newer edit fails them instead of being overwritten.
+ * With nothing pending, the badge shows the last accepted change, read-only.
  */
 export function useWorkbenchBriefReview({
   title,
   markdown,
   reviewBase,
+  accepted,
   reviewable,
   askable,
   permitted,
@@ -55,6 +74,7 @@ export function useWorkbenchBriefReview({
   readonly title: string;
   readonly markdown: string;
   readonly reviewBase: WorkbenchReviewBase | null | undefined;
+  readonly accepted: AcceptedChange;
   /** False while a local edit is shown, which the base and revision do not describe. */
   readonly reviewable: boolean;
   /** False where rendered offsets would not match the saved text, such as Jira wiki markup. */
@@ -64,12 +84,15 @@ export function useWorkbenchBriefReview({
   readonly undo: () => Promise<Result>;
   readonly ask: (request: MarkdownAskRequest) => Promise<Result>;
 }) {
+  const pending = reviewable ? (reviewBase ?? null) : null;
+  const acceptedShown = pending === null && reviewable && accepted.available && accepted.shown;
   const review = useMarkdownReview({
-    base: reviewable ? (reviewBase ?? null) : null,
+    base: pending ?? (acceptedShown ? accepted.base : null),
     title,
     markdown,
     onAccept: async () => reviewOutcome(await accept(), "accept"),
     onUndo: async () => reviewOutcome(await undo(), "undo"),
+    onHideAccepted: pending === null ? accepted.toggle : undefined,
   });
   const askForChange = useMarkdownAskForChange({
     markdown,
@@ -81,7 +104,16 @@ export function useWorkbenchBriefReview({
         : failureMessage(result);
     },
   });
-  return { ...review, askForChange, permitted };
+  const toggleAccepted = pending === null && reviewable && accepted.available;
+  return {
+    ...review,
+    // Pressed while an accepted change loads, so a second click cancels it.
+    diffShown: review.diffShown || acceptedShown,
+    /** The badge's click: the pending diff, or the accepted change while nothing is pending. */
+    toggleDiff: review.review?.toggleDiff ?? (toggleAccepted ? accepted.toggle : undefined),
+    askForChange,
+    permitted,
+  };
 }
 
 /**
@@ -111,11 +143,30 @@ export function useWorkbenchTicketBriefReview({
     undo: useAtomValue(workbenchEnvironment.undoTicketReview.permissionAtom(environmentId)),
   };
   const target = { id: ticket.id, expectedRevision: ticket.revision };
+  const reviewable = !localEdit && !archived;
+  const acceptedToggle = useAcceptedToggle(ticket.revision);
+  // Snapshots carry only the flag; the base loads when the person asks to see it.
+  const acceptedRead = useEnvironmentQuery(
+    reviewable && ticket.acceptedChange === true && acceptedToggle.shown
+      ? workbenchEnvironment.ticket({
+          environmentId,
+          input: { ticketId: ticket.id, revision: ticket.revision },
+        })
+      : null,
+  );
   const briefReview = useWorkbenchBriefReview({
     title: ticket.title,
     markdown: ticket.markdown,
     reviewBase: ticket.reviewBase,
-    reviewable: !localEdit && !archived,
+    accepted: {
+      available: ticket.acceptedChange === true,
+      ...acceptedToggle,
+      base:
+        acceptedRead.data?.revision === ticket.revision
+          ? (acceptedRead.data.acceptedBase ?? null)
+          : null,
+    },
+    reviewable,
     askable: !descriptionUsesJiraMarkup(ticket.markdown, jira),
     permitted,
     accept: () => accept({ environmentId, input: target }),
@@ -160,10 +211,16 @@ export function useWorkbenchDraftBriefReview({
     return result;
   };
   const target = () => ({ id: draft.id, expectedRevision: revision() });
+  const acceptedToggle = useAcceptedToggle(draft.revision);
   return useWorkbenchBriefReview({
     title: draft.fields.title,
     markdown: draft.fields.markdown,
     reviewBase: draft.reviewBase,
+    accepted: {
+      available: draft.acceptedBase != null,
+      ...acceptedToggle,
+      base: draft.acceptedBase ?? null,
+    },
     reviewable,
     // The draft card renders its brief without Jira markup.
     askable: true,

@@ -302,7 +302,7 @@ describe("ensureWorkbenchSchema", () => {
     ),
   );
 
-  it.effect("adds the review columns once, with no review pending", () =>
+  it.effect("adds the review columns once, with no review pending or accepted change", () =>
     withForeignKeys(
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
@@ -318,8 +318,12 @@ describe("ensureWorkbenchSchema", () => {
             updated_by_ask_for_change AS "askForChange" FROM workbench_tickets`,
         ).toEqual([{ title: null, markdown: null, askForChange: 0 }]);
         expect(
-          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version = 25`,
-        ).toHaveLength(1);
+          yield* sql`SELECT accepted_base_title AS title, accepted_base_markdown AS markdown
+            FROM workbench_tickets`,
+        ).toEqual([{ title: null, markdown: null }]);
+        expect(
+          yield* sql`SELECT version FROM workbench_schema_migrations WHERE version IN (25, 26)`,
+        ).toHaveLength(2);
       }),
     ),
   );

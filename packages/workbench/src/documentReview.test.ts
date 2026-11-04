@@ -1,7 +1,12 @@
 import { ThreadId } from "@t3tools/contracts";
 import { describe, expect, it } from "@effect/vitest";
 
-import { type DocumentWriter, nextReviewBase } from "./documentReview.ts";
+import {
+  type DocumentWriter,
+  documentWrite,
+  nextReviewBase,
+  resolvedReview,
+} from "./documentReview.ts";
 
 const agent: DocumentWriter = { kind: "agent", threadId: ThreadId.make("review-agent") };
 const askForChange: DocumentWriter = { kind: "askForChange" };
@@ -44,5 +49,36 @@ describe("nextReviewBase", () => {
     expect(nextReviewBase({ writer: agent, base: original, before: first, after: first })).toBe(
       original,
     );
+  });
+});
+
+describe("an accepted change", () => {
+  const written = {
+    ...first,
+    updatedByThreadId: ThreadId.make("review-agent"),
+    updatedByAskForChange: false,
+  };
+
+  it("stays viewable after Accept and never feeds the next review", () => {
+    const accepted = resolvedReview("accept", original);
+    expect(accepted).toEqual({ reviewBase: null, acceptedBase: original });
+    // The next review starts from the accepted text, so Undo cannot revert the accepted change.
+    expect(
+      documentWrite({ writer: agent, before: { ...written, ...accepted }, after: second }),
+    ).toMatchObject({ reviewBase: first, acceptedBase: null });
+    expect(
+      documentWrite({ writer: agent, before: { ...written, ...accepted }, after: original }),
+    ).toMatchObject({ reviewBase: first, acceptedBase: null });
+  });
+
+  it("survives writes that change no content, and ends on a user edit or Undo", () => {
+    const accepted = resolvedReview("accept", original);
+    expect(
+      documentWrite({ writer: agent, before: { ...written, ...accepted }, after: first }),
+    ).toMatchObject({ reviewBase: null, acceptedBase: original });
+    expect(
+      documentWrite({ writer: user, before: { ...written, ...accepted }, after: second }),
+    ).toMatchObject({ reviewBase: null, acceptedBase: null });
+    expect(resolvedReview("undo", original)).toEqual({ reviewBase: null, acceptedBase: null });
   });
 });

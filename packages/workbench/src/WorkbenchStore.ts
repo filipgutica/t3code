@@ -125,6 +125,8 @@ const WorkbenchTicketRow = Schema.Struct({
   updatedByAskForChange: Schema.Number,
   reviewBaseTitle: Schema.NullOr(Schema.String),
   reviewBaseMarkdown: Schema.NullOr(Schema.String),
+  acceptedBaseTitle: Schema.NullOr(Schema.String),
+  acceptedBaseMarkdown: Schema.NullOr(Schema.String),
   progress: Schema.String,
   progressUpdatedByThreadId: Schema.NullOr(ThreadId),
   createdAt: WorkbenchTicket.fields.createdAt,
@@ -204,35 +206,42 @@ const progressFields = (row: {
 
 type ReviewBase = { readonly title: string; readonly markdown: string } | null;
 
+const baseFromColumns = (title: string | null, markdown: string | null): ReviewBase =>
+  title === null || markdown === null ? null : { title, markdown };
+
 const reviewBaseFromRow = (row: {
   readonly reviewBaseTitle: string | null;
   readonly reviewBaseMarkdown: string | null;
-}): ReviewBase =>
-  row.reviewBaseTitle === null || row.reviewBaseMarkdown === null
-    ? null
-    : { title: row.reviewBaseTitle, markdown: row.reviewBaseMarkdown };
+}) => baseFromColumns(row.reviewBaseTitle, row.reviewBaseMarkdown);
+
+const acceptedBaseFromRow = (row: {
+  readonly acceptedBaseTitle: string | null;
+  readonly acceptedBaseMarkdown: string | null;
+}) => baseFromColumns(row.acceptedBaseTitle, row.acceptedBaseMarkdown);
+
+type ReviewState = {
+  readonly reviewBase: ReviewBase;
+  readonly acceptedBase: ReviewBase;
+  readonly updatedByAskForChange: boolean;
+};
 
 /** The stored form of a write's review state. */
-const reviewColumns = ({
-  reviewBase,
-  updatedByAskForChange,
-}: {
-  readonly reviewBase: ReviewBase;
-  readonly updatedByAskForChange: boolean;
-}) => ({
+const reviewColumns = ({ reviewBase, acceptedBase, updatedByAskForChange }: ReviewState) => ({
   reviewBaseTitle: reviewBase?.title ?? null,
   reviewBaseMarkdown: reviewBase?.markdown ?? null,
+  acceptedBaseTitle: acceptedBase?.title ?? null,
+  acceptedBaseMarkdown: acceptedBase?.markdown ?? null,
   updatedByAskForChange: updatedByAskForChange ? 1 : 0,
 });
 
-/** Every Ticket result carries the same review fields; snapshots drop `reviewBase`. */
-const reviewFields = ({
-  reviewBase,
+/** Every Ticket result carries the same review fields; snapshots drop both bases. */
+const reviewFields = ({ reviewBase, acceptedBase, updatedByAskForChange }: ReviewState) => ({
   updatedByAskForChange,
-}: {
-  readonly reviewBase: ReviewBase;
-  readonly updatedByAskForChange: boolean;
-}) => ({ updatedByAskForChange, reviewPending: reviewBase !== null, reviewBase });
+  reviewPending: reviewBase !== null,
+  reviewBase,
+  acceptedChange: acceptedBase !== null,
+  acceptedBase,
+});
 
 const ticketFromRow = (
   row: typeof WorkbenchTicketRow.Type,
@@ -252,6 +261,7 @@ const ticketFromRow = (
     updatedByThreadId: row.updatedByThreadId,
     ...reviewFields({
       reviewBase: reviewBaseFromRow(row),
+      acceptedBase: acceptedBaseFromRow(row),
       updatedByAskForChange: row.updatedByAskForChange === 1,
     }),
     ...progressFields(row),
@@ -819,6 +829,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         updated_by_ask_for_change AS "updatedByAskForChange",
         review_base_title AS "reviewBaseTitle",
         review_base_markdown AS "reviewBaseMarkdown",
+        accepted_base_title AS "acceptedBaseTitle",
+        accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
         created_at AS "createdAt",
@@ -1496,6 +1508,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         updated_by_ask_for_change AS "updatedByAskForChange",
         review_base_title AS "reviewBaseTitle",
         review_base_markdown AS "reviewBaseMarkdown",
+        accepted_base_title AS "acceptedBaseTitle",
+        accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
         created_at AS "createdAt",
@@ -1841,6 +1855,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             const {
               progress: _progress,
               reviewBase: _reviewBase,
+              acceptedBase: _acceptedBase,
               ...snapshotTicket
             } = ticketFromRow(
               ticket,
@@ -2856,7 +2871,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ...ticketInput,
       repositoryProjectIds,
       updatedByThreadId,
-      ...reviewFields({ reviewBase: null, updatedByAskForChange }),
+      ...reviewFields({ reviewBase: null, acceptedBase: null, updatedByAskForChange }),
       ...progressFields({ progress, progressUpdatedByThreadId }),
       status: "todo",
       blocked: false,
@@ -3027,19 +3042,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
             requested: input.repositoryProjectIds,
           });
           yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
-          const { contentChanged, updatedByThreadId, updatedByAskForChange, reviewBase } =
-            documentWrite({
-              writer: input.writer,
-              before: {
-                title: current.title,
-                markdown: current.markdown,
-                updatedByThreadId: current.updatedByThreadId,
-                updatedByAskForChange: current.updatedByAskForChange === 1,
-                reviewBase: reviewBaseFromRow(current),
-              },
-              after: { title, markdown },
-            });
-          const review = reviewColumns({ reviewBase, updatedByAskForChange });
+          const { contentChanged, updatedByThreadId, ...reviewState } = documentWrite({
+            writer: input.writer,
+            before: {
+              title: current.title,
+              markdown: current.markdown,
+              updatedByThreadId: current.updatedByThreadId,
+              updatedByAskForChange: current.updatedByAskForChange === 1,
+              reviewBase: reviewBaseFromRow(current),
+              acceptedBase: acceptedBaseFromRow(current),
+            },
+            after: { title, markdown },
+          });
+          const review = reviewColumns(reviewState);
           const { progress, progressUpdatedByThreadId } = progressUpdate({ input, current });
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
@@ -3054,6 +3069,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
               updated_by_ask_for_change = ${review.updatedByAskForChange},
               review_base_title = ${review.reviewBaseTitle},
               review_base_markdown = ${review.reviewBaseMarkdown},
+              accepted_base_title = ${review.acceptedBaseTitle},
+              accepted_base_markdown = ${review.acceptedBaseMarkdown},
               progress = ${progress},
               progress_updated_by_thread_id = ${progressUpdatedByThreadId},
               generated_summary_status = ${summary.generatedSummaryStatus},
@@ -3097,7 +3114,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               generatedSummary: summary.generatedSummary,
               archivedAt: current.archivedAt,
               updatedByThreadId,
-              ...reviewFields({ reviewBase, updatedByAskForChange }),
+              ...reviewFields(reviewState),
               ...progressFields({ progress, progressUpdatedByThreadId }),
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
@@ -3141,6 +3158,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             yield* sql`
               UPDATE workbench_tickets
               SET review_base_title = NULL, review_base_markdown = NULL,
+                accepted_base_title = ${base.title}, accepted_base_markdown = ${base.markdown},
                 revision = revision + 1, updated_at = ${updatedAt}
               WHERE ticket_id = ${input.id}
             `;
@@ -3153,6 +3171,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 markdown = ${base.markdown},
                 review_base_title = NULL,
                 review_base_markdown = NULL,
+                accepted_base_title = NULL,
+                accepted_base_markdown = NULL,
                 updated_by_thread_id = NULL,
                 updated_by_ask_for_change = 0,
                 generated_summary_status = ${summary.generatedSummaryStatus},

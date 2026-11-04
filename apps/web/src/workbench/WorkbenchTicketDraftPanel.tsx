@@ -78,7 +78,7 @@ function DraftBriefView({
           <WorkbenchProvenanceBadge
             source={updatedBy}
             pressed={briefReview.diffShown}
-            onToggle={review?.toggleDiff}
+            onToggle={briefReview.toggleDiff}
           />
         ) : null}
         <span className="flex-1" />

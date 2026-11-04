@@ -2027,6 +2027,59 @@ describe("Ticket review of agent edits", () => {
     }).pipe(Effect.provide(layer())),
   );
 
+  it.effect("keeps an accepted change viewable until the content changes again", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const edited = yield* reviewed;
+      const accepted = yield* store.resolveTicketReview({
+        id: ticketId,
+        expectedRevision: edited.revision,
+        resolution: "accept",
+      });
+      expect(accepted).toMatchObject({ acceptedChange: true, acceptedBase: original });
+      const [snapshotTicket] = (yield* store.getSnapshot).tickets;
+      expect(snapshotTicket).toMatchObject({ acceptedChange: true });
+      expect(snapshotTicket).not.toHaveProperty("acceptedBase");
+      for (const resolution of ["accept", "undo"] as const) {
+        expect(
+          yield* Effect.flip(
+            store.resolveTicketReview({
+              id: ticketId,
+              expectedRevision: accepted.revision,
+              resolution,
+            }),
+          ),
+        ).toMatchObject({ code: "review_not_pending" });
+      }
+      // The next review starts from the accepted text, so its Undo keeps the accepted change.
+      const next = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: accepted.revision,
+        markdown: "Reject every invalid size.",
+        updatedAt: at,
+        writer: { kind: "agent", threadId: agent },
+      });
+      expect(next).toMatchObject({
+        reviewBase: { title: edited.title, markdown: edited.markdown },
+        acceptedChange: false,
+        acceptedBase: null,
+      });
+      const acceptedAgain = yield* store.resolveTicketReview({
+        id: ticketId,
+        expectedRevision: next.revision,
+        resolution: "accept",
+      });
+      const byUser = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: acceptedAgain.revision,
+        markdown: "My own words.",
+        updatedAt: at,
+        writer: { kind: "user" },
+      });
+      expect(byUser).toMatchObject({ acceptedChange: false, acceptedBase: null });
+    }).pipe(Effect.provide(layer())),
+  );
+
   it.effect("Undo restores the base, records no Thread, and bumps the revision", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;

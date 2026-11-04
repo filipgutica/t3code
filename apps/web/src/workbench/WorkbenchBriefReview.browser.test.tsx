@@ -21,6 +21,16 @@ const mocks = vi.hoisted(() => ({
   undo: vi.fn(),
   ask: vi.fn(),
   readOnly: false,
+  // What a full Ticket read returns, and whether the brief asked for one.
+  read: null as WorkbenchTicket | null,
+  readRequested: false,
+}));
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
+  useEnvironmentQuery: (query: unknown) => {
+    if (query !== null) mocks.readRequested = true;
+    return { data: query === null ? null : mocks.read };
+  },
 }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: { readonly name: "accept" | "undo" | "ask" }) => mocks[command.name],
@@ -38,6 +48,7 @@ vi.mock("./state", async () => {
       acceptTicketReview: command("accept"),
       undoTicketReview: command("undo"),
       askForTicketChange: command("ask"),
+      ticket: (query: unknown) => query,
     },
   };
 });
@@ -66,6 +77,8 @@ const succeeded = AsyncResult.success(ticket);
 
 function setup({ readOnly = false } = {}) {
   mocks.readOnly = readOnly;
+  mocks.read = null;
+  mocks.readRequested = false;
   mocks.accept.mockReset();
   mocks.undo.mockReset();
   mocks.ask.mockReset();
@@ -92,7 +105,7 @@ function TicketBrief({
       <WorkbenchProvenanceBadge
         source={{ kind: "askForChange" }}
         pressed={briefReview.diffShown}
-        onToggle={briefReview.review?.toggleDiff}
+        onToggle={briefReview.toggleDiff}
       />
       {askButton ? <WorkbenchBriefAskButton briefReview={briefReview} variant="outline" /> : null}
       {briefReview.review ? (
@@ -230,4 +243,25 @@ it("resolves a reference link in the diff whose definition is in another block",
   await using screen = await render(<TicketBrief record={record} />);
   await expect.element(screen.getByRole("region", { name: "Review changes" })).toBeVisible();
   await expect.element(screen.getByRole("link", { name: "spec" })).toBeVisible();
+});
+
+it("shows an accepted change read-only from the badge, reading its base only when asked", async () => {
+  setup();
+  const accepted = { ...ticket, acceptedChange: true };
+  mocks.read = { ...accepted, acceptedBase: reviewBase };
+  await using screen = await render(<TicketBrief record={accepted} />);
+  const removed = screen.getByText("Someone who comes back has to start over.");
+  await expect.element(screen.getByText(why)).toBeVisible();
+  expect(mocks.readRequested).toBe(false);
+
+  await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
+  const bar = screen.getByRole("region", { name: "Review changes" });
+  await expect.element(bar).toMatchTextContent(/Accepted changes · title and 1 paragraph/);
+  await expect.element(removed).toBeVisible();
+  await expect.element(bar.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await expect.element(bar.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+
+  await userEvent.click(bar.getByRole("button", { name: "Hide" }));
+  await expect.element(removed).not.toBeInTheDocument();
+  await expect.element(bar).not.toBeInTheDocument();
 });

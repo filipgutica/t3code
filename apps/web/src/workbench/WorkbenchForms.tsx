@@ -1865,7 +1865,7 @@ function WorkbenchTicketDescriptionPanel({
               <WorkbenchProvenanceBadge
                 source={updatedBy}
                 pressed={briefReview.diffShown}
-                onToggle={review?.toggleDiff}
+                onToggle={briefReview.toggleDiff}
               />
             ) : null}
           </div>

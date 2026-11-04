@@ -734,6 +734,32 @@ it("shows a read-only connection a draft's unreviewed edit and lets it toggle th
   await expect.element(card.getByText("daily")).toBeVisible();
 });
 
+it("shows a read-only connection a draft's accepted change from the badge", async () => {
+  const { onSnapshot } = await setup({ readOnly: true });
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    updatedByAskForChange: true,
+    acceptedBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+
+  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
+  const bar = card.getByRole("region", { name: "Review changes" });
+  await expect.element(bar).toMatchTextContent(/Accepted change · 1 list/);
+  await expect.element(card.getByText("daily")).toBeVisible();
+  await expect.element(bar.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await userEvent.click(bar.getByRole("button", { name: "Hide" }));
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+});
+
 it("offers no review or selection Ask for change on an archived Board's draft", async () => {
   const { onSnapshot } = await setup();
   const planned = draft("draft", "draft-thread", "Plan exports");

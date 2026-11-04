@@ -1223,6 +1223,14 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       yield* sql`ALTER TABLE workbench_tickets ADD COLUMN updated_by_ask_for_change INTEGER NOT NULL DEFAULT 0`;
     }),
   );
+  yield* applyMigration(
+    26,
+    Effect.gen(function* () {
+      // The title and brief before the last accepted change; both NULL once the content changes.
+      yield* sql`ALTER TABLE workbench_tickets ADD COLUMN accepted_base_title TEXT`;
+      yield* sql`ALTER TABLE workbench_tickets ADD COLUMN accepted_base_markdown TEXT`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

@@ -1,4 +1,4 @@
-import { CheckIcon, EyeIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
+import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
@@ -58,12 +58,17 @@ export function WorkbenchReviewBar({
         ) : null}
       </p>
       <div className="flex shrink-0 items-center gap-2">
+        {review.accepted ? (
+          <Button size="xs" type="button" variant="ghost" onClick={review.toggleDiff}>
+            <EyeOffIcon /> Hide
+          </Button>
+        ) : null}
         {diffShown ? null : (
           <Button size="xs" type="button" variant="ghost" onClick={review.showDiff}>
             <EyeIcon /> Show diff
           </Button>
         )}
-        {permitted.undo ? (
+        {permitted.undo && !review.accepted ? (
           <Button
             size="xs"
             type="button"
@@ -74,7 +79,7 @@ export function WorkbenchReviewBar({
             <Undo2Icon /> Undo
           </Button>
         ) : null}
-        {permitted.accept ? (
+        {permitted.accept && !review.accepted ? (
           <Button
             size="xs"
             type="button"

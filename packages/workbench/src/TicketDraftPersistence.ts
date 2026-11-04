@@ -20,7 +20,12 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 
-import { documentProvenance, documentWrite, type DocumentWriter } from "./documentReview.ts";
+import {
+  documentProvenance,
+  documentWrite,
+  resolvedReview,
+  type DocumentWriter,
+} from "./documentReview.ts";
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 
 const persistenceError = () =>
@@ -343,6 +348,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
             updatedByThreadId: draft.updatedByThreadId ?? null,
             updatedByAskForChange: draft.updatedByAskForChange ?? false,
             reviewBase: draft.reviewBase ?? null,
+            acceptedBase: draft.acceptedBase ?? null,
           },
           after: input.fields,
         });
@@ -384,7 +390,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
                   ...documentProvenance({ kind: "user" }),
                 }
               : {}),
-            reviewBase: null,
+            ...resolvedReview(input.resolution, base),
             revision: draft.revision + 1,
             updatedAt: yield* now,
           });

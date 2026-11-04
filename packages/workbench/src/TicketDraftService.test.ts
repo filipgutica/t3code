@@ -997,6 +997,45 @@ describe("TicketDraftService", () => {
     }).pipe(Effect.provide(f.layer));
   });
 
+  it.effect("keeps a draft's accepted change viewable until the content changes again", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const store = yield* WorkbenchStore;
+      const original = { title: seeded.fields.title, markdown: seeded.fields.markdown };
+      const edited = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: { ...seeded.fields, markdown: "## Goal\nExplain every failure" },
+        writer: { kind: "agent", threadId: seeded.threadId },
+      });
+      const accepted = yield* store.resolveTicketDraftReview({
+        id: edited.id,
+        expectedRevision: edited.revision,
+        resolution: "accept",
+      });
+      expect(accepted).toMatchObject({ reviewBase: null, acceptedBase: original });
+      const refused = yield* Effect.flip(
+        store.resolveTicketDraftReview({
+          id: accepted.id,
+          expectedRevision: accepted.revision,
+          resolution: "undo",
+        }),
+      );
+      expect(refused).toMatchObject({ code: "review_not_pending" });
+      const next = yield* store.updateTicketDraft({
+        id: accepted.id,
+        expectedRevision: accepted.revision,
+        fields: { ...accepted.fields, markdown: "## Goal\nExplain failures with causes" },
+        writer: { kind: "agent", threadId: seeded.threadId },
+      });
+      expect(next).toMatchObject({
+        reviewBase: { title: edited.fields.title, markdown: edited.fields.markdown },
+        acceptedBase: null,
+      });
+    }).pipe(Effect.provide(f.layer));
+  });
+
   it.effect.each(["undo", "accept"] as const)(
     "refuses to %s a draft's review on an archived Board",
     (resolution) => {

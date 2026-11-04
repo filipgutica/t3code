@@ -8,9 +8,12 @@ export type MarkdownReviewOutcome =
   | { readonly kind: "conflict"; readonly message: string }
   | { readonly kind: "failed"; readonly message: string };
 
+type ReviewBase = { readonly title: string; readonly markdown: string };
+
 /**
  * The review of a titled Markdown document against the text before its unreviewed edits.
  * `base` is null when nothing awaits review. Undo and Accept act on every change since then.
+ * With `onHideAccepted`, `base` is an accepted change being shown: read-only, hidden by it.
  */
 export function useMarkdownReview({
   base,
@@ -18,14 +21,17 @@ export function useMarkdownReview({
   markdown,
   onAccept,
   onUndo,
+  onHideAccepted,
 }: {
-  readonly base: { readonly title: string; readonly markdown: string } | null;
+  readonly base: ReviewBase | null;
   readonly title: string;
   readonly markdown: string;
   readonly onAccept: () => Promise<MarkdownReviewOutcome>;
   readonly onUndo: () => Promise<MarkdownReviewOutcome>;
+  readonly onHideAccepted?: (() => void) | undefined;
 }) {
-  const [hidden, setHidden] = useState(false);
+  // Hidden only for the base it was hidden on, so a later review starts with its diff shown.
+  const [hiddenFor, setHiddenFor] = useState<ReviewBase | null>(null);
   const [pending, setPending] = useState<"accept" | "undo" | null>(null);
   // Kept with the base it met, so a later review of other edits does not repeat it.
   const [conflict, setConflict] = useState<{
@@ -41,23 +47,28 @@ export function useMarkdownReview({
     const reviewed = base;
     const outcome = await (action === "accept" ? onAccept() : onUndo());
     setPending(null);
-    if (outcome.kind === "done") setHidden(false);
-    else if (outcome.kind === "conflict" && reviewed !== null) {
-      setConflict({ message: outcome.message, base: reviewed });
-    } else if (outcome.kind !== "conflict") setError(outcome.message);
+    if (outcome.kind === "conflict") {
+      if (reviewed !== null) setConflict({ message: outcome.message, base: reviewed });
+    } else if (outcome.kind === "failed") setError(outcome.message);
   };
 
   if (base === null) return { review: null, diffShown: false };
+  const accepted = onHideAccepted !== undefined;
   const titleChanged = base.title !== title;
   const blocks = diffMarkdownBlocks(base.markdown, markdown);
-  const diffShown = !hidden;
+  const diffShown =
+    accepted ||
+    hiddenFor === null ||
+    hiddenFor.title !== base.title ||
+    hiddenFor.markdown !== base.markdown;
   return {
     diffShown,
     review: {
+      accepted,
       blocks,
       // A title too long to diff word by word shows as its current text.
       titleWords: titleChanged ? diffWords(base.title, title) : null,
-      summary: describeMarkdownReview({ titleChanged, review: blocks }),
+      summary: describeMarkdownReview({ titleChanged, review: blocks, accepted }),
       diffShown,
       pending,
       conflict:
@@ -67,8 +78,8 @@ export function useMarkdownReview({
           ? conflict.message
           : null,
       error,
-      toggleDiff: () => setHidden((value) => !value),
-      showDiff: () => setHidden(false),
+      toggleDiff: onHideAccepted ?? (() => setHiddenFor(diffShown ? base : null)),
+      showDiff: () => setHiddenFor(null),
       accept: () => void run("accept"),
       undo: () => void run("undo"),
     },
