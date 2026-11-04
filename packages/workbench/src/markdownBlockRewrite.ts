@@ -7,6 +7,16 @@ import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 // spaces render differently from their source, so a source match may not be the selection.
 const INLINE_MARKUP = /[*_`[\]<>\\~&\0]|[^\S ]| {2}|:\/\/|www\./i;
 
+const WORD_CHAR = /[\p{L}\p{N}_'’]/u;
+
+/** Widens `block.slice(from, to)` to whole words, so a selection that cuts a word rewrites all of it. */
+const wholeWords = (block: string, from: number, to: number) => {
+  const inWord = (index: number) => WORD_CHAR.test(block.charAt(index));
+  while (from > 0 && inWord(from - 1) && inWord(from)) from--;
+  while (to < block.length && inWord(to) && inWord(to - 1)) to++;
+  return { from, to };
+};
+
 /** Drops blank lines around `text` but keeps leading indentation, which can make a code block. */
 const trimBlankLines = (text: string) => text.replace(/^(?:[ \t]*\r?\n)+/, "").trimEnd();
 
@@ -46,15 +56,16 @@ export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(f
   const at = needle === "" || INLINE_MARKUP.test(block) ? -1 : block.indexOf(needle);
   let rewritten: string;
   if (at !== -1 && at === block.lastIndexOf(needle)) {
+    const { from, to } = wholeWords(block, at, at + needle.length);
     const replacement = yield* host.rewrite({
       projectId: input.projectId,
-      blocks: needle,
+      blocks: block.slice(from, to),
       selectedText: "",
       instruction: input.instruction,
       // The surrounding blocks come first, so a long document context cannot truncate them.
       context: `${block}\n\n${input.context}`,
     });
-    rewritten = `${block.slice(0, at)}${replacement.trim()}${block.slice(at + needle.length)}`;
+    rewritten = `${block.slice(0, from)}${replacement.trim()}${block.slice(to)}`;
   } else {
     rewritten = yield* host.rewrite({
       projectId: input.projectId,

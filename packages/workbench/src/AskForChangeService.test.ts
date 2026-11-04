@@ -178,6 +178,45 @@ describe("AskForChangeService", () => {
     );
   });
 
+  it.effect("widens a selection that cuts a word to the whole word", () => {
+    const requests: Array<MarkdownRewriteRequest> = [];
+    const paragraph = "Teams may already have a full setup.";
+    const markdown = `## Goal\n\n${goal}\n\n${paragraph}`;
+    const at = markdown.indexOf(paragraph);
+    return Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const service = yield* AskForChangeService;
+      const seeded = yield* seedTicket;
+      const ticket = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: seeded.revision,
+        markdown,
+        updatedAt: createdAt,
+        writer: { kind: "user" },
+      });
+      const saved = yield* service.askForTicketChange({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        start: at,
+        end: at + paragraph.length,
+        blockSource: paragraph,
+        selectedText: "lready have a fu",
+        instruction: "Fix the grammar.",
+      });
+      expect(requests.map((request) => request.blocks)).toEqual(["already have a full"]);
+      expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\nTeams may already have a complete setup.`);
+    }).pipe(
+      Effect.provide(
+        withHost((request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            return "already have a complete";
+          }),
+        ),
+      ),
+    );
+  });
+
   it.effect("rewrites only a selection found once and keeps the rest of its block", () => {
     const requests: Array<MarkdownRewriteRequest> = [];
     const first = "Setup clones each repository.";
