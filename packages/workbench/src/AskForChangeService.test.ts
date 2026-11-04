@@ -258,6 +258,11 @@ describe("AskForChangeService", () => {
       block: "Press the retry  button, then document retry button.",
       selectedText: "retry button",
     },
+    {
+      name: "a URL shown as a chip",
+      block: "Review https://github.com/acme/app/pull/7, then document app#7.",
+      selectedText: "app#7",
+    },
   ])("rewrites the whole block when it has $name", ({ block, selectedText }) => {
     const requests: Array<MarkdownRewriteRequest> = [];
     const rewritten = "Use Try again when setup fails.";

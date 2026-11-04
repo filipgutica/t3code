@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect";
 
 import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 
-// Inline syntax, entities, and any whitespace but single spaces render differently from their
-// source, so a source match may not be the selection.
-const INLINE_MARKUP = /[*_`[\]<>\\~&]|[^\S ]| {2}/;
+// Inline syntax, entities, URLs (shown as short chips), NUL, and any whitespace but single
+// spaces render differently from their source, so a source match may not be the selection.
+const INLINE_MARKUP = /[*_`[\]<>\\~&\0]|[^\S ]| {2}|:\/\/|www\./i;
 
 /**
  * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`. A selection
