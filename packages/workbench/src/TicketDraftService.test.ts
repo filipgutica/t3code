@@ -997,6 +997,38 @@ describe("TicketDraftService", () => {
     }).pipe(Effect.provide(f.layer));
   });
 
+  it.effect.each(["undo", "accept"] as const)(
+    "refuses to %s a draft's review on an archived Board",
+    (resolution) => {
+      const f = fixture();
+      return Effect.gen(function* () {
+        const seeded = yield* seed;
+        const store = yield* WorkbenchStore;
+        const edited = yield* store.updateTicketDraft({
+          id: seeded.id,
+          expectedRevision: seeded.revision,
+          fields: { ...seeded.fields, markdown: "## Goal\nExplain every failure" },
+          writer: { kind: "agent", threadId: seeded.threadId },
+        });
+        yield* store.archiveProject({
+          id: workspaceId,
+          expectedRevision: 0,
+          archivedAt: timestamp,
+          updatedAt: timestamp,
+        });
+        const refused = yield* Effect.flip(
+          store.resolveTicketDraftReview({
+            id: edited.id,
+            expectedRevision: edited.revision,
+            resolution,
+          }),
+        );
+        expect(refused).toMatchObject({ code: "project_archived" });
+        expect(yield* store.getTicketDraft(edited.id)).toEqual(edited);
+      }).pipe(Effect.provide(f.layer));
+    },
+  );
+
   it.effect("creating the Ticket accepts a draft's pending changes", () => {
     const f = fixture();
     return Effect.gen(function* () {

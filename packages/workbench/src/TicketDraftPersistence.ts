@@ -367,6 +367,8 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       return yield* sql.withTransaction(
         Effect.gen(function* () {
           const draft = yield* lockEditableDraft(input);
+          // Archiving a Board leaves its drafts' revisions alone, so check it here, as edits do.
+          yield* requireWorkspace(draft.projectId);
           const base = draft.reviewBase ?? null;
           if (base === null) {
             return yield* new WorkbenchOperationError({
