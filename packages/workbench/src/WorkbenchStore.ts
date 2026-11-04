@@ -53,6 +53,7 @@ import * as SqlSchema from "effect/sql/SqlSchema";
 import type * as Statement from "effect/sql/Statement";
 import * as Hex from "effect/encoding/Hex";
 
+import { documentProvenance, documentWrite, type DocumentWriter } from "./documentReview.ts";
 import { listTicketDrafts, makeTicketDraftPersistence } from "./TicketDraftPersistence.ts";
 
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
@@ -121,6 +122,11 @@ const WorkbenchTicketRow = Schema.Struct({
   generatedSummaryRequestId: Schema.NullOr(Schema.String),
   archivedAt: Schema.NullOr(IsoDateTime),
   updatedByThreadId: Schema.NullOr(ThreadId),
+  updatedByAskForChange: Schema.Number,
+  reviewBaseTitle: Schema.NullOr(Schema.String),
+  reviewBaseMarkdown: Schema.NullOr(Schema.String),
+  acceptedBaseTitle: Schema.NullOr(Schema.String),
+  acceptedBaseMarkdown: Schema.NullOr(Schema.String),
   progress: Schema.String,
   progressUpdatedByThreadId: Schema.NullOr(ThreadId),
   createdAt: WorkbenchTicket.fields.createdAt,
@@ -198,6 +204,45 @@ const progressFields = (row: {
   };
 };
 
+type ReviewBase = { readonly title: string; readonly markdown: string } | null;
+
+const baseFromColumns = (title: string | null, markdown: string | null): ReviewBase =>
+  title === null || markdown === null ? null : { title, markdown };
+
+const reviewBaseFromRow = (row: {
+  readonly reviewBaseTitle: string | null;
+  readonly reviewBaseMarkdown: string | null;
+}) => baseFromColumns(row.reviewBaseTitle, row.reviewBaseMarkdown);
+
+const acceptedBaseFromRow = (row: {
+  readonly acceptedBaseTitle: string | null;
+  readonly acceptedBaseMarkdown: string | null;
+}) => baseFromColumns(row.acceptedBaseTitle, row.acceptedBaseMarkdown);
+
+type ReviewState = {
+  readonly reviewBase: ReviewBase;
+  readonly acceptedBase: ReviewBase;
+  readonly updatedByAskForChange: boolean;
+};
+
+/** The stored form of a write's review state. */
+const reviewColumns = ({ reviewBase, acceptedBase, updatedByAskForChange }: ReviewState) => ({
+  reviewBaseTitle: reviewBase?.title ?? null,
+  reviewBaseMarkdown: reviewBase?.markdown ?? null,
+  acceptedBaseTitle: acceptedBase?.title ?? null,
+  acceptedBaseMarkdown: acceptedBase?.markdown ?? null,
+  updatedByAskForChange: updatedByAskForChange ? 1 : 0,
+});
+
+/** Every Ticket result carries the same review fields; snapshots drop both bases. */
+const reviewFields = ({ reviewBase, acceptedBase, updatedByAskForChange }: ReviewState) => ({
+  updatedByAskForChange,
+  reviewPending: reviewBase !== null,
+  reviewBase,
+  acceptedChange: acceptedBase !== null,
+  acceptedBase,
+});
+
 const ticketFromRow = (
   row: typeof WorkbenchTicketRow.Type,
   repositoryProjectIds: ReadonlyArray<ProjectId>,
@@ -214,27 +259,22 @@ const ticketFromRow = (
     generatedSummary: generatedSummaryFromRow(row),
     archivedAt: row.archivedAt,
     updatedByThreadId: row.updatedByThreadId,
+    ...reviewFields({
+      reviewBase: reviewBaseFromRow(row),
+      acceptedBase: acceptedBaseFromRow(row),
+      updatedByAskForChange: row.updatedByAskForChange === 1,
+    }),
     ...progressFields(row),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
-
-const ticketProvenance = ({
-  input,
-  current,
-  contentChanged,
-}: {
-  readonly input: { readonly updatedByThreadId?: ThreadId };
-  readonly current: typeof WorkbenchTicketRow.Type;
-  readonly contentChanged: boolean;
-}) => (contentChanged ? (input.updatedByThreadId ?? null) : current.updatedByThreadId);
 
 /** Progress and who last changed it; only agents pass `progress`. */
 const progressUpdate = ({
   input,
   current,
 }: {
-  readonly input: { readonly progress?: string; readonly updatedByThreadId?: ThreadId };
+  readonly input: { readonly progress?: string; readonly writer: DocumentWriter };
   readonly current: typeof WorkbenchTicketRow.Type;
 }) => {
   const progress = input.progress ?? current.progress;
@@ -243,7 +283,7 @@ const progressUpdate = ({
     progressUpdatedByThreadId:
       progress === current.progress
         ? current.progressUpdatedByThreadId
-        : (input.updatedByThreadId ?? null),
+        : documentProvenance(input.writer).updatedByThreadId,
   };
 };
 
@@ -432,6 +472,7 @@ export interface WorkbenchClaimTicketWorkspaceReleaseInput {
 /** Ticket fields only agents write; client RPC inputs never carry them. */
 export interface WorkbenchTicketAgentFields {
   readonly updatedByThreadId?: ThreadId | null;
+  readonly updatedByAskForChange?: boolean;
   readonly progress?: string;
   readonly progressUpdatedByThreadId?: ThreadId | null;
 }
@@ -488,15 +529,24 @@ interface WorkbenchStoreShape extends Omit<
     input: WorkbenchCreateTicketInput & WorkbenchTicketAgentFields,
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /**
-   * A changed title or description records `updatedByThreadId`, which an
-   * agent passes and a user edit omits. Only agents pass `progress`.
+   * A changed title or description records its writer and updates the review
+   * base (see `documentWrite`). Only agents pass `progress`.
    */
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput & {
-      readonly updatedByThreadId?: ThreadId;
+      readonly writer: DocumentWriter;
       readonly progress?: string;
     },
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
+  /**
+   * Accept clears the review base; Undo writes it back with no Thread recorded.
+   * Both bump the revision, and a stale `expectedRevision` changes nothing.
+   */
+  readonly resolveTicketReview: (input: {
+    readonly id: WorkbenchTicketId;
+    readonly expectedRevision: number;
+    readonly resolution: "accept" | "undo";
+  }) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /** Restores the native event cursor and settles runs held by older releases. */
   readonly initializeTicketExecution: Effect.Effect<number, WorkbenchOperationError>;
   /** Moves the Ticket assigned to a newly running native Thread to In Progress. */
@@ -776,6 +826,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
         updated_by_thread_id AS "updatedByThreadId",
+        updated_by_ask_for_change AS "updatedByAskForChange",
+        review_base_title AS "reviewBaseTitle",
+        review_base_markdown AS "reviewBaseMarkdown",
+        accepted_base_title AS "acceptedBaseTitle",
+        accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
         created_at AS "createdAt",
@@ -1450,6 +1505,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
         generated_summary_request_id AS "generatedSummaryRequestId",
         archived_at AS "archivedAt",
         updated_by_thread_id AS "updatedByThreadId",
+        updated_by_ask_for_change AS "updatedByAskForChange",
+        review_base_title AS "reviewBaseTitle",
+        review_base_markdown AS "reviewBaseMarkdown",
+        accepted_base_title AS "acceptedBaseTitle",
+        accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
         created_at AS "createdAt",
@@ -1791,8 +1851,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
             linkedProjectIds: linksByProject.get(project.id) ?? [],
           })),
           tickets: ticketRows.map((ticket) => {
-            // The Board needs only the counts; the Ticket read carries the list.
-            const { progress: _progress, ...snapshotTicket } = ticketFromRow(
+            // The Board needs only the counts and review flag; the Ticket read carries the rest.
+            const {
+              progress: _progress,
+              reviewBase: _reviewBase,
+              acceptedBase: _acceptedBase,
+              ...snapshotTicket
+            } = ticketFromRow(
               ticket,
               repositoriesByTicket.get(ticket.id) ?? [ticket.anchorProjectId],
             );
@@ -2720,6 +2785,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     const {
       references: stagedReferences = [],
       updatedByThreadId = null,
+      updatedByAskForChange = false,
       progress = "",
       progressUpdatedByThreadId = null,
       ...ticketInput
@@ -2751,6 +2817,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               generated_summary_source_hash,
               generated_summary_request_id,
               updated_by_thread_id,
+              updated_by_ask_for_change,
               progress,
               progress_updated_by_thread_id,
               created_at,
@@ -2771,6 +2838,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               NULL,
               NULL,
               ${updatedByThreadId},
+              ${updatedByAskForChange ? 1 : 0},
               ${progress},
               ${progressUpdatedByThreadId},
               ${input.createdAt},
@@ -2803,6 +2871,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       ...ticketInput,
       repositoryProjectIds,
       updatedByThreadId,
+      ...reviewFields({ reviewBase: null, acceptedBase: null, updatedByAskForChange }),
       ...progressFields({ progress, progressUpdatedByThreadId }),
       status: "todo",
       blocked: false,
@@ -2923,7 +2992,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             revisionMessage: "The Workbench Ticket changed before it could be updated.",
             activeOnly: false,
           });
-          yield* requireActingThread(input.updatedByThreadId, input.id);
+          yield* requireActingThread(documentProvenance(input.writer).updatedByThreadId, input.id);
           if (current.archivedAt !== null) {
             return yield* new WorkbenchOperationError({
               code: "ticket_archived",
@@ -2973,8 +3042,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
             requested: input.repositoryProjectIds,
           });
           yield* recordLocalExecutionReset({ ticketId: input.id, status: input.status });
-          const contentChanged = title !== current.title || markdown !== current.markdown;
-          const updatedByThreadId = ticketProvenance({ input, current, contentChanged });
+          const { contentChanged, updatedByThreadId, ...reviewState } = documentWrite({
+            writer: input.writer,
+            before: {
+              title: current.title,
+              markdown: current.markdown,
+              updatedByThreadId: current.updatedByThreadId,
+              updatedByAskForChange: current.updatedByAskForChange === 1,
+              reviewBase: reviewBaseFromRow(current),
+              acceptedBase: acceptedBaseFromRow(current),
+            },
+            after: { title, markdown },
+          });
+          const review = reviewColumns(reviewState);
           const { progress, progressUpdatedByThreadId } = progressUpdate({ input, current });
           const summary = summaryUpdate({ row: current, contentChanged });
           yield* sql`
@@ -2986,6 +3066,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               status = ${status},
               blocked = ${blocked ? 1 : 0},
               updated_by_thread_id = ${updatedByThreadId},
+              updated_by_ask_for_change = ${review.updatedByAskForChange},
+              review_base_title = ${review.reviewBaseTitle},
+              review_base_markdown = ${review.reviewBaseMarkdown},
+              accepted_base_title = ${review.acceptedBaseTitle},
+              accepted_base_markdown = ${review.acceptedBaseMarkdown},
               progress = ${progress},
               progress_updated_by_thread_id = ${progressUpdatedByThreadId},
               generated_summary_status = ${summary.generatedSummaryStatus},
@@ -3029,6 +3114,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               generatedSummary: summary.generatedSummary,
               archivedAt: current.archivedAt,
               updatedByThreadId,
+              ...reviewFields(reviewState),
               ...progressFields({ progress, progressUpdatedByThreadId }),
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
@@ -3039,6 +3125,78 @@ const makeWorkbenchStore = Effect.gen(function* () {
       )
       .pipe(Effect.mapError(workbenchStoreError));
     if (contentChanged) yield* publishTicketChange(ticket.id);
+    return ticket;
+  });
+
+  const resolveTicketReview: WorkbenchStoreShape["resolveTicketReview"] = Effect.fn(
+    "WorkbenchStore.resolveTicketReview",
+  )(function* (input) {
+    const updatedAt = DateTime.formatIso(yield* DateTime.now);
+    const ticket = yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          const current = yield* requireTicketRevision({
+            ticketId: input.id,
+            expectedRevision: input.expectedRevision,
+            revisionMessage: "The brief changed since you reviewed it. Review the new changes.",
+            activeOnly: false,
+          });
+          if (current.archivedAt !== null) {
+            return yield* new WorkbenchOperationError({
+              code: "ticket_archived",
+              message: "Archived Workbench Tickets cannot be modified.",
+            });
+          }
+          const base = reviewBaseFromRow(current);
+          if (base === null) {
+            return yield* new WorkbenchOperationError({
+              code: "review_not_pending",
+              message: "No changes to this Ticket await review.",
+            });
+          }
+          if (input.resolution === "accept") {
+            yield* sql`
+              UPDATE workbench_tickets
+              SET review_base_title = NULL, review_base_markdown = NULL,
+                accepted_base_title = ${base.title}, accepted_base_markdown = ${base.markdown},
+                revision = revision + 1, updated_at = ${updatedAt}
+              WHERE ticket_id = ${input.id}
+            `;
+          } else {
+            const summary = summaryUpdate({ row: current, contentChanged: true });
+            yield* sql`
+              UPDATE workbench_tickets
+              SET
+                title = ${base.title},
+                markdown = ${base.markdown},
+                review_base_title = NULL,
+                review_base_markdown = NULL,
+                accepted_base_title = NULL,
+                accepted_base_markdown = NULL,
+                updated_by_thread_id = NULL,
+                updated_by_ask_for_change = 0,
+                generated_summary_status = ${summary.generatedSummaryStatus},
+                generated_summary_stale = ${summary.generatedSummaryStale},
+                generated_summary_error = ${summary.generatedSummaryError},
+                generated_summary_source_hash = ${summary.generatedSummarySourceHash},
+                generated_summary_request_id = ${summary.generatedSummaryRequestId},
+                revision = revision + 1,
+                updated_at = ${updatedAt}
+              WHERE ticket_id = ${input.id}
+            `;
+          }
+          const saved = yield* findTicket({ id: input.id });
+          const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId: input.id });
+          return ticketFromRow(
+            Option.getOrThrow(saved),
+            repositories.length > 0
+              ? repositories.map((repository) => repository.repositoryProjectId)
+              : [current.anchorProjectId],
+          );
+        }),
+      )
+      .pipe(Effect.mapError(workbenchStoreError));
+    if (input.resolution === "undo") yield* publishTicketChange(ticket.id);
     return ticket;
   });
 
@@ -3749,6 +3907,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     updateProject,
     createTicket,
     updateTicket,
+    resolveTicketReview,
     initializeTicketExecution,
     consumeTicketExecution,
     addReference,

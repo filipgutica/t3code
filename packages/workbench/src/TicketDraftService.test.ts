@@ -706,6 +706,7 @@ describe("TicketDraftService", () => {
         repositoryProjectIds: [first],
         markdown: "Updated plan",
         updatedAt: timestamp,
+        writer: { kind: "user" },
       });
       yield* store.updateProject({
         id: workspaceId,
@@ -848,7 +849,7 @@ describe("TicketDraftService", () => {
         id: seeded.id,
         expectedRevision: seeded.revision,
         fields: { ...seeded.fields, markdown: "Agent brief" },
-        updatedByThreadId: seeded.threadId,
+        writer: { kind: "agent", threadId: seeded.threadId },
       });
       yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
       const ticket = (yield* store.getSnapshot).tickets.find(({ id }) => id === draft.id);
@@ -867,7 +868,7 @@ describe("TicketDraftService", () => {
         expectedRevision: seeded.revision,
         fields: seeded.fields,
         progress: "- [ ] PR 1. API\n- [ ] PR 2. Web",
-        updatedByThreadId: seeded.threadId,
+        writer: { kind: "agent", threadId: seeded.threadId },
       });
       // Client draft edits carry no Progress, so they cannot clear it.
       const edited = yield* service.update({
@@ -916,6 +917,178 @@ describe("TicketDraftService", () => {
       expect((yield* store.getSnapshot).references).toEqual([]);
       yield* service.discard({ id: draft.id, expectedRevision: discarding.revision });
       expect(yield* sql`SELECT 1 FROM workbench_references`).toEqual([]);
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("reviews a draft's agent edits until Accept, Undo, or a user edit", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const original = { title: seeded.fields.title, markdown: seeded.fields.markdown };
+      const agentEdit = (
+        draft: typeof seeded,
+        markdown: string,
+        writer: Parameters<typeof store.updateTicketDraft>[0]["writer"] = {
+          kind: "agent",
+          threadId: seeded.threadId,
+        },
+      ) =>
+        store.updateTicketDraft({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          fields: { ...draft.fields, markdown },
+          writer,
+        });
+      const first = yield* agentEdit(seeded, "## Goal\nExplain every failure");
+      const second = yield* agentEdit(first, "## Goal\nExplain every failure clearly", {
+        kind: "askForChange",
+      });
+      expect(second).toMatchObject({
+        reviewBase: original,
+        updatedByThreadId: null,
+        updatedByAskForChange: true,
+      });
+
+      const stale = yield* Effect.flip(
+        store.resolveTicketDraftReview({
+          id: second.id,
+          expectedRevision: first.revision,
+          resolution: "undo",
+        }),
+      );
+      expect(stale).toMatchObject({ code: "ticket_draft_changed" });
+      expect(yield* store.getTicketDraft(second.id)).toEqual(second);
+
+      const undone = yield* store.resolveTicketDraftReview({
+        id: second.id,
+        expectedRevision: second.revision,
+        resolution: "undo",
+      });
+      expect(undone).toMatchObject({
+        fields: { ...second.fields, ...original },
+        reviewBase: null,
+        updatedByThreadId: null,
+        updatedByAskForChange: false,
+        revision: second.revision + 1,
+      });
+
+      const again = yield* agentEdit(undone, "## Goal\nExplain failures briefly");
+      const accepted = yield* store.resolveTicketDraftReview({
+        id: again.id,
+        expectedRevision: again.revision,
+        resolution: "accept",
+      });
+      expect(accepted).toMatchObject({
+        fields: again.fields,
+        reviewBase: null,
+        updatedByThreadId: seeded.threadId,
+        revision: again.revision + 1,
+      });
+
+      const reviewing = yield* agentEdit(accepted, "## Goal\nExplain failures with causes");
+      const byUser = yield* service.update({
+        id: reviewing.id,
+        expectedRevision: reviewing.revision,
+        fields: { ...reviewing.fields, markdown: "## Goal\nMy own brief" },
+      });
+      expect(byUser).toMatchObject({ reviewBase: null, updatedByThreadId: null });
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect("keeps a draft's accepted change viewable until the content changes again", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const store = yield* WorkbenchStore;
+      const original = { title: seeded.fields.title, markdown: seeded.fields.markdown };
+      const edited = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: { ...seeded.fields, markdown: "## Goal\nExplain every failure" },
+        writer: { kind: "agent", threadId: seeded.threadId },
+      });
+      const accepted = yield* store.resolveTicketDraftReview({
+        id: edited.id,
+        expectedRevision: edited.revision,
+        resolution: "accept",
+      });
+      expect(accepted).toMatchObject({ reviewBase: null, acceptedBase: original });
+      const refused = yield* Effect.flip(
+        store.resolveTicketDraftReview({
+          id: accepted.id,
+          expectedRevision: accepted.revision,
+          resolution: "undo",
+        }),
+      );
+      expect(refused).toMatchObject({ code: "review_not_pending" });
+      const next = yield* store.updateTicketDraft({
+        id: accepted.id,
+        expectedRevision: accepted.revision,
+        fields: { ...accepted.fields, markdown: "## Goal\nExplain failures with causes" },
+        writer: { kind: "agent", threadId: seeded.threadId },
+      });
+      expect(next).toMatchObject({
+        reviewBase: { title: edited.fields.title, markdown: edited.fields.markdown },
+        acceptedBase: null,
+      });
+    }).pipe(Effect.provide(f.layer));
+  });
+
+  it.effect.each(["undo", "accept"] as const)(
+    "refuses to %s a draft's review on an archived Board",
+    (resolution) => {
+      const f = fixture();
+      return Effect.gen(function* () {
+        const seeded = yield* seed;
+        const store = yield* WorkbenchStore;
+        const edited = yield* store.updateTicketDraft({
+          id: seeded.id,
+          expectedRevision: seeded.revision,
+          fields: { ...seeded.fields, markdown: "## Goal\nExplain every failure" },
+          writer: { kind: "agent", threadId: seeded.threadId },
+        });
+        yield* store.archiveProject({
+          id: workspaceId,
+          expectedRevision: 0,
+          archivedAt: timestamp,
+          updatedAt: timestamp,
+        });
+        const refused = yield* Effect.flip(
+          store.resolveTicketDraftReview({
+            id: edited.id,
+            expectedRevision: edited.revision,
+            resolution,
+          }),
+        );
+        expect(refused).toMatchObject({ code: "project_archived" });
+        expect(yield* store.getTicketDraft(edited.id)).toEqual(edited);
+      }).pipe(Effect.provide(f.layer));
+    },
+  );
+
+  it.effect("creating the Ticket accepts a draft's pending changes", () => {
+    const f = fixture();
+    return Effect.gen(function* () {
+      const seeded = yield* seed;
+      const service = yield* TicketDraftService;
+      const store = yield* WorkbenchStore;
+      const asked = yield* store.updateTicketDraft({
+        id: seeded.id,
+        expectedRevision: seeded.revision,
+        fields: { ...seeded.fields, markdown: "## Goal\nExplain every failure" },
+        writer: { kind: "askForChange" },
+      });
+      expect(asked.reviewBase).not.toBeNull();
+      const promoted = yield* service.promote({ id: asked.id, expectedRevision: asked.revision });
+      expect(promoted.reviewBase).toBeNull();
+      expect(Option.getOrThrow(yield* store.getTicket(asked.id))).toMatchObject({
+        markdown: "## Goal\nExplain every failure",
+        reviewPending: false,
+        reviewBase: null,
+        updatedByAskForChange: true,
+      });
     }).pipe(Effect.provide(f.layer));
   });
 });

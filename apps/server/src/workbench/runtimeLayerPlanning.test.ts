@@ -676,6 +676,7 @@ it.effect(
         id: begun.id,
         expectedRevision: begun.revision,
         fields: draft.fields,
+        writer: { kind: "user" },
       });
       for (const threadId of [planningThreadId, nativeThreadId]) {
         if (threadId === nativeThreadId)

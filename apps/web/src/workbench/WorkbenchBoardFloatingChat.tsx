@@ -42,7 +42,8 @@ import {
 } from "./workbenchTicketDraft.logic";
 import { usePlanningModelSelection } from "./usePlanningModelSelection";
 import { useWorkbenchThreadRecaps } from "./useWorkbenchThreadRecaps";
-import { WorkbenchDraftReferences, workbenchThreadTitle } from "./WorkbenchReferences";
+import { WorkbenchDraftReferences, workbenchProvenanceSource } from "./WorkbenchReferences";
+import { useWorkbenchDraftBriefReview } from "./useWorkbenchBriefReview";
 import {
   getReferenceFileCwd,
   getTicketReferences,
@@ -441,18 +442,8 @@ const getNewTicketThread = (
 };
 
 /** The full draft page's rule: the grant, and nothing archived. */
-const useCanOperateDraft = ({
-  environmentId,
-  workspace,
-  ticket,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly workspace: WorkbenchBoardFloatingChatProps["workspace"];
-  readonly ticket: WorkbenchTicket | null;
-}) =>
-  useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) &&
-  workspace.archivedAt == null &&
-  ticket?.archivedAt == null;
+const useCanOperateDraft = (environmentId: EnvironmentId, archived: boolean) =>
+  useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) && !archived;
 
 /** Nothing was sent, typed, or written, so leaving the draft loses nothing. */
 const useIsUntouchedDraft = (
@@ -510,7 +501,8 @@ export function WorkbenchDraftThread({
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
-  const canOperate = useCanOperateDraft({ environmentId, workspace, ticket });
+  const archived = workspace.archivedAt != null || ticket?.archivedAt != null;
+  const canOperate = useCanOperateDraft(environmentId, archived);
   const editor = useTicketDraftEditor({
     environmentId,
     draft,
@@ -549,9 +541,11 @@ export function WorkbenchDraftThread({
       createState={createState}
       createContext={createContext}
       canOperate={canOperate}
+      archived={archived}
       ticketExists={ticket !== null}
       untouched={untouched}
       card={cardContext}
+      onDraft={setFromCommand}
     >
       {children}
     </BoardDraftCard>
@@ -586,28 +580,50 @@ const getDraftCardContext = (
 /** An unsaved draft's card, with its References and who last wrote it. */
 function BoardDraftCard({
   environmentId,
+  archived,
   card,
   createContext,
+  onDraft,
   children,
   ...props
 }: Omit<
   Parameters<typeof WorkbenchDraftCard>[0],
-  "updatedBy" | "linkedProjects" | "references" | "referenceCount"
+  "updatedBy" | "briefReview" | "linkedProjects" | "references" | "referenceCount"
 > & {
   readonly environmentId: EnvironmentId;
+  readonly archived: boolean;
   readonly card: DraftCardContext;
   readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
+  readonly onDraft: (draft: WorkbenchConversationDraft) => void;
 }) {
-  const { draft } = props;
+  const { draft, editor } = props;
   const references = getTicketReferences(card.referencesByTicket, draft.id);
+  const briefReview = useWorkbenchDraftBriefReview({
+    environmentId,
+    draft,
+    revision: editor.revision,
+    // The review and offsets describe the saved draft, not unsaved local edits. Read-only
+    // connections still see the diff; their command permissions hide its actions.
+    reviewable:
+      !archived &&
+      editor.editable &&
+      editor.conflict === null &&
+      props.transitions.action === null &&
+      editor.fields.title === draft.fields.title &&
+      editor.fields.markdown === draft.fields.markdown,
+    onDraft,
+  });
   return (
     <WorkbenchDraftCard
       {...props}
-      updatedBy={workbenchThreadTitle(
-        draft.updatedByThreadId,
-        card.threadsById,
-        card.archivedThreadsById,
-      )}
+      updatedBy={workbenchProvenanceSource({
+        environmentId,
+        threadId: draft.updatedByThreadId,
+        askForChange: draft.updatedByAskForChange,
+        threadsById: card.threadsById,
+        archivedThreadsById: card.archivedThreadsById,
+      })}
+      briefReview={briefReview}
       linkedProjects={createContext.linkedProjects}
       references={
         <WorkbenchDraftReferences

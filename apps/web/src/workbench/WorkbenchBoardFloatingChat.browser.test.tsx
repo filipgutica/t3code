@@ -30,14 +30,19 @@ import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const mocks = vi.hoisted(() => ({ begin: vi.fn(), otherCommand: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  begin: vi.fn(),
+  otherCommand: vi.fn(),
+  denied: new Set<string>(),
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: { readonly name: string }) =>
     command.name === "begin" ? mocks.begin : mocks.otherCommand,
 }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@effect/atom-react")>()),
-  useAtomValue: () => true,
+  // The stubbed commands' permission atoms are their names.
+  useAtomValue: (atom: unknown) => !(typeof atom === "string" && mocks.denied.has(atom)),
   useAtomRefresh: () => () => {},
 }));
 vi.mock("./state", () => {
@@ -61,6 +66,9 @@ vi.mock("./state", () => {
       ticketPreparations: () => null,
       addReference: command("addReference"),
       removeReference: command("removeReference"),
+      acceptTicketDraftReview: command("acceptReview"),
+      undoTicketDraftReview: command("undoReview"),
+      askForTicketDraftChange: command("askForChange"),
     },
   };
 });
@@ -170,6 +178,7 @@ function Harness(props: {
   readonly onSnapshot: (add: (input: BeginInput) => void) => void;
   readonly requestedDraftId?: WorkbenchTicketId;
   readonly repositories?: boolean;
+  readonly archived?: boolean;
   readonly missingThreadIds?: ReadonlyArray<ThreadId>;
   readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
@@ -208,7 +217,7 @@ function Harness(props: {
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
-      workspace={workspace}
+      workspace={props.archived ? { ...workspace, archivedAt: createdAt } : workspace}
       providers={[]}
       linkedProjects={linkedProjects}
       tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
@@ -423,10 +432,16 @@ const beginDraft = async (screen: Screen) => {
 };
 
 // The chat stays hidden on narrow screens, which includes the default test viewport.
-const setup = async () => {
+const setup = async ({ readOnly = false } = {}) => {
   await page.viewport(1280, 900);
   mocks.begin.mockReset();
   mocks.otherCommand.mockReset();
+  mocks.denied.clear();
+  if (readOnly) {
+    for (const name of ["promote", "acceptReview", "undoReview", "askForChange"]) {
+      mocks.denied.add(name);
+    }
+  }
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",
     focusRequest: { id: 0, threadId: null },
@@ -692,6 +707,82 @@ it("edits a draft's title in its card and shows the full brief above the convers
     .toBeVisible();
   await userEvent.click(card.getByRole("button", { name: "Show less" }));
   await expect.element(card.getByText("Export refunds")).toBeVisible();
+});
+
+it("shows a read-only connection a draft's unreviewed edit and lets it toggle the diff, without Undo or Accept", async () => {
+  const { onSnapshot } = await setup({ readOnly: true });
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    updatedByAskForChange: true,
+    reviewBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  await expect.element(card.getByRole("region", { name: "Review changes" })).toBeVisible();
+  await expect.element(card.getByText("daily")).toBeVisible();
+  await expect.element(card.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await expect.element(card.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+  // Hiding and showing the diff changes nothing, so the disabled form must not block it.
+  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+  await userEvent.click(card.getByRole("button", { name: "Show diff" }));
+  await expect.element(card.getByText("daily")).toBeVisible();
+});
+
+it("shows a read-only connection a draft's accepted change from the badge", async () => {
+  const { onSnapshot } = await setup({ readOnly: true });
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    updatedByAskForChange: true,
+    acceptedBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+
+  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
+  const bar = card.getByRole("region", { name: "Review changes" });
+  await expect.element(bar).toMatchTextContent(/Accepted change · 1 list/);
+  await expect.element(card.getByText("daily")).toBeVisible();
+  await expect.element(bar.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await userEvent.click(bar.getByRole("button", { name: "Hide" }));
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+});
+
+it("offers no review or selection Ask for change on an archived Board's draft", async () => {
+  const { onSnapshot } = await setup();
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    reviewBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(
+    <Harness initialDrafts={[initial]} onSnapshot={onSnapshot} archived />,
+  );
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect
+    .element(card.getByRole("region", { name: "Review changes" }))
+    .not.toBeInTheDocument();
+  // The same gate turns off the selection's Ask for change, which would run and then fail;
+  // a pill would be a second match beside the header's disabled button.
+  await userEvent.tripleClick(card.getByText("Email the CSV"));
+  await expect.element(page.getByRole("button", { name: "Ask for change" })).toBeDisabled();
 });
 
 it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {

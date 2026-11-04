@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
+import * as AskForChangeService from "./AskForChangeService.ts";
 import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
@@ -13,6 +14,7 @@ import * as WorkspaceLifecycleService from "@t3tools/workbench/WorkspaceLifecycl
 type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof WorkbenchRpcGroup>>;
 
 export type WorkbenchRpcServices = {
+  readonly askForChange: AskForChangeService.AskForChangeService["Service"];
   readonly ticketDrafts: TicketDraftService.TicketDraftService["Service"];
   readonly ticketContexts: TicketContextService.TicketContextService["Service"];
   readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
@@ -22,6 +24,7 @@ export type WorkbenchRpcServices = {
 };
 
 export const acquireWorkbenchRpcServices = Effect.gen(function* () {
+  const askForChange = yield* AskForChangeService.AskForChangeService;
   const ticketDrafts = yield* TicketDraftService.TicketDraftService;
   const ticketContexts = yield* TicketContextService.TicketContextService;
   const workbench = yield* WorkbenchStore.WorkbenchStore;
@@ -30,6 +33,7 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const workspaceLifecycle = yield* WorkspaceLifecycleService.WorkspaceLifecycleService;
 
   return {
+    askForChange,
     ticketDrafts,
     ticketContexts,
     workbench,
@@ -40,6 +44,7 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
 });
 
 export const makeWorkbenchRpcHandlers = ({
+  askForChange,
   ticketDrafts,
   ticketContexts,
   workbench,
@@ -53,6 +58,12 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchPromoteTicketDraft]: (input) => ticketDrafts.promote(input),
     [WORKBENCH_WS_METHODS.workbenchDiscardTicketDraft]: (input) => ticketDrafts.discard(input),
     [WORKBENCH_WS_METHODS.workbenchStartTicketDraftWork]: (input) => ticketDrafts.startWork(input),
+    [WORKBENCH_WS_METHODS.workbenchAcceptTicketDraftReview]: (input) =>
+      workbench.resolveTicketDraftReview({ ...input, resolution: "accept" }),
+    [WORKBENCH_WS_METHODS.workbenchUndoTicketDraftReview]: (input) =>
+      workbench.resolveTicketDraftReview({ ...input, resolution: "undo" }),
+    [WORKBENCH_WS_METHODS.workbenchAskForTicketDraftChange]: (input) =>
+      askForChange.askForDraftChange(input),
     [WORKBENCH_WS_METHODS.workbenchGetTicketPreparations]: (_input) =>
       workbench.getTicketPreparations,
     [WORKBENCH_WS_METHODS.workbenchGetSnapshot]: (input) =>
@@ -66,9 +77,16 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),
     [WORKBENCH_WS_METHODS.workbenchDeleteProject]: (input) => workspaceLifecycle.delete(input),
     [WORKBENCH_WS_METHODS.workbenchCreateTicket]: (input) => workbench.createTicket(input),
-    [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: (input) => workbench.updateTicket(input),
+    [WORKBENCH_WS_METHODS.workbenchUpdateTicket]: (input) =>
+      workbench.updateTicket({ ...input, writer: { kind: "user" } }),
     [WORKBENCH_WS_METHODS.workbenchRegenerateTicketSummary]: (input) =>
       ticketSummaries.regenerate(input),
+    [WORKBENCH_WS_METHODS.workbenchAcceptTicketReview]: (input) =>
+      workbench.resolveTicketReview({ ...input, resolution: "accept" }),
+    [WORKBENCH_WS_METHODS.workbenchUndoTicketReview]: (input) =>
+      workbench.resolveTicketReview({ ...input, resolution: "undo" }),
+    [WORKBENCH_WS_METHODS.workbenchAskForTicketChange]: (input) =>
+      askForChange.askForTicketChange(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveTicket]: (input) => workbench.archiveTicket(input),
     [WORKBENCH_WS_METHODS.workbenchDeleteTicket]: (input) => workbench.deleteTicket(input),
     [WORKBENCH_WS_METHODS.workbenchCreateAssignment]: (input) => workbench.createAssignment(input),

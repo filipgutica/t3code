@@ -70,6 +70,7 @@ describe("WorkbenchStore", () => {
             title: "Plan work",
             repositoryProjectIds: [projectId],
           },
+          writer: { kind: "user" },
         });
         draft = yield* store.transitionTicketDraft({
           id: draft.id,
@@ -212,6 +213,7 @@ describe("WorkbenchStore", () => {
         expectedRevision: 0,
         markdown: "Current description",
         updatedAt: "2026-09-05T12:01:00.000Z",
+        writer: { kind: "user" },
       });
       const staleFullUpdate = yield* Effect.flip(
         store.updateTicket({
@@ -222,6 +224,7 @@ describe("WorkbenchStore", () => {
           status: "in_progress",
           blocked: true,
           updatedAt: "2026-09-05T12:02:00.000Z",
+          writer: { kind: "user" },
         }),
       );
       const afterStale = yield* store.getSnapshot;
@@ -230,6 +233,7 @@ describe("WorkbenchStore", () => {
         expectedRevision: 1,
         status: "in_progress",
         updatedAt: "2026-09-05T12:03:00.000Z",
+        writer: { kind: "user" },
       });
 
       expect(contentSave).toMatchObject({
@@ -675,6 +679,7 @@ describe("WorkbenchStore", () => {
           status: "todo",
           blocked: false,
           updatedAt: "2026-09-03T12:00:01.000Z",
+          writer: { kind: "user" },
         }),
       );
       yield* store.markTicketWorkspaceRepositoryReady({
@@ -798,6 +803,7 @@ describe("WorkbenchStore", () => {
         expectedRevision: 0,
         repositoryProjectIds: [primaryProjectId, secondaryProjectId],
         updatedAt: "2026-09-03T12:01:00.000Z",
+        writer: { kind: "user" },
       });
       const extensionAttemptId = WorkbenchTicketWorkspaceAttemptId.make("scope-attempt-extension");
       yield* store.claimTicketWorkspace({
@@ -843,6 +849,7 @@ describe("WorkbenchStore", () => {
         expectedRevision: 1,
         repositoryProjectIds: [secondaryProjectId],
         updatedAt: "2026-09-03T12:02:00.000Z",
+        writer: { kind: "user" },
       });
       const workspace = Option.getOrThrow(yield* store.getTicketWorkspace(ticketId));
       const snapshot = yield* store.getSnapshot;
@@ -947,6 +954,7 @@ describe("WorkbenchStore", () => {
         status: "todo",
         blocked: false,
         updatedAt: "2026-09-03T12:01:00.000Z",
+        writer: { kind: "user" },
       });
       yield* seedNativeThread({
         threadId: "thread-1",
@@ -974,6 +982,7 @@ describe("WorkbenchStore", () => {
         status: "in_progress",
         blocked: false,
         updatedAt: "2026-09-03T12:02:15.000Z",
+        writer: { kind: "user" },
       });
       yield* seedNativeThread({
         threadId: "thread-2",
@@ -1058,6 +1067,7 @@ describe("WorkbenchStore", () => {
         status: "in_progress",
         blocked: false,
         updatedAt: "2026-09-03T12:02:30.000Z",
+        writer: { kind: "user" },
       });
 
       const snapshot = yield* store.getSnapshot;
@@ -1150,6 +1160,7 @@ describe("WorkbenchStore", () => {
               status: "todo",
               blocked: false,
               updatedAt: "2026-09-03T12:01:00.000Z",
+              writer: { kind: "user" },
             })
             .pipe(
               Effect.match({
@@ -1674,6 +1685,7 @@ describe("WorkbenchStore", () => {
           status: "todo",
           blocked: false,
           updatedAt: archivedAt,
+          writer: { kind: "user" },
         }),
       );
       expect(archivedUpdateError.code).toBe("ticket_archived");

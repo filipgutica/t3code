@@ -5,14 +5,17 @@ import { extractCodeBlock, extractFenceLanguage } from "../components/chat/Markd
 import { RenderErrorBoundary } from "../components/RenderErrorBoundary";
 import { useRenderedAppearance } from "../hooks/useTheme";
 import { resolveDiffThemeName } from "../lib/diffRendering";
+import type { DescriptionSourceAttributes } from "./WorkbenchDescription";
 
 /** A fenced block in a saved description, framed and highlighted as chat and the editor show it. */
 export default function WorkbenchDescriptionCodeBlock({
   children,
   fallback,
+  source,
 }: {
   readonly children: ReactNode;
   readonly fallback: ReactNode;
+  readonly source: DescriptionSourceAttributes;
 }) {
   const theme = useRenderedAppearance();
   const block = extractCodeBlock(children);
@@ -21,7 +24,7 @@ export default function WorkbenchDescriptionCodeBlock({
   const plain = <pre>{children}</pre>;
   return (
     // Chat scopes its code block styles, such as the clear Shiki background, to chat markdown.
-    <div className="chat-markdown my-3">
+    <div className="chat-markdown my-3" {...source}>
       <MarkdownCodeBlock
         code={block.code}
         language={language}

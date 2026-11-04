@@ -333,7 +333,10 @@ describe("WorkbenchAgentService", () => {
           expectedRevision: ticket.revision,
           repositoryProjectIds: [second],
           updatedAt: createdAt,
-          ...(updatedByThreadId === undefined ? {} : { updatedByThreadId }),
+          writer:
+            updatedByThreadId === undefined
+              ? { kind: "user" }
+              : { kind: "agent", threadId: updatedByThreadId },
         });
 
       for (const updatedByThreadId of [worker, undefined]) {
@@ -386,7 +389,7 @@ describe("WorkbenchAgentService", () => {
           expectedRevision: ticket.revision,
           markdown: "Agent plan.",
           updatedAt: createdAt,
-          updatedByThreadId: worker,
+          writer: { kind: "agent", threadId: worker },
         }),
       ];
       for (const write of writes) {

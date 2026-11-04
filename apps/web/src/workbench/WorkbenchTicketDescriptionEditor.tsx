@@ -31,7 +31,6 @@ import { Textarea } from "../components/ui/textarea";
 import { Toggle, ToggleGroup } from "../components/ui/toggle-group";
 import { workbenchDescriptionProseClassName } from "./WorkbenchDescription";
 import { WorkbenchReferenceChip, useWorkbenchReferenceOpener } from "./WorkbenchReferenceLink";
-import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
 import {
   descriptionEditorContent,
   descriptionEditorExtensions,
@@ -148,7 +147,6 @@ export function WorkbenchTicketDescriptionEditor({
   autoFocus = false,
   markdown,
   jira,
-  updatedBy = null,
   disabled = false,
   onChange,
 }: {
@@ -157,8 +155,6 @@ export function WorkbenchTicketDescriptionEditor({
   autoFocus?: boolean;
   markdown: string;
   jira: boolean;
-  /** The agent Thread that last wrote the description, if one did. */
-  updatedBy?: string | null;
   /** A contenteditable ignores a disabled `<fieldset>`, so callers pass it. */
   disabled?: boolean;
   onChange: (markdown: string) => void;
@@ -175,9 +171,6 @@ export function WorkbenchTicketDescriptionEditor({
           <Label className="shrink-0" id={labelId} htmlFor={mode === "markdown" ? id : undefined}>
             Brief
           </Label>
-          {updatedBy !== null ? (
-            <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
-          ) : null}
         </div>
         <ToggleGroup
           aria-label="Ticket description editor mode"

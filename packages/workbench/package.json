@@ -55,6 +55,14 @@
     "./WorkbenchAgentHost": {
       "types": "./src/WorkbenchAgentHost.ts",
       "import": "./src/WorkbenchAgentHost.ts"
+    },
+    "./AskForChangeService": {
+      "types": "./src/AskForChangeService.ts",
+      "import": "./src/AskForChangeService.ts"
+    },
+    "./MarkdownRewriteHost": {
+      "types": "./src/MarkdownRewriteHost.ts",
+      "import": "./src/MarkdownRewriteHost.ts"
     }
   },
   "scripts": {

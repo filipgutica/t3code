@@ -1,5 +1,10 @@
-import { WS_METHODS, type EnvironmentId, type WorkbenchTicketId } from "@t3tools/contracts";
-import { request } from "@t3tools/client-runtime/rpc";
+import {
+  WS_METHODS,
+  type EnvironmentId,
+  type WorkbenchAskForChangeInput,
+  type WorkbenchTicketId,
+} from "@t3tools/contracts";
+import { request, requestGuarded } from "@t3tools/client-runtime/rpc";
 import {
   createAtomCommandScheduler,
   createEnvironmentRpcCommand,
@@ -10,6 +15,7 @@ import * as Effect from "effect/Effect";
 import * as AtomRegistry from "effect/reactivity/AtomRegistry";
 
 import { connectionAtomRuntime } from "../connection/runtime";
+import { interruptOnAbort } from "./interruptOnAbort";
 
 const snapshot = createEnvironmentQueryAtomFamily(connectionAtomRuntime, {
   label: "environment-data:workbench:snapshot",
@@ -57,6 +63,8 @@ const refreshSnapshot = (
     );
     registry.refresh(ticketPreparations({ environmentId, input: {} }));
   });
+
+type AskForChangeCommandInput = WorkbenchAskForChangeInput & { readonly signal: AbortSignal };
 
 export const workbenchEnvironment = {
   snapshot,
@@ -189,6 +197,53 @@ export const workbenchEnvironment = {
     scheduler,
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
+  }),
+  // A stale revision fails without a write, so the refresh after either outcome shows the newer text.
+  acceptTicketReview: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:accept-ticket-review",
+    tag: WS_METHODS.workbenchAcceptTicketReview,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSettled: refreshSnapshot,
+  }),
+  undoTicketReview: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:undo-ticket-review",
+    tag: WS_METHODS.workbenchUndoTicketReview,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSettled: refreshSnapshot,
+  }),
+  // A rewrite takes up to a minute, so it runs beside the serial lane; aborting `signal`
+  // interrupts the request, and the server then writes nothing.
+  askForTicketChange: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:ask-for-ticket-change",
+    tag: WS_METHODS.workbenchAskForTicketChange,
+    execute: ({ signal, ...input }: AskForChangeCommandInput) =>
+      requestGuarded(WS_METHODS.workbenchAskForTicketChange, input).pipe(interruptOnAbort(signal)),
+    onSettled: refreshSnapshot,
+  }),
+  acceptTicketDraftReview: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:accept-ticket-draft-review",
+    tag: WS_METHODS.workbenchAcceptTicketDraftReview,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSettled: refreshSnapshot,
+  }),
+  undoTicketDraftReview: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:undo-ticket-draft-review",
+    tag: WS_METHODS.workbenchUndoTicketDraftReview,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSettled: refreshSnapshot,
+  }),
+  askForTicketDraftChange: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:ask-for-ticket-draft-change",
+    tag: WS_METHODS.workbenchAskForTicketDraftChange,
+    execute: ({ signal, ...input }: AskForChangeCommandInput) =>
+      requestGuarded(WS_METHODS.workbenchAskForTicketDraftChange, input).pipe(
+        interruptOnAbort(signal),
+      ),
+    onSettled: refreshSnapshot,
   }),
   archiveTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:archive-ticket",

@@ -196,6 +196,13 @@ export const workbenchProgressCounts = (progress: string) => {
   return { done, total };
 };
 
+/** A title and brief as they were before the edits that await review. Draft titles may be empty. */
+export const WorkbenchReviewBase = Schema.Struct({
+  title: TrimmedString.check(Schema.isMaxLength(240)),
+  markdown: TrimmedString.check(Schema.isMaxLength(120_000)),
+});
+export type WorkbenchReviewBase = typeof WorkbenchReviewBase.Type;
+
 export const WorkbenchTicket = Schema.Struct({
   id: WorkbenchTicketId,
   projectId: WorkbenchProjectId,
@@ -213,8 +220,18 @@ export const WorkbenchTicket = Schema.Struct({
   // Optional for compatibility with snapshots produced before Ticket
   // archiving was introduced. New snapshots always include null or a time.
   archivedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
-  // The Thread whose MCP update last changed the title or description; a user edit clears it.
+  // The Thread whose MCP update last changed the title or description; a user edit or Ask for
+  // change clears it.
   updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  // Ask for change, not a Thread, last changed the title or description.
+  updatedByAskForChange: Schema.optionalKey(Schema.Boolean),
+  // Agent and Ask for change edits await review. Snapshots carry the flag;
+  // `workbench.tickets.get` carries the base they are reviewed against.
+  reviewPending: Schema.optionalKey(Schema.Boolean),
+  reviewBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
+  // The last accepted change stays viewable until the next content change; the same split applies.
+  acceptedChange: Schema.optionalKey(Schema.Boolean),
+  acceptedBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
   // Only agents write Progress. Snapshots carry the counts; `workbench.tickets.get` carries the list.
   progress: Schema.optionalKey(WorkbenchProgress),
   progressDone: Schema.optionalKey(NonNegativeInt),
@@ -301,8 +318,11 @@ export const WorkbenchTicketDraft = Schema.Struct({
   revision: NonNegativeInt,
   phase: WorkbenchTicketDraftPhase,
   fields: WorkbenchTicketDraftFields,
-  // As on WorkbenchTicket; older stored payloads omit it.
+  // As on WorkbenchTicket; older stored payloads omit them.
   updatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  updatedByAskForChange: Schema.optionalKey(Schema.Boolean),
+  reviewBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
+  acceptedBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
   // Outside `fields`, which clients write; only the planning agent writes Progress.
   progress: Schema.optionalKey(WorkbenchProgress),
   createdAt: IsoDateTime,
@@ -337,6 +357,28 @@ export const WorkbenchTicketDraftActionInput = Schema.Struct({
   expectedRevision: NonNegativeInt,
 });
 export type WorkbenchTicketDraftActionInput = typeof WorkbenchTicketDraftActionInput.Type;
+
+/** Accept or Undo the edits that await review on a Ticket or draft. */
+export const WorkbenchReviewActionInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
+});
+export type WorkbenchReviewActionInput = typeof WorkbenchReviewActionInput.Type;
+
+/**
+ * Rewrite whole top-level brief blocks: `start` and `end` are source offsets at
+ * `expectedRevision`, and `blockSource` must equal that slice.
+ */
+export const WorkbenchAskForChangeInput = Schema.Struct({
+  id: WorkbenchTicketId,
+  expectedRevision: NonNegativeInt,
+  start: NonNegativeInt,
+  end: NonNegativeInt,
+  blockSource: Schema.String.check(Schema.isMaxLength(120_000)),
+  selectedText: Schema.String.check(Schema.isMaxLength(120_000)),
+  instruction: TrimmedNonEmptyString.check(Schema.isMaxLength(4_000)),
+});
+export type WorkbenchAskForChangeInput = typeof WorkbenchAskForChangeInput.Type;
 
 /** Generated recap of a Thread's latest finished run, shown to sibling Threads on its Ticket. */
 export const WorkbenchThreadRecap = Schema.Struct({
@@ -545,6 +587,9 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "ticket_changed",
   "ticket_archived",
   "ticket_summary_generation_failed",
+  "review_not_pending",
+  "ask_for_change_invalid",
+  "ask_for_change_failed",
   "thread_recap_generation_failed",
   "reference_url_invalid",
   "reference_owner_not_found",

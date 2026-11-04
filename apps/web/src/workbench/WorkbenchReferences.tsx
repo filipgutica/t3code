@@ -10,7 +10,7 @@ import {
   type WorkbenchReferenceDraft,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { BotIcon, ExternalLinkIcon, PlusIcon, XIcon } from "lucide-react";
+import { BotIcon, ExternalLinkIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -22,6 +22,7 @@ import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
 import { WorkbenchReferenceKindIcon } from "./WorkbenchReferenceKindIcon";
+import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 import {
   WorkbenchReferenceHoverCard,
   workbenchReferenceOpenNote,
@@ -43,7 +44,7 @@ import {
 
 type ThreadTitles = ReadonlyMap<ThreadId, Pick<EnvironmentThreadShell, "title">>;
 
-export const workbenchThreadTitle = (
+const workbenchThreadTitle = (
   threadId: ThreadId | null | undefined,
   threadsById: ThreadTitles,
   archivedThreadsById: ThreadTitles,
@@ -52,15 +53,95 @@ export const workbenchThreadTitle = (
     ? null
     : (threadsById.get(threadId)?.title ?? archivedThreadsById.get(threadId)?.title ?? "a Thread");
 
-/** Marks content an agent Thread wrote, such as "Added by Planning". */
-export function WorkbenchProvenanceBadge({ text }: { readonly text: string }) {
+/** Who last wrote a document: an agent Thread, or Ask for change at the person's request. */
+export type WorkbenchProvenanceSource =
+  | {
+      readonly kind: "thread";
+      readonly environmentId: EnvironmentId;
+      readonly threadId: ThreadId;
+      readonly title: string;
+      readonly shell: EnvironmentThreadShell | undefined;
+    }
+  | { readonly kind: "askForChange" };
+
+export const workbenchProvenanceSource = ({
+  environmentId,
+  threadId,
+  askForChange = false,
+  threadsById,
+  archivedThreadsById,
+}: {
+  readonly environmentId: EnvironmentId;
+  readonly threadId: ThreadId | null | undefined;
+  readonly askForChange?: boolean | undefined;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+}): WorkbenchProvenanceSource | null => {
+  if (askForChange) return { kind: "askForChange" };
+  const title = workbenchThreadTitle(threadId, threadsById, archivedThreadsById);
+  return threadId == null || title === null
+    ? null
+    : {
+        kind: "thread",
+        environmentId,
+        threadId,
+        title,
+        shell: threadsById.get(threadId) ?? archivedThreadsById.get(threadId),
+      };
+};
+
+/**
+ * "Updated by <Thread>" with that Thread's hover card, or "Updated by Ask for change". With
+ * `onToggle`, a pending review's badge shows or hides its diff; `pressed` is whether it shows.
+ */
+export function WorkbenchProvenanceBadge({
+  source,
+  pressed,
+  onToggle,
+}: {
+  readonly source: WorkbenchProvenanceSource;
+  readonly pressed?: boolean;
+  readonly onToggle?: (() => void) | undefined;
+}) {
+  const text =
+    source.kind === "thread" ? `Updated by ${source.title}` : "Updated by Ask for change";
+  const badge = (
+    <Badge
+      variant="outline"
+      className="min-w-0 max-w-72 shrink"
+      render={
+        onToggle === undefined ? undefined : (
+          <button
+            type="button"
+            aria-label={`${text}. Show diff`}
+            aria-pressed={pressed === true}
+            onClick={onToggle}
+          />
+        )
+      }
+    >
+      {source.kind === "thread" ? <BotIcon aria-hidden /> : <SparklesIcon aria-hidden />}
+      <span className="truncate">{text}</span>
+    </Badge>
+  );
+  if (source.kind === "thread") {
+    return (
+      <WorkbenchThreadHoverPreview
+        environmentId={source.environmentId}
+        threadId={source.threadId}
+        title={source.title}
+        shell={source.shell}
+      >
+        {badge}
+      </WorkbenchThreadHoverPreview>
+    );
+  }
   return (
     <Tooltip>
-      <TooltipTrigger render={<Badge variant="outline" className="min-w-0 max-w-72 shrink" />}>
-        <BotIcon aria-hidden />
-        <span className="truncate">{text}</span>
-      </TooltipTrigger>
-      <TooltipPopup>{text}</TooltipPopup>
+      <TooltipTrigger render={badge} />
+      <TooltipPopup>
+        The text generation model rewrote this when you asked for a change.
+      </TooltipPopup>
     </Tooltip>
   );
 }

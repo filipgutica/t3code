@@ -144,9 +144,14 @@ import {
   type WorkbenchTicketSavedVersion,
   type WorkbenchTicketDraft,
 } from "./workbenchDraftStore";
-import { WorkbenchDescription } from "./WorkbenchDescription";
 import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
+import { descriptionUsesJiraMarkup } from "./workbenchDescriptionEditor.logic";
 import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
+import { WorkbenchBriefAskButton, WorkbenchBriefBody } from "./WorkbenchBriefReview";
+import { WorkbenchWordDiff } from "./WorkbenchMarkdownReview";
+import type { WordDiffSegment } from "./markdownReview";
+import { WorkbenchReviewBar } from "./WorkbenchReviewBar";
+import { useWorkbenchTicketBriefReview } from "./useWorkbenchBriefReview";
 import { WorkbenchReferenceFileSheetProvider } from "./WorkbenchReferenceFileSheet";
 import {
   useWorkbenchCheckoutStatusRefresh,
@@ -162,7 +167,8 @@ import {
   WorkbenchReferenceBadge,
   WorkbenchStagedReferences,
   WorkbenchTicketReferencesPanel,
-  workbenchThreadTitle,
+  workbenchProvenanceSource,
+  type WorkbenchProvenanceSource,
 } from "./WorkbenchReferences";
 import {
   getReferenceFileCwd,
@@ -762,6 +768,13 @@ function WorkbenchTicketDetailController({
   });
   const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
   const jira = hasJiraReference(references);
+  const briefReview = useWorkbenchTicketBriefReview({
+    environmentId,
+    ticket,
+    localEdit: draft !== undefined,
+    archived: isArchived,
+    jira,
+  });
   const descriptionLinks = workbenchDescriptionLinks(
     workbenchDescriptionMarkdown(displayedMarkdown, jira),
   );
@@ -824,6 +837,7 @@ function WorkbenchTicketDetailController({
           editing: editing,
           lifecycleActionsEnabled: lifecycleActionsEnabled,
           executionStatus,
+          titleWords: briefReview.shownTitleWords,
         }}
         records={{
           ticket: ticket,
@@ -927,11 +941,14 @@ function WorkbenchTicketDetailController({
                   records={{
                     ticket: ticket,
                     jira,
-                    updatedBy: workbenchThreadTitle(
-                      ticket.updatedByThreadId,
+                    updatedBy: workbenchProvenanceSource({
+                      environmentId,
+                      threadId: ticket.updatedByThreadId,
+                      askForChange: ticket.updatedByAskForChange,
                       threadsById,
                       archivedThreadsById,
-                    ),
+                    }),
+                    briefReview,
                   }}
                 />
                 <WorkbenchTicketReferencesPanel
@@ -975,11 +992,12 @@ function WorkbenchTicketDetailController({
             >
               <WorkbenchTicketProgress
                 ticket={ticket}
-                updatedBy={workbenchThreadTitle(
-                  ticket.progressUpdatedByThreadId,
+                updatedBy={workbenchProvenanceSource({
+                  environmentId,
+                  threadId: ticket.progressUpdatedByThreadId,
                   threadsById,
                   archivedThreadsById,
-                )}
+                })}
               />
               <WorkbenchTicketSharedContext
                 key={ticket.id}
@@ -1596,6 +1614,8 @@ type WorkbenchTicketHeaderProps = {
   lifecycleActionsEnabled: boolean;
   onArchive: (ticket: WorkbenchTicket, archivedAt: string | null) => Promise<boolean>;
   setDeleteConfirmationOpen: Dispatch<SetStateAction<boolean>>;
+  /** The title's word diff while a review shows one. */
+  titleWords: ReadonlyArray<WordDiffSegment> | null;
 };
 function WorkbenchTicketHeader({
   actions,
@@ -1616,6 +1636,7 @@ function WorkbenchTicketHeader({
     | "pending"
     | "editing"
     | "lifecycleActionsEnabled"
+    | "titleWords"
   >;
   records: Pick<WorkbenchTicketHeaderProps, "ticket" | "issue" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeaderProps, "environmentId">;
@@ -1629,6 +1650,7 @@ function WorkbenchTicketHeader({
     pending,
     editing,
     lifecycleActionsEnabled,
+    titleWords,
   } = presentation;
   const { ticket, issue, actionableTicket } = records;
   const { environmentId } = context;
@@ -1651,6 +1673,7 @@ function WorkbenchTicketHeader({
             isArchived: isArchived,
             pending: pending,
             editing: editing,
+            titleWords,
           }}
           records={{
             ticket: ticket,
@@ -1814,7 +1837,8 @@ function WorkbenchTicketDescriptionPanel({
   actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft">;
   context: Pick<WorkbenchTicketDescriptionPanelProps, "environmentId">;
   records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket" | "jira"> & {
-    readonly updatedBy: string | null;
+    readonly updatedBy: WorkbenchProvenanceSource | null;
+    readonly briefReview: ReturnType<typeof useWorkbenchTicketBriefReview>;
   };
 }) {
   const {
@@ -1829,7 +1853,8 @@ function WorkbenchTicketDescriptionPanel({
   } = presentation;
   const { setDraft } = actions;
   const { environmentId } = context;
-  const { ticket, jira, updatedBy } = records;
+  const { ticket, jira, updatedBy, briefReview } = records;
+  const { review } = briefReview;
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
       <div className="flex items-center justify-between gap-3 border-b border-border/50 px-4 py-3">
@@ -1837,7 +1862,11 @@ function WorkbenchTicketDescriptionPanel({
           <div className="flex min-w-0 items-center gap-2">
             <h2 className="shrink-0 text-sm font-semibold">Brief</h2>
             {updatedBy !== null ? (
-              <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} />
+              <WorkbenchProvenanceBadge
+                source={updatedBy}
+                pressed={briefReview.diffShown}
+                onToggle={briefReview.toggleDiff}
+              />
             ) : null}
           </div>
           <p className="text-xs text-muted-foreground">
@@ -1845,17 +1874,38 @@ function WorkbenchTicketDescriptionPanel({
           </p>
         </div>
         {!editing && !isArchived ? (
-          <Button
-            disabled={pending}
-            onClick={startEditing}
-            size="xs"
-            type="button"
-            variant="outline"
-          >
-            <PencilIcon /> Edit
-          </Button>
+          <div className="flex shrink-0 items-center gap-2">
+            {ticket.markdown.trim() ? (
+              <WorkbenchBriefAskButton
+                briefReview={briefReview}
+                variant="outline"
+                unavailableReason={
+                  descriptionUsesJiraMarkup(ticket.markdown, jira)
+                    ? "Ask for change cannot rewrite Jira wiki markup. Edit the brief instead."
+                    : null
+                }
+              />
+            ) : null}
+            <Button
+              disabled={pending}
+              onClick={startEditing}
+              size="xs"
+              type="button"
+              variant="outline"
+            >
+              <PencilIcon /> Edit
+            </Button>
+          </div>
         ) : null}
       </div>
+      {review && !editing ? (
+        <WorkbenchReviewBar
+          review={review}
+          permitted={briefReview.permitted}
+          disabled={pending}
+          className="border-b border-border/50 px-4 py-2"
+        />
+      ) : null}
       {editing && draft ? (
         <>
           <div className="min-w-0 space-y-4 p-4">
@@ -1896,7 +1946,7 @@ function WorkbenchTicketDescriptionPanel({
         </>
       ) : (
         <div className="min-h-40 min-w-0 p-4 @min-[40rem]/ticket:p-5">
-          <WorkbenchDescription markdown={displayedMarkdown} jira={jira} />
+          <WorkbenchBriefBody briefReview={briefReview} markdown={displayedMarkdown} jira={jira} />
         </div>
       )}
     </section>
@@ -3542,6 +3592,7 @@ type WorkbenchTicketHeadingProps = Pick<
   | "pending"
   | "editing"
   | "onUpdate"
+  | "titleWords"
 >;
 function WorkbenchTicketHeading({
   presentation,
@@ -3551,14 +3602,27 @@ function WorkbenchTicketHeading({
 }: {
   presentation: Pick<
     WorkbenchTicketHeadingProps,
-    "executionStatus" | "workspaceTitle" | "displayedTitle" | "isArchived" | "pending" | "editing"
+    | "executionStatus"
+    | "workspaceTitle"
+    | "displayedTitle"
+    | "isArchived"
+    | "pending"
+    | "editing"
+    | "titleWords"
   >;
   records: Pick<WorkbenchTicketHeadingProps, "ticket" | "issue" | "actionableTicket">;
   context: Pick<WorkbenchTicketHeadingProps, "environmentId">;
   actions: Pick<WorkbenchTicketHeadingProps, "onUpdate">;
 }) {
-  const { executionStatus, workspaceTitle, displayedTitle, isArchived, pending, editing } =
-    presentation;
+  const {
+    executionStatus,
+    workspaceTitle,
+    displayedTitle,
+    isArchived,
+    pending,
+    editing,
+    titleWords,
+  } = presentation;
   const { ticket, issue, actionableTicket } = records;
   const { environmentId } = context;
   const { onUpdate } = actions;
@@ -3566,7 +3630,11 @@ function WorkbenchTicketHeading({
     <div className="col-span-2 row-start-2 min-w-0 @min-[48rem]/ticket:col-span-1 @min-[48rem]/ticket:col-start-2 @min-[48rem]/ticket:row-start-1">
       <p className="text-xs font-medium text-muted-foreground">{workspaceTitle} · Ticket</p>
       <h1 className="mt-1 text-xl font-semibold leading-snug [overflow-wrap:anywhere]">
-        {displayedTitle.trim() || ticket.title}
+        {titleWords ? (
+          <WorkbenchWordDiff segments={titleWords} />
+        ) : (
+          displayedTitle.trim() || ticket.title
+        )}
       </h1>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         <WorkbenchThreadExecutionStatus

@@ -9,6 +9,7 @@ import {
   WorkbenchBeginTicketDraftInput,
   WorkbenchUpdateTicketDraftInput,
   WorkbenchTicketDraftActionInput,
+  WorkbenchAskForChangeInput,
   WorkbenchAssignment,
   WorkbenchArchiveProjectInput,
   WorkbenchDeleteProjectInput,
@@ -29,6 +30,7 @@ import {
   WorkbenchAddReferenceInput,
   WorkbenchReference,
   WorkbenchRemoveReferenceInput,
+  WorkbenchReviewActionInput,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketContext,
@@ -46,6 +48,9 @@ export const WORKBENCH_WS_METHODS = {
   workbenchPromoteTicketDraft: "workbench.ticketDrafts.promote",
   workbenchDiscardTicketDraft: "workbench.ticketDrafts.discard",
   workbenchStartTicketDraftWork: "workbench.ticketDrafts.startWork",
+  workbenchAcceptTicketDraftReview: "workbench.ticketDrafts.acceptReview",
+  workbenchUndoTicketDraftReview: "workbench.ticketDrafts.undoReview",
+  workbenchAskForTicketDraftChange: "workbench.ticketDrafts.askForChange",
   workbenchGetTicketPreparations: "workbench.ticketPreparations.get",
   workbenchGetSnapshot: "workbench.getSnapshot",
   workbenchGetTicket: "workbench.tickets.get",
@@ -57,6 +62,9 @@ export const WORKBENCH_WS_METHODS = {
   workbenchCreateTicket: "workbench.tickets.create",
   workbenchUpdateTicket: "workbench.tickets.update",
   workbenchRegenerateTicketSummary: "workbench.tickets.regenerateSummary",
+  workbenchAcceptTicketReview: "workbench.tickets.acceptReview",
+  workbenchUndoTicketReview: "workbench.tickets.undoReview",
+  workbenchAskForTicketChange: "workbench.tickets.askForChange",
   workbenchArchiveTicket: "workbench.tickets.archive",
   workbenchDeleteTicket: "workbench.tickets.delete",
   workbenchCreateAssignment: "workbench.assignments.create",
@@ -139,6 +147,30 @@ const WsWorkbenchRegenerateTicketSummaryRpc = Rpc.make(
   WORKBENCH_WS_METHODS.workbenchRegenerateTicketSummary,
   {
     payload: WorkbenchRegenerateTicketSummaryInput,
+    success: WorkbenchTicket,
+    error: WorkbenchRpcError,
+  },
+);
+
+const WsWorkbenchAcceptTicketReviewRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchAcceptTicketReview,
+  {
+    payload: WorkbenchReviewActionInput,
+    success: WorkbenchTicket,
+    error: WorkbenchRpcError,
+  },
+);
+
+const WsWorkbenchUndoTicketReviewRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchUndoTicketReview, {
+  payload: WorkbenchReviewActionInput,
+  success: WorkbenchTicket,
+  error: WorkbenchRpcError,
+});
+
+const WsWorkbenchAskForTicketChangeRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchAskForTicketChange,
+  {
+    payload: WorkbenchAskForChangeInput,
     success: WorkbenchTicket,
     error: WorkbenchRpcError,
   },
@@ -257,6 +289,31 @@ const WsWorkbenchStartTicketDraftWorkRpc = Rpc.make(
   },
 );
 
+const WsWorkbenchAcceptTicketDraftReviewRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchAcceptTicketDraftReview,
+  {
+    payload: WorkbenchReviewActionInput,
+    success: WorkbenchTicketDraft,
+    error: WorkbenchRpcError,
+  },
+);
+const WsWorkbenchUndoTicketDraftReviewRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchUndoTicketDraftReview,
+  {
+    payload: WorkbenchReviewActionInput,
+    success: WorkbenchTicketDraft,
+    error: WorkbenchRpcError,
+  },
+);
+const WsWorkbenchAskForTicketDraftChangeRpc = Rpc.make(
+  WORKBENCH_WS_METHODS.workbenchAskForTicketDraftChange,
+  {
+    payload: WorkbenchAskForChangeInput,
+    success: WorkbenchTicketDraft,
+    error: WorkbenchRpcError,
+  },
+);
+
 export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchGetTicketPreparationsRpc,
   WsWorkbenchBeginTicketDraftRpc,
@@ -264,6 +321,9 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchPromoteTicketDraftRpc,
   WsWorkbenchDiscardTicketDraftRpc,
   WsWorkbenchStartTicketDraftWorkRpc,
+  WsWorkbenchAcceptTicketDraftReviewRpc,
+  WsWorkbenchUndoTicketDraftReviewRpc,
+  WsWorkbenchAskForTicketDraftChangeRpc,
   WsWorkbenchGetSnapshotRpc,
   WsWorkbenchGetTicketRpc,
   WsWorkbenchGetTicketContextRpc,
@@ -274,6 +334,9 @@ export const WorkbenchRpcGroup = RpcGroup.make(
   WsWorkbenchCreateTicketRpc,
   WsWorkbenchUpdateTicketRpc,
   WsWorkbenchRegenerateTicketSummaryRpc,
+  WsWorkbenchAcceptTicketReviewRpc,
+  WsWorkbenchUndoTicketReviewRpc,
+  WsWorkbenchAskForTicketChangeRpc,
   WsWorkbenchArchiveTicketRpc,
   WsWorkbenchDeleteTicketRpc,
   WsWorkbenchCreateAssignmentRpc,

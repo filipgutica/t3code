@@ -175,6 +175,7 @@ describe("Workbench SQLite contention", () => {
             ...draft.fields,
             repositoryProjectIds: [projectId],
           },
+          writer: { kind: "user" },
         });
         yield* store.transitionTicketDraft({
           id: draft.id,
@@ -221,13 +222,19 @@ describe("Workbench SQLite contention", () => {
                 id: draft.id,
                 expectedRevision: draft.revision,
                 fields: { ...fields, title: "Concurrent edit" },
+                writer: { kind: "user" },
               });
             } else {
               yield* sql`DELETE FROM workbench_project_links WHERE workbench_project_id = ${workspaceId}`;
             }
           }).pipe(Effect.orDie);
           const error = yield* store
-            .updateTicketDraft({ id: draft.id, expectedRevision: draft.revision, fields })
+            .updateTicketDraft({
+              id: draft.id,
+              expectedRevision: draft.revision,
+              fields,
+              writer: { kind: "user" },
+            })
             .pipe(Effect.flip);
           expect(error.code).toBe(
             change === "revision" ? "ticket_draft_changed" : "repository_not_linked",
@@ -261,6 +268,7 @@ describe("Workbench SQLite contention", () => {
               ...draft.fields,
               repositoryProjectIds: [projectId],
             },
+            writer: { kind: "user" },
           });
           const action =
             operation === "begin"
@@ -278,6 +286,7 @@ describe("Workbench SQLite contention", () => {
                       id: draft.id,
                       expectedRevision: draft.revision,
                       fields: { ...draft.fields, title: "Updated title" },
+                      writer: { kind: "user" },
                     })
                     .pipe(Effect.asVoid)
                 : operation === "promotion"

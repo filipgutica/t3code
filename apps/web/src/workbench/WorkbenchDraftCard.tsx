@@ -3,7 +3,6 @@ import { useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import type { Project } from "../types";
 import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
@@ -13,6 +12,7 @@ import { WorkbenchProgress, WorkbenchProgressChecklist } from "./WorkbenchProgre
 import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { getDraftBlockedReason, WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import { DraftConflictNotice } from "./WorkbenchDraftConflictNotice";
+import { WorkbenchProvenanceBadge, type WorkbenchProvenanceSource } from "./WorkbenchReferences";
 import {
   WorkbenchTicketDraftFieldsForm,
   type getTicketDraftCreateState,
@@ -21,6 +21,7 @@ import type {
   useTicketDraftEditor,
   useTicketDraftTransitions,
 } from "./useWorkbenchTicketConversation";
+import type { useWorkbenchBriefReview } from "./useWorkbenchBriefReview";
 import { readWorkbenchFloatingChatHeight } from "./useWorkbenchFloatingChatSize";
 import {
   getDraftBriefPreview,
@@ -42,8 +43,9 @@ export interface WorkbenchDraftCardProps {
   readonly canOperate: boolean;
   readonly ticketExists: boolean;
   readonly untouched: boolean;
-  /** The agent Thread that last wrote the title or brief, if one did. */
-  readonly updatedBy: string | null;
+  /** Who last wrote the title or brief, if an agent or Ask for change did. */
+  readonly updatedBy: WorkbenchProvenanceSource | null;
+  readonly briefReview: ReturnType<typeof useWorkbenchBriefReview>;
   readonly linkedProjects: ReadonlyArray<Project>;
   readonly references: ReactNode;
   readonly referenceCount: number;
@@ -172,6 +174,7 @@ function ExpandedDraftCard(props: DraftCardModeProps) {
           disabled={isFormDisabled(props)}
           linkedProjects={props.linkedProjects}
           updatedBy={props.updatedBy}
+          briefReview={props.briefReview}
           references={
             <>
               {props.draft.progress?.trim() ? (
@@ -203,14 +206,8 @@ function CardHeader({
     <header className="flex shrink-0 items-center gap-2 py-1 pr-1.5 pl-3 text-xs text-muted-foreground">
       <PencilLineIcon className="size-3.5 shrink-0" aria-hidden />
       <span className="shrink-0 font-medium text-foreground">Ticket draft</span>
-      {updatedBy ? (
-        <Tooltip>
-          <TooltipTrigger render={<span className="min-w-0 max-w-72 truncate" />}>
-            Updated by {updatedBy}
-          </TooltipTrigger>
-          <TooltipPopup>Updated by {updatedBy}</TooltipPopup>
-        </Tooltip>
-      ) : null}
+      {/* Show full brief reveals a pending diff, so the compact badge does not toggle it. */}
+      {updatedBy ? <WorkbenchProvenanceBadge source={updatedBy} /> : null}
       <span className="flex-1" />
       <Button size="icon-xs" variant="ghost" aria-label={toggle} onClick={() => show(next)}>
         <ChevronUpIcon />

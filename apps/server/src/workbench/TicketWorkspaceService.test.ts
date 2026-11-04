@@ -904,6 +904,7 @@ describe("TicketWorkspaceService", () => {
           expectedRevision: 0,
           repositoryProjectIds: [secondaryProjectId],
           updatedAt: "2026-09-03T12:00:01.000Z",
+          writer: { kind: "user" },
         });
         events.push("scope-updated");
       });
@@ -1692,6 +1693,7 @@ describe("TicketWorkspaceService", () => {
           expectedRevision: 0,
           repositoryProjectIds: [primaryProjectId],
           updatedAt: createdAt,
+          writer: { kind: "user" },
         });
         const service = yield* TicketWorkspaceService;
         const first = yield* service.prepare({ ticketId, requestedAt: createdAt });
@@ -1704,6 +1706,7 @@ describe("TicketWorkspaceService", () => {
           expectedRevision: 1,
           repositoryProjectIds: [primaryProjectId, secondaryProjectId],
           updatedAt: createdAt,
+          writer: { kind: "user" },
         });
         const extended = yield* service.prepare({ ticketId, requestedAt: createdAt });
         expect(extended.branchName).toBe(first.branchName);
@@ -2088,6 +2091,7 @@ describe("TicketWorkspaceService", () => {
         expectedRevision: 0,
         markdown: "Repair repository setup.",
         updatedAt: createdAt,
+        writer: { kind: "user" },
       });
       const service = yield* TicketWorkspaceService;
       yield* service.prepare({ ticketId, requestedAt: createdAt });
@@ -2235,6 +2239,7 @@ describe("TicketWorkspaceService", () => {
             expectedRevision: 0,
             repositoryProjectIds: [secondaryProjectId],
             updatedAt: createdAt,
+            writer: { kind: "user" },
           }),
         );
         expect(Result.isFailure(scopeResult)).toBe(true);
@@ -2805,6 +2810,7 @@ describe("TicketWorkspaceService", () => {
             expectedRevision: 0,
             repositoryProjectIds: [secondaryProjectId],
             updatedAt: createdAt,
+            writer: { kind: "user" },
           }),
         );
         expect(Result.isFailure(scopeResult)).toBe(true);

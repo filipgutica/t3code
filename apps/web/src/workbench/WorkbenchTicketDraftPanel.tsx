@@ -4,9 +4,12 @@ import { useId, type Dispatch, type ReactNode, type SetStateAction } from "react
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import type { Project } from "../types";
+import { WorkbenchBriefAskButton, WorkbenchBriefBody } from "./WorkbenchBriefReview";
 import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
-import { WorkbenchDescription } from "./WorkbenchDescription";
-import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
+import { WorkbenchProvenanceBadge, type WorkbenchProvenanceSource } from "./WorkbenchReferences";
+import { WorkbenchReviewBar } from "./WorkbenchReviewBar";
+import { WorkbenchWordDiff } from "./WorkbenchMarkdownReview";
+import type { useWorkbenchBriefReview } from "./useWorkbenchBriefReview";
 
 interface DraftFieldContext {
   readonly linkedProjects: ReadonlyArray<Project>;
@@ -57,24 +60,45 @@ const asSetter =
 function DraftBriefView({
   markdown,
   updatedBy,
+  briefReview,
 }: {
   readonly markdown: string;
-  readonly updatedBy: string | null;
+  readonly updatedBy: WorkbenchProvenanceSource | null;
+  readonly briefReview: ReturnType<typeof useWorkbenchBriefReview>;
 }) {
   const headingId = useId();
+  const { review } = briefReview;
   return (
     <section aria-labelledby={headingId} className="min-w-0 space-y-2">
       <div className="flex min-w-0 items-center gap-2">
         <h3 id={headingId} className="shrink-0 font-medium text-sm">
           Brief
         </h3>
-        {updatedBy !== null ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
+        {updatedBy !== null ? (
+          <WorkbenchProvenanceBadge
+            source={updatedBy}
+            pressed={briefReview.diffShown}
+            onToggle={briefReview.toggleDiff}
+          />
+        ) : null}
+        <span className="flex-1" />
+        {markdown.trim() ? (
+          <WorkbenchBriefAskButton briefReview={briefReview} variant="ghost" />
+        ) : null}
       </div>
-      {markdown.trim() ? (
-        <WorkbenchDescription markdown={markdown} />
-      ) : (
-        <p className="text-sm text-muted-foreground">No brief yet. Ask the agent to write one.</p>
-      )}
+      {review ? (
+        <WorkbenchReviewBar
+          review={review}
+          permitted={briefReview.permitted}
+          className="rounded-lg px-3 py-2"
+        />
+      ) : null}
+      <WorkbenchBriefBody
+        briefReview={briefReview}
+        markdown={markdown}
+        jira={false}
+        empty="No brief yet. Ask the agent to write one."
+      />
     </section>
   );
 }
@@ -83,33 +107,49 @@ export function WorkbenchTicketDraftFieldsForm({
   fields,
   disabled,
   updatedBy,
+  briefReview,
   references,
   onChange,
   ...context
 }: DraftFieldContext & {
   readonly fields: WorkbenchTicketDraftFields;
   readonly disabled: boolean;
-  /** The agent Thread that last wrote the title or brief, if one did. */
-  readonly updatedBy: string | null;
+  /** Who last wrote the title or brief, if an agent or Ask for change did. */
+  readonly updatedBy: WorkbenchProvenanceSource | null;
+  readonly briefReview: ReturnType<typeof useWorkbenchBriefReview>;
   /** Sits after the brief and keeps its own read-only rules, outside the form's fieldsets. */
   readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
 }) {
   const { repositories } = getTicketDraftCreateState({ fields, ...context });
+  const titleWords = briefReview.review?.diffShown ? briefReview.review.titleWords : null;
   return (
     <div className="min-w-0 space-y-5">
-      <fieldset disabled={disabled} className="min-w-0 space-y-5">
+      <fieldset disabled={disabled} className="min-w-0">
         <div className="space-y-1.5">
-          <Label htmlFor="workbench-draft-title">Title</Label>
-          <Input
-            id="workbench-draft-title"
-            placeholder="What needs doing?"
-            value={fields.title}
-            onChange={(event) => onChange({ title: event.currentTarget.value })}
-          />
+          {/* Like the brief, the title shows its diff in place of the editor until the diff is hidden. */}
+          {titleWords ? (
+            <>
+              <Label>Title</Label>
+              <p className="text-sm font-medium [overflow-wrap:anywhere]">
+                <WorkbenchWordDiff segments={titleWords} />
+              </p>
+            </>
+          ) : (
+            <>
+              <Label htmlFor="workbench-draft-title">Title</Label>
+              <Input
+                id="workbench-draft-title"
+                placeholder="What needs doing?"
+                value={fields.title}
+                onChange={(event) => onChange({ title: event.currentTarget.value })}
+              />
+            </>
+          )}
         </div>
-        <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} />
       </fieldset>
+      {/* Its actions follow the review's own gates, so a read-only viewer can still toggle the diff. */}
+      <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} briefReview={briefReview} />
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">
         <WorkbenchCreateTicketRepositories

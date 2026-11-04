@@ -1,0 +1,4 @@
+/* Marks the text Ask for change edits while focus is in its prompt, without changing the DOM. */
+::highlight(workbench-ask-for-change) {
+  background-color: color-mix(in oklab, var(--info) 24%, transparent);
+}

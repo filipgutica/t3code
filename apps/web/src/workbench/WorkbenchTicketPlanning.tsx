@@ -13,7 +13,7 @@ import { useId, useState } from "react";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import { WorkbenchDescription } from "./WorkbenchDescription";
-import { WorkbenchProvenanceBadge } from "./WorkbenchReferences";
+import { WorkbenchProvenanceBadge, type WorkbenchProvenanceSource } from "./WorkbenchReferences";
 import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
 import { WorkbenchProgressChecklist } from "./WorkbenchProgress";
 import { WorkbenchQueryError } from "./WorkbenchQueryError";
@@ -28,7 +28,7 @@ export function WorkbenchTicketProgress({
   updatedBy,
 }: {
   ticket: WorkbenchTicket;
-  updatedBy: string | null;
+  updatedBy: WorkbenchProvenanceSource | null;
 }) {
   const [collapsed, setCollapsed] = useWorkbenchTicketPanelCollapsed("progress");
   const contentId = useId();
@@ -45,7 +45,7 @@ export function WorkbenchTicketProgress({
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-sm font-semibold leading-6">Progress</h2>
             <WorkbenchProgressCount done={done} total={total} />
-            {updatedBy ? <WorkbenchProvenanceBadge text={`Updated by ${updatedBy}`} /> : null}
+            {updatedBy ? <WorkbenchProvenanceBadge source={updatedBy} /> : null}
           </div>
         }
         collapsed={collapsed}

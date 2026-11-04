@@ -212,6 +212,7 @@ const main = (filename: string, phase: string) =>
             expectedRevision: ticket.revision,
             status: "todo",
             updatedAt: now,
+            writer: { kind: "user" },
           });
           yield* sink.write({ events: [{ ...runEvent(), id: EventId.make("repeated-running") }] });
         }
