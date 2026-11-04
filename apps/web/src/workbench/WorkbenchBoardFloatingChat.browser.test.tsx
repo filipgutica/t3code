@@ -709,13 +709,14 @@ it("edits a draft's title in its card and shows the full brief above the convers
   await expect.element(card.getByText("Export refunds")).toBeVisible();
 });
 
-it("shows a read-only connection a draft's unreviewed edit without Undo or Accept", async () => {
+it("shows a read-only connection a draft's unreviewed edit and lets it toggle the diff, without Undo or Accept", async () => {
   const { onSnapshot } = await setup({ readOnly: true });
   const planned = draft("draft", "draft-thread", "Plan exports");
   const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
   const initial = {
     ...planned,
     fields: { ...planned.fields, markdown: brief },
+    updatedByAskForChange: true,
     reviewBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
   };
   await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
@@ -726,6 +727,11 @@ it("shows a read-only connection a draft's unreviewed edit without Undo or Accep
   await expect.element(card.getByText("daily")).toBeVisible();
   await expect.element(card.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   await expect.element(card.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+  // Hiding and showing the diff changes nothing, so the disabled form must not block it.
+  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+  await userEvent.click(card.getByRole("button", { name: "Show diff" }));
+  await expect.element(card.getByText("daily")).toBeVisible();
 });
 
 it("offers no review or selection Ask for change on an archived Board's draft", async () => {

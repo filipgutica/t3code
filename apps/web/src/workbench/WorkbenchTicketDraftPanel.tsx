@@ -125,7 +125,7 @@ export function WorkbenchTicketDraftFieldsForm({
   const titleWords = briefReview.review?.diffShown ? briefReview.review.titleWords : null;
   return (
     <div className="min-w-0 space-y-5">
-      <fieldset disabled={disabled} className="min-w-0 space-y-5">
+      <fieldset disabled={disabled} className="min-w-0">
         <div className="space-y-1.5">
           {/* Like the brief, the title shows its diff in place of the editor until the diff is hidden. */}
           {titleWords ? (
@@ -147,12 +147,9 @@ export function WorkbenchTicketDraftFieldsForm({
             </>
           )}
         </div>
-        <DraftBriefView
-          markdown={fields.markdown}
-          updatedBy={updatedBy}
-          briefReview={briefReview}
-        />
       </fieldset>
+      {/* Its actions follow the review's own gates, so a read-only viewer can still toggle the diff. */}
+      <DraftBriefView markdown={fields.markdown} updatedBy={updatedBy} briefReview={briefReview} />
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">
         <WorkbenchCreateTicketRepositories
