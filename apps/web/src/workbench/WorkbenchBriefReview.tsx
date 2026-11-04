@@ -60,7 +60,7 @@ export function WorkbenchBriefBody({
   readonly empty?: string;
 }) {
   const { askForChange: ask, review } = briefReview;
-  const { containerRef, selectionHandlers, marked, wholeMarked, running } = ask;
+  const { containerRef, selectionHandlers, wholeMarked, running } = ask;
   const showDiff = review !== null && review.diffShown;
   return (
     <>
@@ -74,7 +74,7 @@ export function WorkbenchBriefBody({
         ) : empty !== undefined && !markdown.trim() ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <WorkbenchDescription markdown={markdown} jira={jira} marked={marked} />
+          <WorkbenchDescription markdown={markdown} jira={jira} />
         )}
       </div>
       <WorkbenchAskForChange ask={ask} />

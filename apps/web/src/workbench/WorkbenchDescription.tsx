@@ -16,47 +16,30 @@ const DescriptionCodeBlock = lazy(() => import("./WorkbenchDescriptionCodeBlock"
 
 const DescriptionOpenerContext = createContext<WorkbenchReferenceOpener | null>(null);
 
-/** A source range in the rendered Markdown, such as the blocks Ask for change rewrites. */
-export interface MarkdownSourceRange {
-  readonly start: number;
-  readonly end: number;
-}
-
 /**
- * Puts each top-level block's Markdown source offsets on its element, which a selection reads,
- * and marks the blocks inside `marked`. Blocks without a position, such as footnotes, get none.
+ * Puts each top-level block's Markdown source offsets on its element, which a selection reads.
+ * Blocks without a position, such as footnotes, get none.
  */
-const rehypeSourceRanges =
-  ({ marked }: { readonly marked: MarkdownSourceRange | null }) =>
-  () =>
-  (tree: Root) => {
-    for (const node of tree.children) {
-      const start = node.position?.start.offset;
-      const end = node.position?.end.offset;
-      if (node.type !== "element" || start === undefined || end === undefined) continue;
-      node.properties.dataSourceStart = start;
-      node.properties.dataSourceEnd = end;
-      if (marked !== null && start >= marked.start && end <= marked.end) {
-        node.properties.dataMarked = "";
-      }
-    }
-  };
+const rehypeSourceRanges = () => (tree: Root) => {
+  for (const node of tree.children) {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (node.type !== "element" || start === undefined || end === undefined) continue;
+    node.properties.dataSourceStart = start;
+    node.properties.dataSourceEnd = end;
+  }
+};
 
 /** The source attributes of a top-level block, for components that render their own wrapper. */
 export type DescriptionSourceAttributes = {
   readonly "data-source-start"?: number;
   readonly "data-source-end"?: number;
-  readonly "data-marked"?: string;
 };
 
 const sourceAttributes = (node: Element | undefined): DescriptionSourceAttributes => {
-  const { dataSourceStart, dataSourceEnd, dataMarked } = node?.properties ?? {};
+  const { dataSourceStart, dataSourceEnd } = node?.properties ?? {};
   return typeof dataSourceStart === "number" && typeof dataSourceEnd === "number"
-    ? {
-        "data-source-start": dataSourceStart,
-        "data-source-end": dataSourceEnd,
-        ...(typeof dataMarked === "string" ? { "data-marked": dataMarked } : {}),
-      }
+    ? { "data-source-start": dataSourceStart, "data-source-end": dataSourceEnd }
     : {};
 };
 
@@ -131,12 +114,9 @@ export const workbenchDescriptionProseClassName =
 export function WorkbenchDescription({
   markdown,
   jira = false,
-  marked = null,
 }: {
   readonly markdown: string;
   readonly jira?: boolean;
-  /** Source offsets of the blocks to mark with `data-marked`. */
-  readonly marked?: MarkdownSourceRange | null;
 }) {
   const opener = useWorkbenchReferenceOpener();
   const content = workbenchDescriptionMarkdown(markdown, jira);
@@ -146,7 +126,7 @@ export function WorkbenchDescription({
       <DescriptionOpenerContext value={opener}>
         <ReactMarkdown
           remarkPlugins={[remarkGfm]}
-          rehypePlugins={[rehypeSourceRanges({ marked })]}
+          rehypePlugins={[rehypeSourceRanges]}
           components={descriptionComponents}
         >
           {content}

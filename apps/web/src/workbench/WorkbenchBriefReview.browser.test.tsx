@@ -199,9 +199,7 @@ it("keeps the pill through the rest of the triple-click that opened it", async (
   // click then selects the paragraph and must not count as a press outside the pill.
   await userEvent.tripleClick(screen.getByText(goal), { position: { x: 8, y: 8 } });
   await userEvent.click(page.getByRole("button", { name: "Ask for change" }));
-  await expect
-    .element(page.getByText("Rewrites the outlined paragraph", { exact: false }))
-    .toBeVisible();
+  await expect.element(page.getByText("Edits the selected text", { exact: false })).toBeVisible();
 });
 
 it("shows a read-only connection the diff without Ask for change, Undo, or Accept", async () => {

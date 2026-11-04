@@ -319,8 +319,7 @@ const BLOCK_KIND_LABELS: Partial<Record<MarkdownBlock["kind"], string>> = {
 };
 
 /** A block kind as prose, such as "paragraph" or "code block". */
-export const markdownBlockLabel = (kind: MarkdownBlock["kind"]) =>
-  BLOCK_KIND_LABELS[kind] ?? "block";
+const markdownBlockLabel = (kind: MarkdownBlock["kind"]) => BLOCK_KIND_LABELS[kind] ?? "block";
 
 /** "Unreviewed changes" and "title and 2 blocks", or "Unreviewed change" and "1 paragraph". */
 export function describeMarkdownReview({

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 
-import { coverMarkdownBlocks, markdownBlockLabel, markdownBlocks } from "./markdownReview";
+import { coverMarkdownBlocks } from "./markdownReview";
 
 /** The whole top-level blocks an Ask for change rewrites, in the exact saved Markdown. */
 export interface MarkdownAskTarget {
@@ -9,6 +9,8 @@ export interface MarkdownAskTarget {
   readonly end: number;
   readonly blockSource: string;
   readonly selectedText: string;
+  /** The selected text, which the UI marks; null for the header action's whole document. */
+  readonly range: Range | null;
   /** The header action's whole document, rather than the blocks a selection touched. */
   readonly whole: boolean;
 }
@@ -60,7 +62,14 @@ function readMarkdownBlockSelection(
   const covered = coverMarkdownBlocks(markdown, blocks);
   return covered === null
     ? null
-    : { ...covered, markdown, selectedText: selection.toString(), whole: false };
+    : {
+        ...covered,
+        markdown,
+        selectedText: selection.toString(),
+        // The selection's own range follows later selections, so keep a copy.
+        range: range.cloneRange(),
+        whole: false,
+      };
 }
 
 type AskPhase =
@@ -68,17 +77,10 @@ type AskPhase =
   | { readonly kind: "prompt"; readonly error: string | null }
   | { readonly kind: "running"; readonly controller: AbortController };
 
-const scopeLabel = (target: MarkdownAskTarget) => {
-  if (target.whole) return "Rewrites all of it";
-  const blocks = markdownBlocks(target.blockSource);
-  return blocks.length === 1
-    ? `Rewrites the outlined ${markdownBlockLabel(blocks[0]!.kind)}`
-    : `Rewrites the ${blocks.length} outlined blocks`;
-};
-
 /**
- * Selecting rendered Markdown offers Ask for change on the whole blocks the selection touches;
- * `askWhole` targets the entire document. A target holds until it is sent, dismissed, or the
+ * Selecting rendered Markdown offers Ask for change on the selected text. The request carries
+ * the whole blocks it touches, since only whole blocks splice safely, and asks the model to
+ * change only the selection; `askWhole` targets the entire document. A target holds until it is sent, dismissed, or the
  * Markdown changes under it. `enabled` is false where offsets would not match the saved text.
  */
 export function useMarkdownAskForChange({
@@ -146,8 +148,8 @@ export function useMarkdownAskForChange({
     containerRef,
     /** Spread on the element that renders the Markdown with source offsets. */
     selectionHandlers: { onPointerUp: capture, onKeyUp: capture },
-    /** The blocks to outline, as a source range for `WorkbenchDescription`'s `marked`. */
-    marked: live !== null && current && !live.whole ? { start: live.start, end: live.end } : null,
+    /** The selected text to mark, while the rendered text is still the one it was taken from. */
+    selection: live !== null && current ? live.range : null,
     wholeMarked: live?.whole === true,
     available: enabled,
     running,
@@ -159,6 +161,7 @@ export function useMarkdownAskForChange({
         end: markdown.length,
         blockSource: markdown,
         selectedText: "",
+        range: null,
         whole: true,
       });
       setPhase({ kind: "prompt", error: null });
@@ -168,7 +171,7 @@ export function useMarkdownAskForChange({
         ? null
         : {
             phase,
-            scope: scopeLabel(live),
+            scope: live.whole ? "Rewrites all of it" : "Edits the selected text",
             instruction,
             setInstruction,
             openPrompt: () => setPhase({ kind: "prompt", error: null }),

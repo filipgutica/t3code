@@ -1,51 +1,58 @@
 import { ArrowUpIcon, SparklesIcon } from "lucide-react";
+import { useEffect } from "react";
 
 import { Button } from "../components/ui/button";
 import { Popover, PopoverPopup } from "../components/ui/popover";
 import { Spinner } from "../components/ui/spinner";
 import { Textarea } from "../components/ui/textarea";
 import type { useMarkdownAskForChange } from "./useMarkdownAskForChange";
+import "./WorkbenchAskForChange.css";
 
 type MarkdownAsk = ReturnType<typeof useMarkdownAskForChange>;
 
-/** The outlined blocks' frame and, while a rewrite runs, their dimming. */
+const SELECTION_HIGHLIGHT = "workbench-ask-for-change";
+
+/**
+ * The whole brief's frame and its dimming while it runs. The padding keeps the dashes off the
+ * text, and the matching negative margin keeps the brief from moving when the frame appears.
+ */
 export const askForChangeTargetClassName = ({
   wholeMarked,
   running,
 }: Pick<MarkdownAsk, "wholeMarked" | "running">) =>
-  wholeMarked
-    ? [
-        "rounded-md bg-info/4 outline-1 -outline-offset-1 outline-info/70 outline-dashed",
-        running && "opacity-60",
-      ]
-    : [
-        "[&_[data-marked]]:rounded-sm [&_[data-marked]]:bg-info/4 [&_[data-marked]]:outline-1 [&_[data-marked]]:-outline-offset-1 [&_[data-marked]]:outline-info/70 [&_[data-marked]]:outline-dashed",
-        running && "[&_[data-marked]]:opacity-60",
-      ];
+  wholeMarked && [
+    "-m-2 rounded-md p-2 outline-1 -outline-offset-1 outline-info/70 outline-dashed",
+    running && "opacity-60",
+  ];
 
-const anchorFor = (container: HTMLElement | null) => {
-  if (container === null) return null;
-  const marked = [...container.querySelectorAll("[data-marked]")];
-  if (marked.length === 0) return container;
-  return {
-    contextElement: marked[0],
-    getBoundingClientRect: () => {
-      const rects = marked.map((element) => element.getBoundingClientRect());
-      const left = Math.min(...rects.map((rect) => rect.left));
-      const top = Math.min(...rects.map((rect) => rect.top));
-      const right = Math.max(...rects.map((rect) => rect.right));
-      const bottom = Math.max(...rects.map((rect) => rect.bottom));
-      return DOMRect.fromRect({ x: left, y: top, width: right - left, height: bottom - top });
-    },
+/** Paints `range` until the returned cleanup runs; without CSS highlights it stays unpainted. */
+function paintSelection(range: Range) {
+  if (typeof CSS === "undefined" || !CSS.highlights || typeof Highlight === "undefined") {
+    return undefined;
+  }
+  // Shared by every brief on the page, so each removes only its own range.
+  const highlight = CSS.highlights.get(SELECTION_HIGHLIGHT) ?? new Highlight();
+  CSS.highlights.set(SELECTION_HIGHLIGHT, highlight);
+  highlight.add(range);
+  return () => {
+    highlight.delete(range);
+    if (highlight.size === 0) CSS.highlights.delete(SELECTION_HIGHLIGHT);
   };
-};
+}
+
+const anchorFor = (container: HTMLElement | null, selection: Range | null) =>
+  container !== null && selection !== null
+    ? { contextElement: container, getBoundingClientRect: () => selection.getBoundingClientRect() }
+    : container;
 
 /**
  * The Ask for change pill beside a selection, its prompt, and the running state with Cancel.
  * Enter sends, Shift+Enter starts a new line, and Esc closes.
  */
 export function WorkbenchAskForChange({ ask }: { readonly ask: MarkdownAsk }) {
-  const { popover } = ask;
+  const { popover, selection } = ask;
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds the selection's entry in the browser's CSS highlight registry until it changes or unmounts
+  useEffect(() => (selection === null ? undefined : paintSelection(selection)), [selection]);
   if (popover === null) return null;
   const { phase } = popover;
   return (
@@ -57,7 +64,7 @@ export function WorkbenchAskForChange({ ask }: { readonly ask: MarkdownAsk }) {
       }}
     >
       <PopoverPopup
-        anchor={() => anchorFor(ask.containerRef.current)}
+        anchor={() => anchorFor(ask.containerRef.current, selection)}
         side="bottom"
         align={phase.kind === "pill" ? "end" : "start"}
         sideOffset={8}
