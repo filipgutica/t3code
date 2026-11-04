@@ -3,10 +3,13 @@ import * as Effect from "effect/Effect";
 
 import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 
+// Inline syntax makes rendered text differ from source, so a source match may not be the selection.
+const INLINE_MARKUP = /[*_`[\]<>\\~]/;
+
 /**
  * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`. A selection
- * found exactly once there is rewritten alone, so the model cannot touch the rest; otherwise
- * the whole blocks are rewritten with the selection as a hint.
+ * found exactly once in plain blocks is rewritten alone, so the model cannot touch the rest;
+ * otherwise the whole blocks are rewritten with the selection as a hint.
  */
 export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(function* (input: {
   readonly projectId: ProjectId;
@@ -36,7 +39,7 @@ export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(f
   const host = yield* MarkdownRewriteHost;
   const block = input.blockSource;
   const needle = input.selectedText.trim();
-  const at = needle === "" ? -1 : block.indexOf(needle);
+  const at = needle === "" || INLINE_MARKUP.test(block) ? -1 : block.indexOf(needle);
   let rewritten: string;
   if (at !== -1 && at === block.lastIndexOf(needle)) {
     const replacement = yield* host.rewrite({

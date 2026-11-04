@@ -235,9 +235,10 @@ describe("AskForChangeService", () => {
     );
   });
 
-  it.effect("rewrites the whole block when the selection is not verbatim in its source", () => {
+  it.effect("rewrites the whole block when it has inline markup", () => {
     const requests: Array<MarkdownRewriteRequest> = [];
-    const block = "Use the **retry** button when setup fails.";
+    // The selected first "retry button" is `**retry** button` in source; the unique source match is the second.
+    const block = "Use the **retry** button, then use retry button.";
     const markdown = `## Goal\n\n${goal}\n\n${block}`;
     const at = markdown.indexOf(block);
     return Effect.gen(function* () {
@@ -257,7 +258,6 @@ describe("AskForChangeService", () => {
         start: at,
         end: at + block.length,
         blockSource: block,
-        // Rendered text: the source has `**retry** button`.
         selectedText: "retry button",
         instruction: "Name it Try again.",
       });
