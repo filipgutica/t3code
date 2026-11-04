@@ -3,8 +3,9 @@ import * as Effect from "effect/Effect";
 
 import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 
-// Inline syntax makes rendered text differ from source, so a source match may not be the selection.
-const INLINE_MARKUP = /[*_`[\]<>\\~]/;
+// Inline syntax, entities, and line breaks render differently from their source, so a source
+// match may not be the selection.
+const INLINE_MARKUP = /[*_`[\]<>\\~&\n]/;
 
 /**
  * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`. A selection

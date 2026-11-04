@@ -235,10 +235,27 @@ describe("AskForChangeService", () => {
     );
   });
 
-  it.effect("rewrites the whole block when it has inline markup", () => {
+  // Each block renders the selected first phrase differently from its source, so the phrase's
+  // unique source match is the unselected second one.
+  it.effect.each([
+    {
+      name: "inline markup",
+      block: "Use the **retry** button, then use retry button.",
+      selectedText: "retry button",
+    },
+    {
+      name: "an entity",
+      block: "Use Save &amp; close, then document Save & close.",
+      selectedText: "Save & close",
+    },
+    {
+      name: "a soft line break",
+      block: "Press the retry\nbutton, then the retry button.",
+      selectedText: "retry button",
+    },
+  ])("rewrites the whole block when it has $name", ({ block, selectedText }) => {
     const requests: Array<MarkdownRewriteRequest> = [];
-    // The selected first "retry button" is `**retry** button` in source; the unique source match is the second.
-    const block = "Use the **retry** button, then use retry button.";
+    const rewritten = "Use Try again when setup fails.";
     const markdown = `## Goal\n\n${goal}\n\n${block}`;
     const at = markdown.indexOf(block);
     return Effect.gen(function* () {
@@ -258,17 +275,17 @@ describe("AskForChangeService", () => {
         start: at,
         end: at + block.length,
         blockSource: block,
-        selectedText: "retry button",
+        selectedText,
         instruction: "Name it Try again.",
       });
-      expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\nUse **Try again** when setup fails.`);
-      expect(requests).toMatchObject([{ blocks: block, selectedText: "retry button" }]);
+      expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\n${rewritten}`);
+      expect(requests).toMatchObject([{ blocks: block, selectedText }]);
     }).pipe(
       Effect.provide(
         withHost((request) =>
           Effect.sync(() => {
             requests.push(request);
-            return "Use **Try again** when setup fails.";
+            return rewritten;
           }),
         ),
       ),
