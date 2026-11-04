@@ -215,10 +215,10 @@ export interface MarkdownReview {
   /** The block kind when exactly one block changed. */
   readonly onlyChangedKind: MarkdownBlock["kind"] | null;
   /**
-   * The current text's link and footnote definitions. Each entry renders as its own document,
-   * so one needs these appended to resolve a reference whose definition is in another block.
+   * Each text's link and footnote definitions. Each entry renders as its own document, so one
+   * needs these appended to resolve a reference whose definition is in another block.
    */
-  readonly definitions: string;
+  readonly definitions: { readonly base: string; readonly current: string };
 }
 
 /**
@@ -301,12 +301,15 @@ export function diffMarkdownBlocks(base: string, current: string): MarkdownRevie
     entries,
     changedBlocks: changedKinds.length,
     onlyChangedKind: changedKinds.length === 1 ? changedKinds[0]! : null,
-    definitions: currentBlocks
-      .filter((block) => block.kind === "definition" || block.kind === "footnoteDefinition")
-      .map((block) => block.source)
-      .join("\n\n"),
+    definitions: { base: definitionsOf(baseBlocks), current: definitionsOf(currentBlocks) },
   };
 }
+
+const definitionsOf = (blocks: ReadonlyArray<MarkdownBlock>) =>
+  blocks
+    .filter((block) => block.kind === "definition" || block.kind === "footnoteDefinition")
+    .map((block) => block.source)
+    .join("\n\n");
 
 const BLOCK_KIND_LABELS: Partial<Record<MarkdownBlock["kind"], string>> = {
   paragraph: "paragraph",

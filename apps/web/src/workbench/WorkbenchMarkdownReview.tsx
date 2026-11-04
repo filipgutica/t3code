@@ -50,15 +50,20 @@ const wholeBlockClassName = "block rounded-sm border-l-2 border-info py-1 pl-3";
 
 /** A document's review: unchanged blocks render as usual, changed blocks as a word diff. */
 export function WorkbenchMarkdownReview({ review }: { readonly review: MarkdownReview }) {
-  const withDefinitions = (source: string) =>
-    review.definitions ? `${source}\n\n${review.definitions}` : source;
+  // A removed block came from the base, so its references resolve to the base's definitions.
+  const { base, current } = review.definitions;
+  const withDefinitions = (source: string, definitions: string) =>
+    definitions ? `${source}\n\n${definitions}` : source;
   return (
     <div className="min-w-0 space-y-3">
       {review.entries.map((entry) => {
         switch (entry.kind) {
           case "unchanged":
             return (
-              <WorkbenchDescription key={entry.key} markdown={withDefinitions(entry.source)} />
+              <WorkbenchDescription
+                key={entry.key}
+                markdown={withDefinitions(entry.source, current)}
+              />
             );
           case "changed":
             return (
@@ -73,7 +78,7 @@ export function WorkbenchMarkdownReview({ review }: { readonly review: MarkdownR
                 key={entry.key}
                 className={cn(wholeBlockClassName, "bg-success/8 no-underline dark:bg-success/16")}
               >
-                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source, current)} />
               </ins>
             );
           case "removed":
@@ -85,7 +90,7 @@ export function WorkbenchMarkdownReview({ review }: { readonly review: MarkdownR
                   "bg-destructive/8 text-muted-foreground decoration-destructive/70 dark:bg-destructive/16",
                 )}
               >
-                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source, base)} />
               </del>
             );
         }

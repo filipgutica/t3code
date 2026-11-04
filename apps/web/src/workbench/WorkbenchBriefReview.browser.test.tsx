@@ -247,6 +247,18 @@ it("resolves a reference link in the diff whose definition is in another block",
   await expect.element(screen.getByRole("link", { name: "spec" })).toBeVisible();
 });
 
+it("resolves a removed block's reference link with the definition it was removed with", async () => {
+  setup();
+  const record = { ...ticket, markdown: `${why}\n\n[spec]: https://acme.example/new` };
+  const base = `See the [spec] first.\n\n${why}\n\n[spec]: https://acme.example/old`;
+  await using screen = await render(
+    <TicketBrief record={{ ...record, reviewBase: { title: ticket.title, markdown: base } }} />,
+  );
+  await expect
+    .element(screen.getByRole("link", { name: "spec" }))
+    .toHaveAttribute("href", "https://acme.example/old");
+});
+
 it("shows an accepted change read-only from the badge, reading its base only when asked", async () => {
   setup();
   const accepted = { ...ticket, acceptedChange: true };
