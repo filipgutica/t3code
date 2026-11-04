@@ -178,6 +178,7 @@ function Harness(props: {
   readonly onSnapshot: (add: (input: BeginInput) => void) => void;
   readonly requestedDraftId?: WorkbenchTicketId;
   readonly repositories?: boolean;
+  readonly archived?: boolean;
   readonly missingThreadIds?: ReadonlyArray<ThreadId>;
   readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
@@ -216,7 +217,7 @@ function Harness(props: {
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
-      workspace={workspace}
+      workspace={props.archived ? { ...workspace, archivedAt: createdAt } : workspace}
       providers={[]}
       linkedProjects={linkedProjects}
       tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
@@ -725,6 +726,28 @@ it("shows a read-only connection a draft's unreviewed edit without Undo or Accep
   await expect.element(card.getByText("daily")).toBeVisible();
   await expect.element(card.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   await expect.element(card.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
+});
+
+it("offers no review or selection Ask for change on an archived Board's draft", async () => {
+  const { onSnapshot } = await setup();
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    reviewBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(
+    <Harness initialDrafts={[initial]} onSnapshot={onSnapshot} archived />,
+  );
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  // The same gate turns off the selection's Ask for change, which would run and then fail.
+  await expect.element(card.getByText("Email the CSV")).toBeVisible();
+  await expect
+    .element(card.getByRole("region", { name: "Review changes" }))
+    .not.toBeInTheDocument();
 });
 
 it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {

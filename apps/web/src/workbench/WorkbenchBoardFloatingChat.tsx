@@ -442,18 +442,8 @@ const getNewTicketThread = (
 };
 
 /** The full draft page's rule: the grant, and nothing archived. */
-const useCanOperateDraft = ({
-  environmentId,
-  workspace,
-  ticket,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly workspace: WorkbenchBoardFloatingChatProps["workspace"];
-  readonly ticket: WorkbenchTicket | null;
-}) =>
-  useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) &&
-  workspace.archivedAt == null &&
-  ticket?.archivedAt == null;
+const useCanOperateDraft = (environmentId: EnvironmentId, archived: boolean) =>
+  useAtomValue(workbenchEnvironment.promoteTicketDraft.permissionAtom(environmentId)) && !archived;
 
 /** Nothing was sent, typed, or written, so leaving the draft loses nothing. */
 const useIsUntouchedDraft = (
@@ -511,7 +501,8 @@ export function WorkbenchDraftThread({
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
-  const canOperate = useCanOperateDraft({ environmentId, workspace, ticket });
+  const archived = workspace.archivedAt != null || ticket?.archivedAt != null;
+  const canOperate = useCanOperateDraft(environmentId, archived);
   const editor = useTicketDraftEditor({
     environmentId,
     draft,
@@ -550,6 +541,7 @@ export function WorkbenchDraftThread({
       createState={createState}
       createContext={createContext}
       canOperate={canOperate}
+      archived={archived}
       ticketExists={ticket !== null}
       untouched={untouched}
       card={cardContext}
@@ -588,6 +580,7 @@ const getDraftCardContext = (
 /** An unsaved draft's card, with its References and who last wrote it. */
 function BoardDraftCard({
   environmentId,
+  archived,
   card,
   createContext,
   onDraft,
@@ -598,6 +591,7 @@ function BoardDraftCard({
   "updatedBy" | "briefReview" | "linkedProjects" | "references" | "referenceCount"
 > & {
   readonly environmentId: EnvironmentId;
+  readonly archived: boolean;
   readonly card: DraftCardContext;
   readonly createContext: WorkbenchBoardFloatingChatProps["createContext"];
   readonly onDraft: (draft: WorkbenchConversationDraft) => void;
@@ -608,8 +602,10 @@ function BoardDraftCard({
     environmentId,
     draft,
     revision: editor.revision,
-    // The review and offsets describe the saved draft, not unsaved local edits.
+    // The review and offsets describe the saved draft, not unsaved local edits. Read-only
+    // connections still see the diff; their command permissions hide its actions.
     reviewable:
+      !archived &&
       editor.editable &&
       editor.conflict === null &&
       props.transitions.action === null &&
