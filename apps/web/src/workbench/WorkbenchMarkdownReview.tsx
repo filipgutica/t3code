@@ -54,7 +54,8 @@ export function WorkbenchMarkdownReview({
   jira = false,
 }: {
   readonly review: MarkdownReview;
-  readonly jira?: boolean;
+  /** The whole document's markup mode; a fragment alone may lack the markers that decide it. */
+  readonly jira?: boolean | "wiki";
 }) {
   const withDefinitions = (source: string) =>
     review.definitions ? `${source}\n\n${review.definitions}` : source;

@@ -1,8 +1,12 @@
-/** Adapt Jira's wiki-style text for the read-only Markdown preview; never change the saved source. */
-export function workbenchDescriptionMarkdown(source: string, jira: boolean): string {
-  if (!jira || !/(^h[1-6]\. |\{\{|\{code|\{noformat\}|\[[^\]\n]+\|https?:)/m.test(source)) {
-    return source;
-  }
+/**
+ * Adapt Jira's wiki-style text for the read-only Markdown preview; never change the saved source.
+ * `jira` looks for wiki markers in `source`; `"wiki"` converts a fragment of a document that has them.
+ */
+export function workbenchDescriptionMarkdown(source: string, jira: boolean | "wiki"): string {
+  const wiki =
+    jira === "wiki" ||
+    (jira && /(^h[1-6]\. |\{\{|\{code|\{noformat\}|\[[^\]\n]+\|https?:)/m.test(source));
+  if (!wiki) return source;
   let fenced = false;
   return source
     .split("\n")

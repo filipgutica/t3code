@@ -88,8 +88,10 @@ function setup({ readOnly = false } = {}) {
 function TicketBrief({
   record,
   askButton = false,
+  jira = false,
 }: {
   readonly record: WorkbenchTicket;
+  readonly jira?: boolean;
   /** The header's whole-brief Ask for change, which shares the pill's name. */
   readonly askButton?: boolean;
 }) {
@@ -98,7 +100,7 @@ function TicketBrief({
     ticket: record,
     localEdit: false,
     archived: false,
-    jira: false,
+    jira,
   });
   return (
     <>
@@ -111,7 +113,7 @@ function TicketBrief({
       {briefReview.review ? (
         <WorkbenchReviewBar review={briefReview.review} permitted={briefReview.permitted} />
       ) : null}
-      <WorkbenchBriefBody briefReview={briefReview} markdown={record.markdown} jira={false} />
+      <WorkbenchBriefBody briefReview={briefReview} markdown={record.markdown} jira={jira} />
     </>
   );
 }
@@ -297,4 +299,18 @@ it("shows the next review's diff after a hidden one ended elsewhere", async () =
   await expect
     .element(screen.getByRole("region", { name: "Review changes" }))
     .not.toMatchTextContent(/diff hidden/);
+});
+
+it("renders a Jira brief's unchanged diff blocks in the brief's own markup", async () => {
+  setup();
+  const steps = "# First step\n# Second step";
+  const record = { ...ticket, markdown: `h1. Goal\n\nNew paragraph.\n\n${steps}` };
+  const base = { title: ticket.title, markdown: `h1. Goal\n\nOld paragraph.\n\n${steps}` };
+  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
+  await expect.element(screen.getByRole("region", { name: "Review changes" })).toBeVisible();
+  // The list alone has no wiki marker, so it must take the mode the whole brief uses.
+  await expect
+    .element(screen.getByRole("listitem").filter({ hasText: "First step" }))
+    .toBeVisible();
+  await expect.element(screen.getByRole("heading", { name: "First step" })).not.toBeInTheDocument();
 });
