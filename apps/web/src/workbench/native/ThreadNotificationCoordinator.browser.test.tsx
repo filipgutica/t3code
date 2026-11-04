@@ -1,4 +1,3 @@
-import { WORKING_EXIT_GRACE_MS } from "@t3tools/client-runtime/state/thread-inbox";
 import type { AnyRouter } from "@tanstack/react-router";
 import { EnvironmentId, ThreadId, type ScopedThreadRef } from "@t3tools/contracts";
 import * as DateTime from "effect/DateTime";
@@ -6,7 +5,7 @@ import * as Option from "effect/Option";
 import { Atom, AtomRegistry } from "effect/reactivity";
 import { describe, expect, it, vi } from "vite-plus/test";
 
-import { fakeTimers, stubGlobal } from "../../../test/render";
+import { stubGlobal } from "../../../test/render";
 
 const state = vi.hoisted(() => ({
   toast: vi.fn(),
@@ -169,11 +168,9 @@ describe("Workbench thread notification policy", () => {
       await using app = setup({ focused });
       app.setPolicy(SUPPRESS_ONE);
       app.start();
-      using _timers = fakeTimers();
       const completed = shell({ id: "run-1", completedAt: "2026-09-13T07:00:01.000Z" });
       app.setShell("one", completed);
       app.setShell("two", completed);
-      await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
       app.setShell("one", shell({ id: "run-2", input: true }));
       expect(app.presented()).toEqual(["Thread completed"]);
       expect(TestNotification.sent.map((sent) => sent.options.tag)).toEqual(
@@ -181,16 +178,6 @@ describe("Workbench thread notification policy", () => {
       );
     },
   );
-
-  it("cancels a pending completion when the policy starts suppressing its thread", async () => {
-    await using app = setup();
-    app.start();
-    using _timers = fakeTimers();
-    app.setShell("one", shell({ id: "run-1", completedAt: "2026-09-13T07:00:01.000Z" }));
-    app.setPolicy(SUPPRESS_ONE);
-    await vi.advanceTimersByTimeAsync(WORKING_EXIT_GRACE_MS);
-    expect(app.presented()).toEqual([]);
-  });
 
   it("releases a thread without replaying what happened while it was suppressed", async () => {
     await using app = setup();
@@ -201,5 +188,11 @@ describe("Workbench thread notification policy", () => {
     expect(app.presented()).toEqual([]);
     app.setShell("one", shell({ id: "run-3", input: true }));
     expect(app.presented()).toEqual(["Input needed"]);
+    app.setPolicy(SUPPRESS_ONE);
+    app.setShell("one", shell({ id: "run-3", completedAt: "2026-09-13T07:00:01.000Z" }));
+    app.setPolicy(null);
+    expect(app.presented()).toEqual(["Input needed"]);
+    app.setShell("one", shell({ id: "run-4", completedAt: "2026-09-13T07:00:02.000Z" }));
+    expect(app.presented()).toEqual(["Input needed", "Thread completed"]);
   });
 });
