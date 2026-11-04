@@ -610,7 +610,6 @@ function BoardDraftCard({
     revision: editor.revision,
     // The review and offsets describe the saved draft, not unsaved local edits.
     reviewable:
-      props.canOperate &&
       editor.editable &&
       editor.conflict === null &&
       props.transitions.action === null &&

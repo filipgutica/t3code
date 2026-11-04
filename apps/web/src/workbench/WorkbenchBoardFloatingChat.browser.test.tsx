@@ -30,14 +30,19 @@ import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const mocks = vi.hoisted(() => ({ begin: vi.fn(), otherCommand: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  begin: vi.fn(),
+  otherCommand: vi.fn(),
+  denied: new Set<string>(),
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: { readonly name: string }) =>
     command.name === "begin" ? mocks.begin : mocks.otherCommand,
 }));
 vi.mock("@effect/atom-react", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@effect/atom-react")>()),
-  useAtomValue: () => true,
+  // The stubbed commands' permission atoms are their names.
+  useAtomValue: (atom: unknown) => !(typeof atom === "string" && mocks.denied.has(atom)),
   useAtomRefresh: () => () => {},
 }));
 vi.mock("./state", () => {
@@ -426,10 +431,16 @@ const beginDraft = async (screen: Screen) => {
 };
 
 // The chat stays hidden on narrow screens, which includes the default test viewport.
-const setup = async () => {
+const setup = async ({ readOnly = false } = {}) => {
   await page.viewport(1280, 900);
   mocks.begin.mockReset();
   mocks.otherCommand.mockReset();
+  mocks.denied.clear();
+  if (readOnly) {
+    for (const name of ["promote", "acceptReview", "undoReview", "askForChange"]) {
+      mocks.denied.add(name);
+    }
+  }
   useWorkbenchFloatingChatStore.setState({
     mode: "collapsed",
     focusRequest: { id: 0, threadId: null },
@@ -695,6 +706,25 @@ it("edits a draft's title in its card and shows the full brief above the convers
     .toBeVisible();
   await userEvent.click(card.getByRole("button", { name: "Show less" }));
   await expect.element(card.getByText("Export refunds")).toBeVisible();
+});
+
+it("shows a read-only connection a draft's unreviewed edit without Undo or Accept", async () => {
+  const { onSnapshot } = await setup({ readOnly: true });
+  const planned = draft("draft", "draft-thread", "Plan exports");
+  const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
+  const initial = {
+    ...planned,
+    fields: { ...planned.fields, markdown: brief },
+    reviewBase: { title: planned.fields.title, markdown: brief.replace("weekly", "daily") },
+  };
+  await using screen = await render(<Harness initialDrafts={[initial]} onSnapshot={onSnapshot} />);
+  await pickThread(screen, /Plan exports/);
+  const card = screen.getByRole("group", { name: "Ticket draft" });
+  await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  await expect.element(card.getByRole("region", { name: "Review changes" })).toBeVisible();
+  await expect.element(card.getByText("daily")).toBeVisible();
+  await expect.element(card.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
+  await expect.element(card.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
 });
 
 it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {
