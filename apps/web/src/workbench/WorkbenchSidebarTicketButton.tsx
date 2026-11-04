@@ -1,5 +1,5 @@
 import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
-import { CircleAlertIcon, FolderGit2Icon, PlusIcon } from "lucide-react";
+import { CircleAlertIcon, PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -107,7 +107,7 @@ function WorkbenchSidebarTicketStatus({
   readonly status: string;
 }) {
   return (
-    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="2">
+    <span data-workbench-sidebar-metadata-label="">
       <span data-workbench-sidebar-metadata-icon="" aria-hidden>
         <span className={`size-1.5 rounded-full ${TICKET_STATUS_DOT_TONE[ticket.status]}`} />
       </span>
@@ -190,25 +190,6 @@ function WorkbenchSidebarTicketPrControl({
   );
 }
 
-function WorkbenchSidebarTicketRepositories({
-  details,
-}: {
-  readonly details: WorkbenchSidebarTicketDetails | undefined;
-}) {
-  return (
-    <span data-workbench-sidebar-metadata-label="" data-workbench-sidebar-line="3">
-      {details?.repositories.length ? (
-        <>
-          <span data-workbench-sidebar-metadata-icon="" aria-hidden>
-            <FolderGit2Icon className="size-3" />
-          </span>
-          <span className="truncate">{details.repositories.join(", ")}</span>
-        </>
-      ) : null}
-    </span>
-  );
-}
-
 export function WorkbenchSidebarTicketButton({
   ticket,
   details,
@@ -255,7 +236,6 @@ export function WorkbenchSidebarTicketButton({
       >
         <WorkbenchSidebarTicketTitle ticket={ticket} />
         <WorkbenchSidebarTicketStatus ticket={ticket} details={details} status={status} />
-        <WorkbenchSidebarTicketRepositories details={details} />
       </WorkbenchSidebarRowNavigation>
       <span data-workbench-sidebar-slot={actions.canCreateThread ? "actions" : ""}>
         {details?.environmentId ? (
