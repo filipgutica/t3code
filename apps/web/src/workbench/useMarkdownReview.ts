@@ -47,7 +47,9 @@ export function useMarkdownReview({
     const reviewed = base;
     const outcome = await (action === "accept" ? onAccept() : onUndo());
     setPending(null);
-    if (outcome.kind === "conflict") {
+    // Undo can restore the base an agent edits again, so a resolved review forgets its hiding.
+    if (outcome.kind === "done") setHiddenFor(null);
+    else if (outcome.kind === "conflict") {
       if (reviewed !== null) setConflict({ message: outcome.message, base: reviewed });
     } else if (outcome.kind === "failed") setError(outcome.message);
   };

@@ -265,3 +265,18 @@ it("shows an accepted change read-only from the badge, reading its base only whe
   await expect.element(removed).not.toBeInTheDocument();
   await expect.element(bar).not.toBeInTheDocument();
 });
+
+it("shows the next review's diff after a hidden one was undone", async () => {
+  setup();
+  mocks.undo.mockResolvedValue(succeeded);
+  await using screen = await render(<TicketBrief record={{ ...ticket, reviewBase }} />);
+  const removed = screen.getByText("Someone who comes back has to start over.");
+  await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(removed).not.toBeInTheDocument();
+  const bar = screen.getByRole("region", { name: "Review changes" });
+  await userEvent.click(bar.getByRole("button", { name: "Undo" }));
+  expect(mocks.undo).toHaveBeenCalledOnce();
+  // An agent edits the restored brief again, so the new review has the same base.
+  await screen.rerender(<TicketBrief record={{ ...ticket, revision: 9, reviewBase }} />);
+  await expect.element(removed).toBeVisible();
+});
