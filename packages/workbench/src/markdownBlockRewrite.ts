@@ -4,8 +4,9 @@ import * as Effect from "effect/Effect";
 import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 
 /**
- * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`.
- * Every byte outside that range is kept; only the document's edges are trimmed.
+ * Rewrites `markdown.slice(start, end)`, which must still equal `blockSource`. A selection
+ * found exactly once there is rewritten alone, so the model cannot touch the rest; otherwise
+ * the whole blocks are rewritten with the selection as a hint.
  */
 export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(function* (input: {
   readonly projectId: ProjectId;
@@ -33,12 +34,28 @@ export const rewriteMarkdownBlocks = Effect.fn("MarkdownBlockRewrite.rewrite")(f
     });
   }
   const host = yield* MarkdownRewriteHost;
-  const replacement = yield* host.rewrite({
-    projectId: input.projectId,
-    blocks: input.blockSource,
-    selectedText: input.selectedText,
-    instruction: input.instruction,
-    context: input.context,
-  });
-  return `${input.markdown.slice(0, input.start)}${replacement.trim()}${input.markdown.slice(input.end)}`.trim();
+  const block = input.blockSource;
+  const needle = input.selectedText.trim();
+  const at = needle === "" ? -1 : block.indexOf(needle);
+  let rewritten: string;
+  if (at !== -1 && at === block.lastIndexOf(needle)) {
+    const replacement = yield* host.rewrite({
+      projectId: input.projectId,
+      blocks: needle,
+      selectedText: "",
+      instruction: input.instruction,
+      // The surrounding blocks come first, so a long document context cannot truncate them.
+      context: `${block}\n\n${input.context}`,
+    });
+    rewritten = `${block.slice(0, at)}${replacement.trim()}${block.slice(at + needle.length)}`;
+  } else {
+    rewritten = yield* host.rewrite({
+      projectId: input.projectId,
+      blocks: block,
+      selectedText: input.selectedText,
+      instruction: input.instruction,
+      context: input.context,
+    });
+  }
+  return `${input.markdown.slice(0, input.start)}${rewritten.trim()}${input.markdown.slice(input.end)}`.trim();
 });

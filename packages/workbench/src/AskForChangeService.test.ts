@@ -34,7 +34,8 @@ const selection = {
   start,
   end: start + target.length,
   blockSource: target,
-  selectedText: "failing command",
+  // No selection asks to rewrite the whole block.
+  selectedText: "",
   instruction: "Also mention the exit code.",
 };
 
@@ -171,6 +172,103 @@ describe("AskForChangeService", () => {
           Effect.sync(() => {
             requests.push(request);
             return "\nRewritten block.\n";
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("rewrites only a selection found once and keeps the rest of its block", () => {
+    const requests: Array<MarkdownRewriteRequest> = [];
+    const first = "Setup clones each repository.";
+    const middle =
+      "It then runs the install script, which can take several minutes on a cold cache.";
+    const last = "Errors appear in the log.";
+    const paragraph = `${first} ${middle} ${last}`;
+    const markdown = `## Goal\n\n${goal}\n\n${paragraph}`;
+    const at = markdown.indexOf(paragraph);
+    return Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const service = yield* AskForChangeService;
+      const seeded = yield* seedTicket;
+      const ticket = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: seeded.revision,
+        markdown,
+        updatedAt: createdAt,
+        writer: { kind: "user" },
+      });
+      const saved = yield* service.askForTicketChange({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        start: at,
+        end: at + paragraph.length,
+        blockSource: paragraph,
+        // Browser selections often carry the space after a sentence.
+        selectedText: `${middle} `,
+        instruction: "Make this shorter.",
+      });
+      expect(saved.markdown).toBe(
+        `## Goal\n\n${goal}\n\n${first} It then runs the install script. ${last}`,
+      );
+      expect(requests).toEqual([
+        {
+          projectId,
+          blocks: middle,
+          selectedText: "",
+          instruction: "Make this shorter.",
+          context: `${paragraph}\n\n${ticket.title}\n\n${goal}`,
+        },
+      ]);
+    }).pipe(
+      Effect.provide(
+        withHost((request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            // A whole-paragraph rewrite in the old mode; here it may only replace the selection.
+            return request.blocks === middle
+              ? "\nIt then runs the install script.\n"
+              : "Setup is slow. It then runs the install script. Check the log.";
+          }),
+        ),
+      ),
+    );
+  });
+
+  it.effect("rewrites the whole block when the selection is not verbatim in its source", () => {
+    const requests: Array<MarkdownRewriteRequest> = [];
+    const block = "Use the **retry** button when setup fails.";
+    const markdown = `## Goal\n\n${goal}\n\n${block}`;
+    const at = markdown.indexOf(block);
+    return Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const service = yield* AskForChangeService;
+      const seeded = yield* seedTicket;
+      const ticket = yield* store.updateTicket({
+        id: ticketId,
+        expectedRevision: seeded.revision,
+        markdown,
+        updatedAt: createdAt,
+        writer: { kind: "user" },
+      });
+      const saved = yield* service.askForTicketChange({
+        id: ticketId,
+        expectedRevision: ticket.revision,
+        start: at,
+        end: at + block.length,
+        blockSource: block,
+        // Rendered text: the source has `**retry** button`.
+        selectedText: "retry button",
+        instruction: "Name it Try again.",
+      });
+      expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\nUse **Try again** when setup fails.`);
+      expect(requests).toMatchObject([{ blocks: block, selectedText: "retry button" }]);
+    }).pipe(
+      Effect.provide(
+        withHost((request) =>
+          Effect.sync(() => {
+            requests.push(request);
+            return "Use **Try again** when setup fails.";
           }),
         ),
       ),

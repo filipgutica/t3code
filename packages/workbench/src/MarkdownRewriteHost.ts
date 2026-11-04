@@ -5,9 +5,9 @@ import type * as Effect from "effect/Effect";
 export interface MarkdownRewriteRequest {
   /** The native Project whose text generation model and checkout run the rewrite. */
   readonly projectId: ProjectId;
-  /** Whole top-level Markdown blocks; the result replaces them. */
+  /** The Markdown to rewrite: whole top-level blocks, or one selection inside them. The result replaces it. */
   readonly blocks: string;
-  /** What the user selected inside `blocks`, or empty for all of them. */
+  /** What the user selected inside `blocks`, or empty when `blocks` is the whole target. */
   readonly selectedText: string;
   readonly instruction: string;
   /** The document's title and goal, so the rewrite fits it. */
