@@ -1,8 +1,8 @@
-/* Like native folder rows, Board children fill the full width and line their content up
-   with the Board title, past its chevron and icon. */
+/* Like native folder rows, Board children fill the full width. Their content lines up with
+   the Board icon, past the chevron. */
 :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
   --workbench-sidebar-disclosure-width: 20px;
-  --workbench-sidebar-child-inset: calc(var(--workbench-sidebar-disclosure-width) + 26px);
+  --workbench-sidebar-child-inset: calc(var(--workbench-sidebar-disclosure-width) + 4px);
 }
 
 /* The disclosure and its destination share one row surface. Like native rows, it stays
