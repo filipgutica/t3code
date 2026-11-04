@@ -280,3 +280,21 @@ it("shows the next review's diff after a hidden one was undone", async () => {
   await screen.rerender(<TicketBrief record={{ ...ticket, revision: 9, reviewBase }} />);
   await expect.element(removed).toBeVisible();
 });
+
+it("shows the next review's diff after a hidden one ended elsewhere", async () => {
+  setup();
+  await using screen = await render(<TicketBrief record={{ ...ticket, reviewBase }} />);
+  const removed = screen.getByText("Someone who comes back has to start over.");
+  await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(removed).not.toBeInTheDocument();
+  // Another client undoes it, then an agent edits the restored brief again.
+  await screen.rerender(
+    <TicketBrief record={{ ...ticket, ...reviewBase, revision: 8, reviewBase: null }} />,
+  );
+  await expect.element(removed).toBeVisible();
+  await screen.rerender(<TicketBrief record={{ ...ticket, revision: 9, reviewBase }} />);
+  await expect.element(removed).toBeVisible();
+  await expect
+    .element(screen.getByRole("region", { name: "Review changes" }))
+    .not.toMatchTextContent(/diff hidden/);
+});

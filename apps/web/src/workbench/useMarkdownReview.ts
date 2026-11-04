@@ -54,8 +54,10 @@ export function useMarkdownReview({
     } else if (outcome.kind === "failed") setError(outcome.message);
   };
 
-  if (base === null) return { review: null, diffShown: false };
   const accepted = onHideAccepted !== undefined;
+  // However a review ends, here or on another client, the next one starts with its diff shown.
+  if (hiddenFor !== null && (base === null || accepted)) setHiddenFor(null);
+  if (base === null) return { review: null, diffShown: false };
   const titleChanged = base.title !== title;
   const blocks = diffMarkdownBlocks(base.markdown, markdown);
   const diffShown =
