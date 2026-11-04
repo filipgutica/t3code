@@ -1,4 +1,4 @@
-import type { ReactNode, Ref } from "react";
+import type { ReactNode, Ref, RefObject } from "react";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { handleWorkbenchSidebarMenuKeyDown } from "./WorkbenchSidebarRowActions";
 
@@ -8,6 +8,7 @@ export function WorkbenchSidebarRowNavigation({
   onSelect,
   openMenu,
   preview,
+  previewAnchor,
   children,
   compact = false,
   ref,
@@ -17,6 +18,8 @@ export function WorkbenchSidebarRowNavigation({
   readonly onSelect: () => void;
   readonly openMenu?: (position: { x: number; y: number }, trigger: HTMLButtonElement) => void;
   readonly preview?: ReactNode;
+  /** Positions the preview beside the whole row rather than the button's own box. */
+  readonly previewAnchor?: RefObject<HTMLElement | null>;
   readonly children: ReactNode;
   readonly compact?: boolean;
   readonly ref?: Ref<HTMLButtonElement>;
@@ -50,7 +53,13 @@ export function WorkbenchSidebarRowNavigation({
   return (
     <Tooltip>
       <TooltipTrigger render={button} />
-      <TooltipPopup align="start" side="right" variant="glass" className="text-left">
+      <TooltipPopup
+        align="start"
+        side="right"
+        variant="glass"
+        className="text-left"
+        anchor={previewAnchor}
+      >
         {preview}
       </TooltipPopup>
     </Tooltip>

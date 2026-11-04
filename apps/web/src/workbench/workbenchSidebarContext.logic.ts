@@ -17,7 +17,10 @@ import {
   getTicketReferences,
   type WorkbenchReferencesByTicket,
 } from "./workbenchReferences.logic";
-import { getWorkbenchTicketExecutionStatuses } from "./workbenchThreadStatus.logic";
+import {
+  getWorkbenchTicketExecutionStatuses,
+  getWorkbenchTicketThreadStatuses,
+} from "./workbenchThreadStatus.logic";
 
 /** Project already-loaded context once, without fetching PRs for each sidebar row. */
 export const getWorkbenchSidebarTicketDetails = ({
@@ -71,11 +74,9 @@ export const getWorkbenchSidebarTicketDetails = ({
   const activeWorkspaceIds = new Set(
     workbenchProjects.filter((workspace) => workspace.archivedAt == null).map(({ id }) => id),
   );
-  const executionStatuses = getWorkbenchTicketExecutionStatuses({
-    environmentId,
-    assignments,
-    threadsById,
-  });
+  const executionInput = { environmentId, assignments, threadsById };
+  const executionStatuses = getWorkbenchTicketExecutionStatuses(executionInput);
+  const threadStatuses = getWorkbenchTicketThreadStatuses(executionInput);
   const assignmentsByTicket = new Map<
     WorkbenchTicketId,
     Array<Pick<WorkbenchAssignment, "threadId">>
@@ -101,11 +102,10 @@ export const getWorkbenchSidebarTicketDetails = ({
             const title = projectsById.get(id);
             return title ? [title] : [];
           }),
-          threadCount: new Set(
-            ticketAssignments
-              .filter(({ threadId }) => threadsById.has(threadId))
-              .map(({ threadId }) => threadId),
-          ).size,
+          threads: (threadStatuses.get(ticket.id) ?? []).map((entry) => ({
+            ...entry,
+            title: threadsById.get(entry.threadId)?.title ?? "",
+          })),
           pullRequests: getWorkbenchTicketPullRequests({
             assignments: ticketAssignments,
             threadsById,

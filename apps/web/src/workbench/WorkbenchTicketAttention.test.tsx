@@ -180,6 +180,24 @@ it("keeps the card reachable when the native status already shows the only reaso
   expect(document.querySelector('[role="dialog"]')?.textContent).toContain("Input needed");
 });
 
+it("lets a Ticket's Working status yield to a reason that needs the user, like a native folder", async () => {
+  mocks.signals = [{ kind: "reply", source: threadSource }];
+  await act(async () =>
+    root.render(
+      <WorkbenchTicketAttentionBadge
+        environmentId={environmentId}
+        ticketId={ticketId}
+        ticketTitle="Settings"
+        nativeStatusKind="working"
+        nativeStatus={<span>Working</span>}
+      />,
+    ),
+  );
+  expect(button("Settings needs attention: Done").textContent).toBe(
+    "Done, Settings needs attention: Done",
+  );
+});
+
 it("leaves a plain native status when no reason needs attention", async () => {
   mocks.signals = [];
   await act(async () =>

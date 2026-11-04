@@ -1,9 +1,15 @@
+/* Like native folder rows, Board children fill the full width. Their content lines up with
+   the Board icon, past the chevron. */
+:is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
+  --workbench-sidebar-disclosure-width: 20px;
+  --workbench-sidebar-child-inset: calc(var(--workbench-sidebar-disclosure-width) + 4px);
+}
+
 /* The disclosure and its destination share one row surface. Like native rows, it stays
    transparent at rest so the sidebar's grain shows through. */
 [data-workbench-sidebar-surface] {
   --workbench-sidebar-row-surface: transparent;
   --workbench-sidebar-row-end-inset: 8px;
-  --workbench-sidebar-disclosure-width: 20px;
   background: var(--workbench-sidebar-row-surface);
   border-radius: var(--radius-md);
 }
@@ -15,6 +21,11 @@
 /* Same fill as the native route-active thread row; it persists on hover. */
 [data-workbench-sidebar-surface][data-active="true"] {
   --workbench-sidebar-row-surface: var(--sidebar-row-active);
+}
+
+/* Native active rows add this hairline in light mode, where the fill alone is faint. */
+[data-workbench-sidebar-surface][data-active="true"]:not(.dark *) {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-border) 70%, transparent);
 }
 
 [data-workbench-sidebar-disclosure] {
@@ -34,23 +45,27 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
-/* Ticket rows use the native sidebar row inset under the Workspace's chevron column. */
-[data-workbench-sidebar-disclosure="ticket"] {
-  height: calc(2 * var(--sidebar-content-inset) + 66px);
-  align-items: start;
-  padding-top: calc(var(--sidebar-content-inset) + 3px);
-}
-
-/* Tickets use three lines: title, status and slot, repositories and PRs. */
+/* Tickets use native multiline geometry: title and status, then planning and PRs. Each line
+   sizes its own trailing controls, so a wide status never truncates the line below. */
 [data-workbench-sidebar-detail-row] {
   position: relative;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  grid-template-rows: 20px 20px 18px;
-  gap: 4px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
   min-width: 0;
-  padding: var(--sidebar-content-inset) var(--workbench-sidebar-row-end-inset, 8px)
-    var(--sidebar-content-inset) 4px;
+  padding: 6px var(--workbench-sidebar-row-end-inset, 8px) 6px var(--workbench-sidebar-child-inset);
+}
+
+[data-workbench-sidebar-line] {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 24px;
+}
+
+[data-workbench-sidebar-line="2"] {
+  height: 16px;
 }
 
 [data-workbench-sidebar-navigation] {
@@ -67,13 +82,18 @@ button[data-workbench-sidebar-disclosure] {
   cursor: pointer;
 }
 
-/* Subgrid lets the slot and PR controls sit beside the lines without nesting buttons. */
 [data-workbench-sidebar-navigation="detail"] {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-row: 1 / -1;
-  grid-template-columns: subgrid;
-  grid-template-rows: subgrid;
+  display: flex;
+  flex: 1;
+}
+
+/* Like native rows, the whole highlighted surface selects the Ticket. Controls sit above it,
+   so nothing nests inside the button. */
+[data-workbench-sidebar-navigation="detail"]::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
 }
 
 [data-workbench-sidebar-navigation="compact"] {
@@ -86,42 +106,35 @@ button[data-workbench-sidebar-disclosure] {
 }
 
 [data-workbench-sidebar-title] {
-  grid-column: 1;
-  grid-row: 1;
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 6px;
   min-width: 0;
   color: var(--sidebar-foreground);
-  font-weight: 400;
+  font-weight: 500;
   white-space: nowrap;
 }
 
-[data-workbench-sidebar-detail-row="ticket"] [data-workbench-sidebar-title] {
-  grid-column: 1 / -1;
-  font-weight: 500;
+/* Like native settled rows, Done and archived Tickets recede until hovered or focused. */
+[data-workbench-sidebar-surface]:not(:hover, :focus-within)
+  [data-workbench-sidebar-recede]
+  [data-workbench-sidebar-title] {
+  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  font-weight: 400;
 }
 
 [data-workbench-sidebar-metadata-label] {
-  grid-column: 1;
-  grid-row: 2;
   display: flex;
+  flex: 1;
   align-items: center;
   gap: 4px;
   min-width: 0;
   color: var(--sidebar-muted-foreground);
   font-size: var(--text-xs);
   font-weight: 400;
-  line-height: 18px;
+  line-height: 16px;
   white-space: nowrap;
-}
-
-[data-workbench-sidebar-metadata-label][data-workbench-sidebar-line="2"] {
-  line-height: 20px;
-}
-
-[data-workbench-sidebar-metadata-label][data-workbench-sidebar-line="3"] {
-  grid-row: 3;
 }
 
 [data-workbench-sidebar-metadata-icon] {
@@ -144,13 +157,16 @@ button[data-workbench-sidebar-disclosure] {
 :is([data-workbench-sidebar-slot], [data-workbench-sidebar-metadata-controls]) {
   position: relative;
   z-index: 1;
-  grid-column: 2;
   display: flex;
+  flex-shrink: 0;
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  min-width: 0;
   pointer-events: none;
+}
+
+[data-workbench-sidebar-metadata-controls]:empty {
+  display: none;
 }
 
 [data-workbench-sidebar-slot] :is(button, a),
@@ -158,22 +174,14 @@ button[data-workbench-sidebar-disclosure] {
   pointer-events: auto;
 }
 
+/* Reserves the quick action's width so hover swaps the status without reflowing the title. */
 [data-workbench-sidebar-slot] {
-  grid-row: 1;
+  min-width: 20px;
   font-size: var(--text-xs);
 }
 
-[data-workbench-sidebar-detail-row="ticket"] [data-workbench-sidebar-slot] {
-  grid-row: 2;
-}
-
 [data-workbench-sidebar-metadata-controls] {
-  grid-row: 2;
   gap: 2px;
-}
-
-[data-workbench-sidebar-detail-row="ticket"] [data-workbench-sidebar-metadata-controls] {
-  grid-row: 3;
 }
 
 [data-workbench-sidebar-native-status] {
@@ -183,11 +191,19 @@ button[data-workbench-sidebar-disclosure] {
   white-space: nowrap;
 }
 
-/* Like native rows, hover swaps a plain status for the row's quick action. */
+/* Like native rows, hover swaps a plain status for the row's quick action in place. An
+   attention badge is a control, so it keeps room beside it for the action instead. */
 [data-workbench-sidebar-quick-actions] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: -4px;
   display: none;
+  align-items: center;
   gap: 2px;
-  margin-inline-end: -4px;
+}
+
+[data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
+  padding-inline-end: 22px;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
@@ -198,7 +214,7 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
   [data-workbench-sidebar-slot="actions"]
   > [data-workbench-sidebar-native-status] {
-  display: none;
+  visibility: hidden;
 }
 
 [data-workbench-sidebar-quick-action] {
@@ -241,9 +257,8 @@ button[data-workbench-sidebar-disclosure] {
   outline-offset: -2px;
 }
 
-/* Drafts share the Ticket surface width; the empty chevron column keeps icons on the Ticket column. */
 [data-workbench-sidebar-draft-list] [data-workbench-sidebar-navigation="compact"] {
-  padding-inline-start: calc(var(--workbench-sidebar-disclosure-width, 20px) + 4px);
+  padding-inline-start: var(--workbench-sidebar-child-inset);
 }
 
 [data-workbench-sidebar-item-row="compact"] {
@@ -289,7 +304,7 @@ button[data-workbench-sidebar-disclosure] {
   gap: 6px;
   min-height: 28px;
   width: 100%;
-  padding-inline: 4px;
+  padding-inline: var(--workbench-sidebar-child-inset) 4px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -305,7 +320,7 @@ button[data-workbench-sidebar-disclosure] {
 }
 
 @media (any-pointer: coarse), (max-width: 767px) {
-  [data-workbench-sidebar-surface] {
+  :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
     --workbench-sidebar-disclosure-width: 44px;
   }
 
@@ -315,7 +330,25 @@ button[data-workbench-sidebar-disclosure] {
 
   /* Touch has no hover, so the quick action stays beside the status. */
   [data-workbench-sidebar-quick-actions] {
+    position: static;
     display: flex;
+  }
+
+  /* Wide enough that the enlarged + target below never overlaps the attention badge. */
+  [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
+    gap: 8px;
+    padding-inline-end: 0;
+  }
+
+  /* Extends the tap target past the 20px glyph without changing the row layout. */
+  [data-workbench-sidebar-quick-action] {
+    position: relative;
+  }
+
+  [data-workbench-sidebar-quick-action]::after {
+    content: "";
+    position: absolute;
+    inset: -4px -8px;
   }
 
   [data-workbench-sidebar-navigation="compact"],

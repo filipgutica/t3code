@@ -222,12 +222,15 @@ function AttentionBadge({
   nativeStatus = null,
   onOpenThread,
   side = "bottom",
+  compact = false,
 }: Pick<TicketAttentionProps, "environmentId" | "onOpenThread"> & {
   title: string;
   signals: readonly WorkbenchAttentionSignal[];
   nativeStatusKind?: WorkbenchThreadExecutionStatus["kind"] | null | undefined;
   nativeStatus?: ReactNode;
   side?: "bottom" | "right";
+  /** Icon only, for rows where the label would crowd out the title. */
+  compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const { leading, more, reasons } = getWorkbenchAttentionBadgePresentation({
@@ -252,7 +255,9 @@ function AttentionBadge({
         {LeadingIcon && leadingPresentation ? (
           <>
             <LeadingIcon aria-hidden className="size-4 shrink-0" />
-            <span data-attention-label="">{leadingPresentation.label}</span>
+            <span data-attention-label="" className={compact ? "sr-only" : undefined}>
+              {leadingPresentation.label}
+            </span>
           </>
         ) : (
           <span data-attention-label="">{nativeStatus}</span>
@@ -284,14 +289,20 @@ export function WorkbenchTicketAttentionBadge(
     side?: "bottom" | "right";
     nativeStatusKind?: WorkbenchThreadExecutionStatus["kind"] | null;
     nativeStatus?: ReactNode;
+    compact?: boolean;
   },
 ) {
   const { attentionSignalsByTicket } = useWorkbenchAttentionData();
+  const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
+  // Like a closed native folder, anything that needs the user outranks a Ticket's Working.
+  const workingYields = props.nativeStatusKind === "working" && signals.length > 0;
   return (
     <AttentionBadge
       {...props}
+      nativeStatusKind={workingYields ? null : props.nativeStatusKind}
+      nativeStatus={workingYields ? null : props.nativeStatus}
       title={props.ticketTitle}
-      signals={attentionSignalsByTicket.get(props.ticketId) ?? []}
+      signals={signals}
     />
   );
 }

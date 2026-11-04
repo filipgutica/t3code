@@ -1131,29 +1131,27 @@ function WorkbenchSidebarWorkspaceRow({
         panelId={workspacePanelId}
         title={workspace.title}
       >
-        <div className="ms-4">
-          <WorkbenchSidebarDrafts
-            drafts={drafts}
-            workspaceTitle={workspace.title}
-            workspaceButtonRef={workspaceButtonRef}
-            selectedTicketId={selectedTicketId}
-            expanded={!navigation.collapsedDrafts.has(workspace.id)}
-            onToggle={() => navigation.onToggleDrafts(workspace.id)}
-            onSelect={(draft) => onSelectTicket(workspace.id, draft.id)}
-            onOpenMenu={navigation.onOpenDraftMenu}
-          />
-          <WorkbenchSidebarWorkspaceContents
-            activeTicketGroups={activeTicketGroups}
-            archivedTickets={visibleArchivedTickets}
-            doneTicketGroups={doneTicketGroups}
-            expansion={expansion}
-            onSelectTicket={onSelectTicket}
-            onToggle={onToggle}
-            selectedTicketId={selectedTicketId}
-            ticketDetailsById={ticketDetailsById}
-            workspaceId={workspace.id}
-          />
-        </div>
+        <WorkbenchSidebarDrafts
+          drafts={drafts}
+          workspaceTitle={workspace.title}
+          workspaceButtonRef={workspaceButtonRef}
+          selectedTicketId={selectedTicketId}
+          expanded={!navigation.collapsedDrafts.has(workspace.id)}
+          onToggle={() => navigation.onToggleDrafts(workspace.id)}
+          onSelect={(draft) => onSelectTicket(workspace.id, draft.id)}
+          onOpenMenu={navigation.onOpenDraftMenu}
+        />
+        <WorkbenchSidebarWorkspaceContents
+          activeTicketGroups={activeTicketGroups}
+          archivedTickets={visibleArchivedTickets}
+          doneTicketGroups={doneTicketGroups}
+          expansion={expansion}
+          onSelectTicket={onSelectTicket}
+          onToggle={onToggle}
+          selectedTicketId={selectedTicketId}
+          ticketDetailsById={ticketDetailsById}
+          workspaceId={workspace.id}
+        />
       </WorkbenchSidebarWorkspacePanel>
     </SidebarMenuItem>
   );
@@ -1330,7 +1328,6 @@ function WorkbenchSidebarTicketRow({
   const isActive = ticket.id === selectedTicketId;
   return (
     <SidebarMenuItem>
-      {/* The empty disclosure column keeps Tickets aligned under their Board. */}
       <div
         data-workbench-sidebar-disclosure-row=""
         data-workbench-sidebar-surface=""
@@ -1338,7 +1335,6 @@ function WorkbenchSidebarTicketRow({
         data-active={isActive || undefined}
         className="relative flex min-w-0 items-start rounded-md"
       >
-        <span aria-hidden data-workbench-sidebar-disclosure="ticket" />
         <WorkbenchSidebarTicketButton
           ticket={ticket}
           details={ticketDetailsById.get(ticket.id)}
