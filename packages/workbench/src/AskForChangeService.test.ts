@@ -253,6 +253,11 @@ describe("AskForChangeService", () => {
       block: "Press the retry\nbutton, then the retry button.",
       selectedText: "retry button",
     },
+    {
+      name: "doubled spaces",
+      block: "Press the retry  button, then document retry button.",
+      selectedText: "retry button",
+    },
   ])("rewrites the whole block when it has $name", ({ block, selectedText }) => {
     const requests: Array<MarkdownRewriteRequest> = [];
     const rewritten = "Use Try again when setup fails.";
