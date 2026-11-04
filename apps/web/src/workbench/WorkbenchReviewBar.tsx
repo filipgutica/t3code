@@ -22,7 +22,7 @@ export function WorkbenchReviewBar({
   readonly disabled?: boolean;
   readonly className?: string;
 }) {
-  const { summary, diffShown, pending, conflict, error } = review;
+  const { summary, diffShown, conflict, error } = review;
   return (
     <div
       role="region"
@@ -57,39 +57,44 @@ export function WorkbenchReviewBar({
           </span>
         ) : null}
       </p>
-      <div className="flex shrink-0 items-center gap-2">
-        {review.accepted ? (
-          <Button size="xs" type="button" variant="ghost" onClick={review.toggleDiff}>
-            <EyeOffIcon /> Hide
-          </Button>
-        ) : null}
-        {diffShown ? null : (
-          <Button size="xs" type="button" variant="ghost" onClick={review.showDiff}>
-            <EyeIcon /> Show diff
-          </Button>
-        )}
-        {permitted.undo && !review.accepted ? (
-          <Button
-            size="xs"
-            type="button"
-            variant="outline"
-            disabled={disabled || pending !== null}
-            onClick={review.undo}
-          >
-            <Undo2Icon /> Undo
-          </Button>
-        ) : null}
-        {permitted.accept && !review.accepted ? (
-          <Button
-            size="xs"
-            type="button"
-            disabled={disabled || pending !== null}
-            onClick={review.accept}
-          >
-            <CheckIcon /> Accept
-          </Button>
-        ) : null}
-      </div>
+      <ReviewBarActions review={review} permitted={permitted} disabled={disabled} />
+    </div>
+  );
+}
+
+/** Show diff or Hide, then Undo and Accept, which an accepted change does not offer. */
+function ReviewBarActions({
+  review,
+  permitted,
+  disabled,
+}: {
+  readonly review: MarkdownReviewState;
+  readonly permitted: { readonly accept: boolean; readonly undo: boolean };
+  readonly disabled: boolean;
+}) {
+  const busy = disabled || review.pending !== null;
+  return (
+    <div className="flex shrink-0 items-center gap-2">
+      {review.accepted ? (
+        <Button size="xs" type="button" variant="ghost" onClick={review.toggleDiff}>
+          <EyeOffIcon /> Hide
+        </Button>
+      ) : null}
+      {review.diffShown ? null : (
+        <Button size="xs" type="button" variant="ghost" onClick={review.showDiff}>
+          <EyeIcon /> Show diff
+        </Button>
+      )}
+      {permitted.undo && !review.accepted ? (
+        <Button size="xs" type="button" variant="outline" disabled={busy} onClick={review.undo}>
+          <Undo2Icon /> Undo
+        </Button>
+      ) : null}
+      {permitted.accept && !review.accepted ? (
+        <Button size="xs" type="button" disabled={busy} onClick={review.accept}>
+          <CheckIcon /> Accept
+        </Button>
+      ) : null}
     </div>
   );
 }
