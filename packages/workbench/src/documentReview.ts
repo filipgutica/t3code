@@ -20,7 +20,7 @@ const sameDocument = (left: ReviewDocument, right: ReviewDocument) =>
  * unreviewed agent or Ask for change write. A write from an empty body sets no
  * base, and a write that returns to the base ends the review.
  */
-export const nextReviewBase = ({
+const nextReviewBase = ({
   writer,
   base,
   before,

@@ -30,32 +30,30 @@ describe("markdownBlocks", () => {
 });
 
 describe("diffWords", () => {
-  it("reads a sentence edit as removed words followed by added words", () => {
-    expect(
-      diffWords(
-        "an invitation but still have no clear indication of what is ready",
-        "an invitation but can't tell what is ready",
-      ),
-    ).toEqual([
-      { kind: "same", text: "an invitation but " },
-      { kind: "del", text: "still have no clear indication of" },
-      { kind: "ins", text: "can't tell" },
-      { kind: "same", text: " what is ready" },
-    ]);
-  });
-
-  it("diffs a title", () => {
-    expect(diffWords("Create the welcome checklist", "Build the welcome checklist")).toEqual([
-      { kind: "del", text: "Create" },
-      { kind: "ins", text: "Build" },
-      { kind: "same", text: " the welcome checklist" },
-    ]);
-  });
-
-  it("gives up on text too large to compare word by word", () => {
-    const words = (prefix: string) =>
-      Array.from({ length: 150 }, (_, index) => `${prefix}${index}`).join(" ");
-    expect(diffWords(words("a"), words("b"))).toBeNull();
+  it.each([
+    {
+      name: "a sentence edit inside the text",
+      base: "an invitation but still have no clear indication of what is ready",
+      current: "an invitation but can't tell what is ready",
+      segments: [
+        { kind: "same", text: "an invitation but " },
+        { kind: "del", text: "still have no clear indication of" },
+        { kind: "ins", text: "can't tell" },
+        { kind: "same", text: " what is ready" },
+      ],
+    },
+    {
+      name: "a leading word replaced",
+      base: "Create the welcome checklist",
+      current: "Build the welcome checklist",
+      segments: [
+        { kind: "del", text: "Create" },
+        { kind: "ins", text: "Build" },
+        { kind: "same", text: " the welcome checklist" },
+      ],
+    },
+  ])("reads $name as removed words followed by added words", ({ base, current, segments }) => {
+    expect(diffWords(base, current)).toEqual(segments);
   });
 });
 

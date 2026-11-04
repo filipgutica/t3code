@@ -775,11 +775,14 @@ it("offers no review or selection Ask for change on an archived Board's draft", 
   await pickThread(screen, /Plan exports/);
   const card = screen.getByRole("group", { name: "Ticket draft" });
   await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
-  // The same gate turns off the selection's Ask for change, which would run and then fail.
   await expect.element(card.getByText("Email the CSV")).toBeVisible();
   await expect
     .element(card.getByRole("region", { name: "Review changes" }))
     .not.toBeInTheDocument();
+  // The same gate turns off the selection's Ask for change, which would run and then fail;
+  // a pill would be a second match beside the header's disabled button.
+  await userEvent.tripleClick(card.getByText("Email the CSV"));
+  await expect.element(page.getByRole("button", { name: "Ask for change" })).toBeDisabled();
 });
 
 it("starts a draft's card collapsed in a short chat, still saying why it can't be created", async () => {

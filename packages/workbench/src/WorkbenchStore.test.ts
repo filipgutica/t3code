@@ -2006,7 +2006,7 @@ describe("Ticket review of agent edits", () => {
     }).pipe(Effect.provide(layer())),
   );
 
-  it.effect("Accept clears the review and bumps the revision without changing content", () =>
+  it.effect("Accept keeps the content and the change viewable until the content changes", () =>
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const edited = yield* reviewed;
@@ -2023,20 +2023,9 @@ describe("Ticket review of agent edits", () => {
         reviewBase: null,
         updatedByThreadId: agent,
         generatedSummary: edited.generatedSummary,
+        acceptedChange: true,
+        acceptedBase: original,
       });
-    }).pipe(Effect.provide(layer())),
-  );
-
-  it.effect("keeps an accepted change viewable until the content changes again", () =>
-    Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
-      const edited = yield* reviewed;
-      const accepted = yield* store.resolveTicketReview({
-        id: ticketId,
-        expectedRevision: edited.revision,
-        resolution: "accept",
-      });
-      expect(accepted).toMatchObject({ acceptedChange: true, acceptedBase: original });
       const [snapshotTicket] = (yield* store.getSnapshot).tickets;
       expect(snapshotTicket).toMatchObject({ acceptedChange: true });
       expect(snapshotTicket).not.toHaveProperty("acceptedBase");

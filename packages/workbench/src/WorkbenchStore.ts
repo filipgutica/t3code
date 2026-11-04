@@ -530,7 +530,7 @@ interface WorkbenchStoreShape extends Omit<
   ) => Effect.Effect<WorkbenchTicket, WorkbenchOperationError>;
   /**
    * A changed title or description records its writer and updates the review
-   * base (see `nextReviewBase`). Only agents pass `progress`.
+   * base (see `documentWrite`). Only agents pass `progress`.
    */
   readonly updateTicket: (
     input: WorkbenchUpdateTicketInput & {

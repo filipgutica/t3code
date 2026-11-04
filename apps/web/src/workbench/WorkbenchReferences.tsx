@@ -105,33 +105,25 @@ export function WorkbenchProvenanceBadge({
 }) {
   const text =
     source.kind === "thread" ? `Updated by ${source.title}` : "Updated by Ask for change";
-  const content = (
-    <>
-      {source.kind === "thread" ? <BotIcon aria-hidden /> : <SparklesIcon aria-hidden />}
-      <span className="truncate">{text}</span>
-    </>
-  );
-  const badge =
-    onToggle === undefined ? (
-      <Badge variant="outline" className="min-w-0 max-w-72 shrink">
-        {content}
-      </Badge>
-    ) : (
-      <Badge
-        variant="outline"
-        className="min-w-0 max-w-72 shrink"
-        render={
+  const badge = (
+    <Badge
+      variant="outline"
+      className="min-w-0 max-w-72 shrink"
+      render={
+        onToggle === undefined ? undefined : (
           <button
             type="button"
             aria-label={`${text}. Show diff`}
             aria-pressed={pressed === true}
             onClick={onToggle}
           />
-        }
-      >
-        {content}
-      </Badge>
-    );
+        )
+      }
+    >
+      {source.kind === "thread" ? <BotIcon aria-hidden /> : <SparklesIcon aria-hidden />}
+      <span className="truncate">{text}</span>
+    </Badge>
+  );
   if (source.kind === "thread") {
     return (
       <WorkbenchThreadHoverPreview

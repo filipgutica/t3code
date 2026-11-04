@@ -81,23 +81,24 @@ const withHost = (
     Layer.provideMerge(storeLayer),
   );
 
-const seedTicket = Effect.gen(function* () {
-  const store = yield* WorkbenchStore;
-  yield* store.createProject({
-    id: workspaceId,
-    title: "Ask",
-    linkedProjectIds: [projectId],
-    createdAt,
+const seedTicket = (markdown = brief) =>
+  Effect.gen(function* () {
+    const store = yield* WorkbenchStore;
+    yield* store.createProject({
+      id: workspaceId,
+      title: "Ask",
+      linkedProjectIds: [projectId],
+      createdAt,
+    });
+    return yield* store.createTicket({
+      id: ticketId,
+      projectId: workspaceId,
+      title: "Explain worktree failures",
+      markdown,
+      repositoryProjectIds: [projectId],
+      createdAt,
+    });
   });
-  return yield* store.createTicket({
-    id: ticketId,
-    projectId: workspaceId,
-    title: "Explain worktree failures",
-    markdown: brief,
-    repositoryProjectIds: [projectId],
-    createdAt,
-  });
-});
 
 const seedDraftWith = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
   Effect.gen(function* () {
@@ -142,7 +143,7 @@ describe("AskForChangeService", () => {
     const requests: Array<MarkdownRewriteRequest> = [];
     return Effect.gen(function* () {
       const service = yield* AskForChangeService;
-      const ticket = yield* seedTicket;
+      const ticket = yield* seedTicket();
       const saved = yield* service.askForTicketChange({
         id: ticketId,
         expectedRevision: ticket.revision,
@@ -188,16 +189,8 @@ describe("AskForChangeService", () => {
     const markdown = `## Goal\n\n${goal}\n\n${paragraph}`;
     const at = markdown.indexOf(paragraph);
     return Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const seeded = yield* seedTicket;
-      const ticket = yield* store.updateTicket({
-        id: ticketId,
-        expectedRevision: seeded.revision,
-        markdown,
-        updatedAt: createdAt,
-        writer: { kind: "user" },
-      });
+      const ticket = yield* seedTicket(markdown);
       const saved = yield* service.askForTicketChange({
         id: ticketId,
         expectedRevision: ticket.revision,
@@ -231,16 +224,8 @@ describe("AskForChangeService", () => {
     const markdown = `## Goal\n\n${goal}\n\n${paragraph}`;
     const at = markdown.indexOf(paragraph);
     return Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const seeded = yield* seedTicket;
-      const ticket = yield* store.updateTicket({
-        id: ticketId,
-        expectedRevision: seeded.revision,
-        markdown,
-        updatedAt: createdAt,
-        writer: { kind: "user" },
-      });
+      const ticket = yield* seedTicket(markdown);
       const saved = yield* service.askForTicketChange({
         id: ticketId,
         expectedRevision: ticket.revision,
@@ -312,16 +297,8 @@ describe("AskForChangeService", () => {
     const markdown = `## Goal\n\n${goal}\n\n${block}`;
     const at = markdown.indexOf(block);
     return Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const seeded = yield* seedTicket;
-      const ticket = yield* store.updateTicket({
-        id: ticketId,
-        expectedRevision: seeded.revision,
-        markdown,
-        updatedAt: createdAt,
-        writer: { kind: "user" },
-      });
+      const ticket = yield* seedTicket(markdown);
       const saved = yield* service.askForTicketChange({
         id: ticketId,
         expectedRevision: ticket.revision,
@@ -350,16 +327,8 @@ describe("AskForChangeService", () => {
     const markdown = `## Goal\n\n${goal}\n\n${block}\n\nTail.`;
     const at = markdown.indexOf(block);
     return Effect.gen(function* () {
-      const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const seeded = yield* seedTicket;
-      const ticket = yield* store.updateTicket({
-        id: ticketId,
-        expectedRevision: seeded.revision,
-        markdown,
-        updatedAt: createdAt,
-        writer: { kind: "user" },
-      });
+      const ticket = yield* seedTicket(markdown);
       const saved = yield* service.askForTicketChange({
         id: ticketId,
         expectedRevision: ticket.revision,
@@ -378,7 +347,7 @@ describe("AskForChangeService", () => {
     return Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const ticket = yield* seedTicket;
+      const ticket = yield* seedTicket();
       const error = yield* Effect.flip(
         service.askForTicketChange({
           id: ticketId,
@@ -406,7 +375,7 @@ describe("AskForChangeService", () => {
     Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const ticket = yield* seedTicket;
+      const ticket = yield* seedTicket();
       const error = yield* Effect.flip(
         service.askForTicketChange({
           id: ticketId,
@@ -447,7 +416,7 @@ describe("AskForChangeService", () => {
     return Effect.gen(function* () {
       const store = yield* WorkbenchStore;
       const service = yield* AskForChangeService;
-      const ticket = yield* seedTicket;
+      const ticket = yield* seedTicket();
       const request = yield* service
         .askForTicketChange({ id: ticketId, expectedRevision: ticket.revision, ...selection })
         .pipe(Effect.forkChild);
