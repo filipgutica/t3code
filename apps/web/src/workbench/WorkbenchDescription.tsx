@@ -116,7 +116,7 @@ export function WorkbenchDescription({
   jira = false,
 }: {
   readonly markdown: string;
-  readonly jira?: boolean | "wiki";
+  readonly jira?: boolean;
 }) {
   const opener = useWorkbenchReferenceOpener();
   const content = workbenchDescriptionMarkdown(markdown, jira);

@@ -219,9 +219,6 @@ export interface MarkdownReview {
    * so one needs these appended to resolve a reference whose definition is in another block.
    */
   readonly definitions: string;
-  /** The compared texts, whose markup a single block may not show on its own. */
-  readonly base: string;
-  readonly current: string;
 }
 
 /**
@@ -308,8 +305,6 @@ export function diffMarkdownBlocks(base: string, current: string): MarkdownRevie
       .filter((block) => block.kind === "definition" || block.kind === "footnoteDefinition")
       .map((block) => block.source)
       .join("\n\n"),
-    base,
-    current,
   };
 }
 

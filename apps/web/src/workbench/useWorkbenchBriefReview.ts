@@ -14,6 +14,7 @@ import {
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
+import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import { descriptionUsesJiraMarkup } from "./workbenchDescriptionEditor.logic";
 import { useMarkdownAskForChange, type MarkdownAskRequest } from "./useMarkdownAskForChange";
 import { useMarkdownReview, type MarkdownReviewOutcome } from "./useMarkdownReview";
@@ -66,6 +67,7 @@ export function useWorkbenchBriefReview({
   accepted,
   reviewable,
   askable,
+  jira,
   permitted,
   accept,
   undo,
@@ -79,6 +81,7 @@ export function useWorkbenchBriefReview({
   readonly reviewable: boolean;
   /** False where rendered offsets would not match the saved text, such as Jira wiki markup. */
   readonly askable: boolean;
+  readonly jira: boolean;
   readonly permitted: BriefReviewPermissions;
   readonly accept: () => Promise<Result>;
   readonly undo: () => Promise<Result>;
@@ -86,10 +89,14 @@ export function useWorkbenchBriefReview({
 }) {
   const pending = reviewable ? (reviewBase ?? null) : null;
   const acceptedShown = pending === null && reviewable && accepted.available && accepted.shown;
+  // Wiki markup spans blocks, as a {code} block with blank lines does, so both texts are
+  // converted whole before the diff splits them.
+  const shown = (text: string) => workbenchDescriptionMarkdown(text, jira);
+  const base = pending ?? (acceptedShown ? accepted.base : null);
   const review = useMarkdownReview({
-    base: pending ?? (acceptedShown ? accepted.base : null),
+    base: base && { title: base.title, markdown: shown(base.markdown) },
     title,
-    markdown,
+    markdown: shown(markdown),
     onAccept: async () => reviewOutcome(await accept(), "accept"),
     onUndo: async () => reviewOutcome(await undo(), "undo"),
     onHideAccepted: pending === null ? accepted.toggle : undefined,
@@ -168,6 +175,7 @@ export function useWorkbenchTicketBriefReview({
     },
     reviewable,
     askable: !descriptionUsesJiraMarkup(ticket.markdown, jira),
+    jira,
     permitted,
     accept: () => accept({ environmentId, input: target }),
     undo: () => undo({ environmentId, input: target }),
@@ -224,6 +232,7 @@ export function useWorkbenchDraftBriefReview({
     reviewable,
     // The draft card renders its brief without Jira markup.
     askable: true,
+    jira: false,
     permitted,
     accept: async () => settle(await accept({ environmentId, input: target() })),
     undo: async () => settle(await undo({ environmentId, input: target() })),

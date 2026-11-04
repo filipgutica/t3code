@@ -70,7 +70,7 @@ export function WorkbenchBriefBody({
         className={cn("min-w-0", askForChangeTargetClassName({ wholeMarked, running }))}
       >
         {showDiff ? (
-          <WorkbenchMarkdownReview review={review.blocks} jira={jira} />
+          <WorkbenchMarkdownReview review={review.blocks} />
         ) : empty !== undefined && !markdown.trim() ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (

@@ -1,6 +1,5 @@
 import { cn } from "../lib/utils";
 import { WorkbenchDescription } from "./WorkbenchDescription";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import type { MarkdownReview, WordDiffSegment } from "./markdownReview";
 
 const SPACE = /^\s+$/u;
@@ -50,17 +49,7 @@ const changedBlockClassName =
 const wholeBlockClassName = "block rounded-sm border-l-2 border-info py-1 pl-3";
 
 /** A document's review: unchanged blocks render as usual, changed blocks as a word diff. */
-export function WorkbenchMarkdownReview({
-  review,
-  jira = false,
-}: {
-  readonly review: MarkdownReview;
-  readonly jira?: boolean;
-}) {
-  // A block alone may lack the wiki markers its document has, so each text decides for its blocks.
-  const markup = (document: string) =>
-    workbenchDescriptionMarkdown(document, jira) === document ? false : "wiki";
-  const current = markup(review.current);
+export function WorkbenchMarkdownReview({ review }: { readonly review: MarkdownReview }) {
   const withDefinitions = (source: string) =>
     review.definitions ? `${source}\n\n${review.definitions}` : source;
   return (
@@ -69,11 +58,7 @@ export function WorkbenchMarkdownReview({
         switch (entry.kind) {
           case "unchanged":
             return (
-              <WorkbenchDescription
-                key={entry.key}
-                markdown={withDefinitions(entry.source)}
-                jira={current}
-              />
+              <WorkbenchDescription key={entry.key} markdown={withDefinitions(entry.source)} />
             );
           case "changed":
             return (
@@ -88,10 +73,7 @@ export function WorkbenchMarkdownReview({
                 key={entry.key}
                 className={cn(wholeBlockClassName, "bg-success/8 no-underline dark:bg-success/16")}
               >
-                <WorkbenchDescription
-                  markdown={withDefinitions(entry.block.source)}
-                  jira={current}
-                />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} />
               </ins>
             );
           case "removed":
@@ -103,10 +85,7 @@ export function WorkbenchMarkdownReview({
                   "bg-destructive/8 text-muted-foreground decoration-destructive/70 dark:bg-destructive/16",
                 )}
               >
-                <WorkbenchDescription
-                  markdown={withDefinitions(entry.block.source)}
-                  jira={markup(review.base)}
-                />
+                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} />
               </del>
             );
         }

@@ -315,6 +315,19 @@ it("renders a Jira brief's unchanged diff blocks in the brief's own markup", asy
   await expect.element(screen.getByRole("heading", { name: "First step" })).not.toBeInTheDocument();
 });
 
+it("keeps a Jira code block whole when an edit changes one of its paragraphs", async () => {
+  setup();
+  const code = (first: string) => `{code}\n${first}\n\nsecond line\n{code}\n\nAfter the code.`;
+  const record = { ...ticket, markdown: code("first changed") };
+  const base = { title: ticket.title, markdown: code("first line") };
+  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
+  await expect.element(screen.getByText("After the code.")).toBeVisible();
+  // Split apart, the closing {code} would reopen a fence around the prose after it.
+  expect(screen.container.querySelector("pre, code")?.textContent ?? "").not.toContain(
+    "After the code.",
+  );
+});
+
 it("renders a removed Jira block in the markup of the brief it came from", async () => {
   setup();
   const record = { ...ticket, markdown: "Keep this paragraph." };
