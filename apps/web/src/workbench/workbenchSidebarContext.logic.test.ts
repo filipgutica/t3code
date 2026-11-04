@@ -97,7 +97,7 @@ describe("Workbench sidebar ticket context", () => {
     }).get(ticketId);
     expect(details?.repositories).toEqual(["Local repo"]);
     expect(details?.pullRequests.map(({ pullRequest }) => pullRequest.number)).toEqual([12]);
-    expect(details?.threadCount).toBe(1);
+    expect(details?.threads.map(({ threadId: id }) => id)).toEqual([threadId]);
     expect(details?.attentionLabel).toBe("Blocked");
     expect(details?.statusLabel).toBe("In Progress");
   });
@@ -143,7 +143,7 @@ describe("Workbench sidebar ticket context", () => {
     }).get(ticketId);
     expect(details?.pullRequests).toEqual([]);
     expect(details?.repositories).toEqual([]);
-    expect(details?.threadCount).toBe(0);
+    expect(details?.threads).toEqual([]);
   });
 
   it("tracks current native execution independently of ticket planning and historical Threads", () => {
@@ -177,7 +177,9 @@ describe("Workbench sidebar ticket context", () => {
     expect(details?.executionStatus?.startedAt).toBe("2026-10-09T10:00:00.000Z");
     expect(details?.statusLabel).toBe("In Progress");
     expect(details?.attentionLabel).toBe("Blocked");
-    expect(details?.threadCount).toBe(2);
+    expect(details?.threads).toMatchObject([
+      { threadId, title: thread.title, status: { presentation: { label: "Working" } } },
+    ]);
     expect(
       getWorkbenchSidebarTicketDetails({
         ...inputs,

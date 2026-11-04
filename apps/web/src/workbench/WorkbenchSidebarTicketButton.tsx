@@ -1,5 +1,5 @@
 import { WorkbenchThreadExecutionStatus } from "./WorkbenchThreadExecutionStatus";
-import { CircleAlertIcon, PlusIcon } from "lucide-react";
+import { CircleAlertIcon, CircleCheckIcon, PlusIcon } from "lucide-react";
 import { useRef, useState } from "react";
 
 import { PullRequestGlyph } from "../components/pullRequest/pullRequestIcons";
@@ -10,6 +10,9 @@ import { useWorkbenchSidebarTicketActionMenu } from "./useWorkbenchSidebarTicket
 import type { WorkbenchSidebarTicket } from "./workbenchSidebar.logic";
 import type { WorkbenchSidebarTicketDetails } from "./workbenchSidebarContext.logic";
 import { WorkbenchTicketAttentionBadge } from "./WorkbenchTicketAttention";
+import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
+import { getWorkbenchAttentionReasonPresentation } from "./workbenchAttentionPresentation.logic";
+import { sortWorkbenchTicketThreads } from "./workbenchThreadStatus.logic";
 import { WorkbenchSidebarQuickAction } from "./WorkbenchSidebarRowActions";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 
@@ -32,6 +35,54 @@ function TicketPullRequestPreview({
       ))}
     </div>
   ) : null;
+}
+
+const TICKET_PREVIEW_THREAD_LIMIT = 5;
+
+function TicketThreadsPreview({
+  ticket,
+  threads,
+}: {
+  readonly ticket: WorkbenchSidebarTicket;
+  readonly threads: WorkbenchSidebarTicketDetails["threads"];
+}) {
+  const { attentionSignalsByTicket } = useWorkbenchAttentionData();
+  if (threads.length === 0) return null;
+  const unreadThreadIds = new Set(
+    (attentionSignalsByTicket.get(ticket.id) ?? []).flatMap((signal) =>
+      signal.kind === "reply" ? [signal.source.threadId] : [],
+    ),
+  );
+  const sorted = sortWorkbenchTicketThreads(threads, unreadThreadIds);
+  const shown = sorted.slice(0, TICKET_PREVIEW_THREAD_LIMIT);
+  const done = getWorkbenchAttentionReasonPresentation("done");
+  return (
+    <div className="flex flex-col gap-1.5 border-t border-border/60 pt-2">
+      <p className="font-medium text-muted-foreground">Threads</p>
+      {shown.map(({ threadId, title, status }) => (
+        <div key={threadId} className="flex min-w-0 items-center gap-2">
+          <span className="min-w-0 flex-1 truncate text-foreground">{title}</span>
+          {status ? (
+            <WorkbenchThreadExecutionStatus
+              compact
+              status={status.presentation}
+              startedAt={status.startedAt}
+            />
+          ) : unreadThreadIds.has(threadId) ? (
+            <span
+              className={`inline-flex shrink-0 items-center gap-1 font-medium ${done.className}`}
+            >
+              <CircleCheckIcon aria-hidden className="size-3" />
+              {done.label}
+            </span>
+          ) : null}
+        </div>
+      ))}
+      {sorted.length > shown.length ? (
+        <p className="text-muted-foreground">+{sorted.length - shown.length} more</p>
+      ) : null}
+    </div>
+  );
 }
 
 function TicketPreview({
@@ -71,13 +122,8 @@ function TicketPreview({
             <dd className="min-w-0 break-words">{details.repositories.join(", ")}</dd>
           </>
         ) : null}
-        {details ? (
-          <>
-            <dt>Threads</dt>
-            <dd>{details.threadCount} available</dd>
-          </>
-        ) : null}
       </dl>
+      {details ? <TicketThreadsPreview ticket={ticket} threads={details.threads} /> : null}
       <TicketPullRequestPreview pullRequests={pullRequests} />
     </div>
   );

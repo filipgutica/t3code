@@ -12,6 +12,7 @@ import {
   getWorkbenchThreadExecutionStatus,
   getWorkbenchTicketExecutionStatuses,
   hasWorkbenchUnreadReply,
+  sortWorkbenchTicketThreads,
 } from "./workbenchThreadStatus.logic";
 
 const environmentId = EnvironmentId.make("local");
@@ -91,6 +92,14 @@ describe("Workbench native execution indicators", () => {
     expect(summarize([input, working])?.presentation.label).toBe("Input");
     expect(summarize([working, failed])?.presentation.label).toBe("Failed");
     expect(summarize([working, waiting])?.presentation.label).toBe("Working");
+    // Like a closed native folder: usage limits need the user before failures, Waiting stays quiet.
+    const limited = {
+      ...failed,
+      id: ThreadId.make("limited"),
+      runtime: { ...runtime, status: "failed" as const, lastErrorClass: "usage_limit" as const },
+    };
+    expect(summarize([failed, limited])?.presentation.label).toBe("Limited");
+    expect(summarize([waiting])).toBeUndefined();
     const request = { ...waiting, id: ThreadId.make("request"), pendingGuestMessageCount: 1 };
     expect(getWorkbenchThreadExecutionStatus(request)).toMatchObject({
       presentation: { label: "Request", icon: "request" },
@@ -163,6 +172,35 @@ describe("Workbench native execution indicators", () => {
       getWorkbenchTicketExecutionStatuses({ ...inputs, assignments: inputs.assignments.slice(1) })
         .size,
     ).toBe(0);
+  });
+});
+
+describe("sortWorkbenchTicketThreads", () => {
+  it("orders a Ticket's Threads like a native folder: needs you, failed, unread, working, waiting", () => {
+    const entry = (thread: typeof working) => ({
+      threadId: thread.id,
+      status: getWorkbenchThreadExecutionStatus(thread),
+    });
+    const replied = makeThreadFixture({ id: ThreadId.make("replied"), environmentId });
+    const idle = makeThreadFixture({ id: ThreadId.make("idle"), environmentId });
+    const failed = makeThreadFixture({
+      id: ThreadId.make("failed"),
+      environmentId,
+      runtime: { ...runtime, status: "failed", lastError: "Provider disconnected" },
+    });
+    const input = { ...waiting, id: ThreadId.make("input"), hasPendingUserInput: true };
+    const sorted = sortWorkbenchTicketThreads(
+      [idle, waiting, working, replied, failed, input].map(entry),
+      new Set([replied.id, working.id]),
+    );
+    expect(sorted.map(({ threadId }) => threadId)).toEqual([
+      input.id,
+      failed.id,
+      replied.id,
+      working.id,
+      waiting.id,
+      idle.id,
+    ]);
   });
 });
 

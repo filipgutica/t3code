@@ -293,11 +293,16 @@ export function WorkbenchTicketAttentionBadge(
   },
 ) {
   const { attentionSignalsByTicket } = useWorkbenchAttentionData();
+  const signals = attentionSignalsByTicket.get(props.ticketId) ?? [];
+  // Like a closed native folder, anything that needs the user outranks a Ticket's Working.
+  const workingYields = props.nativeStatusKind === "working" && signals.length > 0;
   return (
     <AttentionBadge
       {...props}
+      nativeStatusKind={workingYields ? null : props.nativeStatusKind}
+      nativeStatus={workingYields ? null : props.nativeStatus}
       title={props.ticketTitle}
-      signals={attentionSignalsByTicket.get(props.ticketId) ?? []}
+      signals={signals}
     />
   );
 }
