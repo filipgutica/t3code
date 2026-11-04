@@ -6,7 +6,6 @@ import { cn } from "../lib/utils";
 import { askForChangeTargetClassName, WorkbenchAskForChange } from "./WorkbenchAskForChange";
 import { WorkbenchDescription } from "./WorkbenchDescription";
 import { WorkbenchMarkdownReview } from "./WorkbenchMarkdownReview";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import type { useWorkbenchBriefReview } from "./useWorkbenchBriefReview";
 
 type BriefReview = ReturnType<typeof useWorkbenchBriefReview>;
@@ -71,10 +70,7 @@ export function WorkbenchBriefBody({
         className={cn("min-w-0", askForChangeTargetClassName({ wholeMarked, running }))}
       >
         {showDiff ? (
-          <WorkbenchMarkdownReview
-            review={review.blocks}
-            jira={workbenchDescriptionMarkdown(markdown, jira) === markdown ? false : "wiki"}
-          />
+          <WorkbenchMarkdownReview review={review.blocks} jira={jira} />
         ) : empty !== undefined && !markdown.trim() ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (

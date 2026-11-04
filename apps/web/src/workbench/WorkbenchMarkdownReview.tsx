@@ -1,5 +1,6 @@
 import { cn } from "../lib/utils";
 import { WorkbenchDescription } from "./WorkbenchDescription";
+import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import type { MarkdownReview, WordDiffSegment } from "./markdownReview";
 
 const SPACE = /^\s+$/u;
@@ -54,9 +55,12 @@ export function WorkbenchMarkdownReview({
   jira = false,
 }: {
   readonly review: MarkdownReview;
-  /** The whole document's markup mode; a fragment alone may lack the markers that decide it. */
-  readonly jira?: boolean | "wiki";
+  readonly jira?: boolean;
 }) {
+  // A block alone may lack the wiki markers its document has, so each text decides for its blocks.
+  const markup = (document: string) =>
+    workbenchDescriptionMarkdown(document, jira) === document ? false : "wiki";
+  const current = markup(review.current);
   const withDefinitions = (source: string) =>
     review.definitions ? `${source}\n\n${review.definitions}` : source;
   return (
@@ -68,7 +72,7 @@ export function WorkbenchMarkdownReview({
               <WorkbenchDescription
                 key={entry.key}
                 markdown={withDefinitions(entry.source)}
-                jira={jira}
+                jira={current}
               />
             );
           case "changed":
@@ -84,7 +88,10 @@ export function WorkbenchMarkdownReview({
                 key={entry.key}
                 className={cn(wholeBlockClassName, "bg-success/8 no-underline dark:bg-success/16")}
               >
-                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} jira={jira} />
+                <WorkbenchDescription
+                  markdown={withDefinitions(entry.block.source)}
+                  jira={current}
+                />
               </ins>
             );
           case "removed":
@@ -96,7 +103,10 @@ export function WorkbenchMarkdownReview({
                   "bg-destructive/8 text-muted-foreground decoration-destructive/70 dark:bg-destructive/16",
                 )}
               >
-                <WorkbenchDescription markdown={withDefinitions(entry.block.source)} jira={jira} />
+                <WorkbenchDescription
+                  markdown={withDefinitions(entry.block.source)}
+                  jira={markup(review.base)}
+                />
               </del>
             );
         }

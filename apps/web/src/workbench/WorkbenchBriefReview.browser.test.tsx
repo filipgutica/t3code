@@ -314,3 +314,12 @@ it("renders a Jira brief's unchanged diff blocks in the brief's own markup", asy
     .toBeVisible();
   await expect.element(screen.getByRole("heading", { name: "First step" })).not.toBeInTheDocument();
 });
+
+it("renders a removed Jira block in the markup of the brief it came from", async () => {
+  setup();
+  const record = { ...ticket, markdown: "Keep this paragraph." };
+  const base = { title: ticket.title, markdown: "h1. Goal\n\nKeep this paragraph." };
+  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
+  await expect.element(screen.getByRole("heading", { name: "Goal" })).toBeVisible();
+  await expect.element(screen.getByText("h1. Goal")).not.toBeInTheDocument();
+});
