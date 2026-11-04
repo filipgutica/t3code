@@ -178,9 +178,13 @@ describe("AskForChangeService", () => {
     );
   });
 
-  it.effect("widens a selection that cuts a word to the whole word", () => {
+  // 𝒂 is one letter in two UTF-16 units.
+  it.effect.each([
+    { name: "a word", word: "already" },
+    { name: "a word starting with an astral letter", word: "𝒂lready" },
+  ])("widens a selection that cuts $name to the whole word", ({ word }) => {
     const requests: Array<MarkdownRewriteRequest> = [];
-    const paragraph = "Teams may already have a full setup.";
+    const paragraph = `Teams may ${word} have a full setup.`;
     const markdown = `## Goal\n\n${goal}\n\n${paragraph}`;
     const at = markdown.indexOf(paragraph);
     return Effect.gen(function* () {
@@ -203,7 +207,7 @@ describe("AskForChangeService", () => {
         selectedText: "lready have a fu",
         instruction: "Fix the grammar.",
       });
-      expect(requests.map((request) => request.blocks)).toEqual(["already have a full"]);
+      expect(requests.map((request) => request.blocks)).toEqual([`${word} have a full`]);
       expect(saved.markdown).toBe(`## Goal\n\n${goal}\n\nTeams may already have a complete setup.`);
     }).pipe(
       Effect.provide(

@@ -7,14 +7,20 @@ import { MarkdownRewriteHost } from "./MarkdownRewriteHost.ts";
 // spaces render differently from their source, so a source match may not be the selection.
 const INLINE_MARKUP = /[*_`[\]<>\\~&\0]|[^\S ]| {2}|:\/\/|www\./i;
 
-const WORD_CHAR = /[\p{L}\p{N}_'’]/u;
+const WORD_START = /^[\p{L}\p{N}_'’]/u;
+const WORD_END = /[\p{L}\p{N}_'’]$/u;
+const WORD_TAIL = /[\p{L}\p{N}_'’]+$/u;
+const WORD_HEAD = /^[\p{L}\p{N}_'’]+/u;
 
 /** Widens `block.slice(from, to)` to whole words, so a selection that cuts a word rewrites all of it. */
 const wholeWords = (block: string, from: number, to: number) => {
-  const inWord = (index: number) => WORD_CHAR.test(block.charAt(index));
-  while (from > 0 && inWord(from - 1) && inWord(from)) from--;
-  while (to < block.length && inWord(to) && inWord(to - 1)) to++;
-  return { from, to };
+  const before = block.slice(0, from);
+  const after = block.slice(to);
+  const selected = block.slice(from, to);
+  return {
+    from: from - (WORD_START.test(selected) ? (WORD_TAIL.exec(before)?.[0].length ?? 0) : 0),
+    to: to + (WORD_END.test(selected) ? (WORD_HEAD.exec(after)?.[0].length ?? 0) : 0),
+  };
 };
 
 /** Drops blank lines around `text` but keeps leading indentation, which can make a code block. */
