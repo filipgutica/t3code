@@ -1,4 +1,5 @@
 import * as NodePath from "@effect/platform-node/NodePath";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -86,5 +87,5 @@ it.effect("Workbench WSL uses its own Linux home for persisted state", () =>
     );
     const wsl = yield* configuration.resolveWsl({ port: 5000, distro: null });
     assert.equal(wsl.bootstrap.t3Home, "~/.t3-workbench");
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+  }).pipe(Effect.scoped, Effect.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))),
 );
