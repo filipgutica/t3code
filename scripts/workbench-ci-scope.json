@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "84537c4dd976a89b6ec094f43ae3ef7bee12cb1a",
+  "upstreamBase": "e1e520c93c997e07eebf135b12c89fad7fb35085",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -75,6 +75,7 @@
         "apps/server/src/provider/ClaudeProvider.ts",
         "packages/provider-acp-registry/src/server/driver.ts",
         "packages/provider-fx/src/server/driver.ts",
+        "packages/provider-kiro/src/server/driver.ts",
         "apps/server/src/provider/Drivers/CodexHomeLayout.ts",
         "apps/server/src/provider/Drivers/CodexManagedProvider.ts",
         "packages/provider-opencode/src/server/driver.ts",
@@ -156,6 +157,7 @@
         "apps/server/src/os-jank.test.ts",
         "apps/server/src/provider/ClaudeCapabilitiesProbe.test.ts",
         "packages/provider-acp-registry/src/server/driver.test.ts",
+        "packages/provider-kiro/src/server/driver.test.ts",
         "apps/server/src/provider/Drivers/CodexHomeLayout.test.ts",
         "packages/provider-opencode/src/server/driver.test.ts",
         "apps/server/src/provider/ModelManifest.test.ts",
@@ -435,6 +437,7 @@
     "packages/provider-core": "@t3tools/provider-core",
     "packages/provider-acp": "@t3tools/provider-acp",
     "packages/provider-acp-registry": "@t3tools/provider-acp-registry",
+    "packages/provider-kiro": "@t3tools/provider-kiro",
     "packages/provider-testing": "@t3tools/provider-testing",
     "packages/provider-pi": "@t3tools/provider-pi",
     "packages/provider-muse": "@t3tools/provider-muse",

@@ -20,7 +20,7 @@ import {
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Fiber from "effect/Fiber";
@@ -164,7 +164,7 @@ interface ValidatedRepository {
 }
 
 const makeTicketWorkspaceService = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const store = yield* WorkbenchStore;
   const { git, projections, generateBranchName, resolveOpenPullRequestBranch, worktreesDir } =
     yield* TicketWorkspaceHost;
@@ -1218,9 +1218,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
           prefix: "",
         }));
 
-    const attemptId = WorkbenchTicketWorkspaceAttemptId.make(
-      yield* crypto.randomUUIDv4().pipe(Effect.orDie),
-    );
+    const attemptId = WorkbenchTicketWorkspaceAttemptId.make(yield* random.uuidV4());
     const claimedWorkspace = yield* store.claimTicketWorkspace({
       ticketId: ticket.id,
       attemptId,

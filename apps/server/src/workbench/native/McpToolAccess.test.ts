@@ -82,7 +82,7 @@ const layerProbeHandlers = McpToolAccess.toLayer(ProbeToolkit, {
 });
 
 const probeServer = McpHttpServer.toolkitRegistration(ProbeToolkit, layerProbeHandlers).pipe(
-  Layer.provideMerge(McpServer.McpServer.layer),
+  Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
   Layer.provideMerge(
     Layer.mock(ThreadManagement.ThreadManagementService)({
       getThreadShell: (threadId) => Effect.succeed(shells.get(threadId) ?? null),

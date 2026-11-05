@@ -1,4 +1,5 @@
 import { nativeThreadShell, seedNativeThread } from "./testing/nativeThreads.ts";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
@@ -504,7 +505,9 @@ const makeTestLayer = ({
     ),
   );
   return TicketWorkspaceServiceLive.pipe(
-    Layer.provideMerge(Layer.mergeAll(storeLayer, hostLayer, NodeServices.layer, fileSystemLayer)),
+    Layer.provideMerge(
+      Layer.mergeAll(storeLayer, hostLayer, NodeServices.layer, NodeCrypto.layer, fileSystemLayer),
+    ),
   );
 };
 
@@ -676,7 +679,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
   const layer = TicketWorkspaceServiceLive.pipe(
     Layer.provideMerge(storeLayer),
     Layer.provide(hostLayer),
-    Layer.provide(NodeServices.layer),
+    Layer.provide(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
   const seed = Effect.gen(function* () {
     yield* seedTicket;

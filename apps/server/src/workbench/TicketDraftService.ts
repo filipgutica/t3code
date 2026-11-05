@@ -8,7 +8,7 @@ import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { TicketDraftHost } from "@t3tools/workbench/TicketDraftHost";
 import { layer as serviceLayer } from "@t3tools/workbench/TicketDraftService";
 import * as Effect from "effect/Effect";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as CommandReceiptStore from "../orchestration-v2/CommandReceiptStore.ts";
@@ -26,7 +26,7 @@ const nativeFailure = () =>
     message: "The planning Thread could not be updated. Reload the draft and retry.",
   });
 const makeHost = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const receipts = yield* CommandReceiptStore.CommandReceiptStoreV2;
   const threads = yield* ThreadManagementService.ThreadManagementService;
   const providers = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
@@ -140,9 +140,7 @@ const makeHost = Effect.gen(function* () {
         .dispatch({
           type: "thread.metadata.update",
           // Rejected native commands also have receipts. A fresh attempt can retry a busy/stale bind.
-          commandId: CommandId.make(
-            `ticket-draft:${draft.id}:bind:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
-          ),
+          commandId: CommandId.make(`ticket-draft:${draft.id}:bind:${yield* random.uuidV4()}`),
           threadId: draft.threadId,
           projectId,
           expectedProjectId: current.projectId,
@@ -158,7 +156,7 @@ const makeHost = Effect.gen(function* () {
         .dispatch({
           type: "thread.interaction-mode.set",
           commandId: CommandId.make(
-            `ticket-draft:${draft.id}:execution-mode:${yield* crypto.randomUUIDv4().pipe(Effect.orDie)}`,
+            `ticket-draft:${draft.id}:execution-mode:${yield* random.uuidV4()}`,
           ),
           threadId: draft.threadId,
           interactionMode: "default",

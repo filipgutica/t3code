@@ -1,3 +1,4 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { assert, it } from "@effect/vitest";
 import { vi } from "vite-plus/test";
@@ -190,7 +191,7 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
         resolveLink: () => unused,
       }),
     ),
-    Layer.provideMerge(NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)),
   );
 const layerTest = makeLayerTest(planningPolicyLayer);
 const seedProject = Effect.gen(function* () {
@@ -513,7 +514,7 @@ it.effect(
         Parameters<ThreadLaunch.ThreadLaunchService["Service"]["prepareRun"]>[0]
       > = [];
       const mcpTools = McpHttpServer.layerOrchestratorToolkit.pipe(
-        Layer.provideMerge(McpServer.McpServer.layer),
+        Layer.provideMerge(McpHttpServer.layerInProcessMcpServer),
         Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),
         Layer.provide(ProviderRegistryMock.layer([snapshot])),
         Layer.provide(Layer.mock(ScheduledTaskService.ScheduledTaskService)({})),
