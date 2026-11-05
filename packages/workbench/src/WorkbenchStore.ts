@@ -41,7 +41,7 @@ import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { sha256 } from "@noble/hashes/sha2";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -751,7 +751,7 @@ const normalizeStagedReferences = (references: ReadonlyArray<WorkbenchReferenceD
 };
 
 const makeWorkbenchStore = Effect.gen(function* () {
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const sql = yield* SqlClient.SqlClient;
   const native = yield* WorkbenchNativeAccess;
   const ticketDraftPersistence = yield* makeTicketDraftPersistence;
@@ -3781,7 +3781,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.replaceAssignment",
   )(function* (input) {
     const replacement = WorkbenchAssignment.make({
-      id: input.id ?? WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+      id: input.id ?? WorkbenchAssignmentId.make(yield* random.uuidV4()),
       ticketId: input.ticketId,
       threadId: input.threadId,
       createdAt: input.replacedAt,

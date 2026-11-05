@@ -17,7 +17,7 @@ import {
   type WorkbenchTicketWorktree,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -183,7 +183,7 @@ const make = Effect.gen(function* () {
   const host = yield* WorkbenchAgentHost;
   const native = yield* WorkbenchNativeAccess;
   const workspaces = yield* TicketWorkspaceService;
-  const crypto = yield* Crypto.Crypto;
+  const random = yield* SecureRandom.SecureRandom;
   const currentAt = DateTime.now.pipe(
     Effect.map((now) => IsoDateTime.make(DateTime.formatIso(now))),
   );
@@ -632,7 +632,7 @@ const make = Effect.gen(function* () {
     // Linked before its first turn, so that turn carries the Ticket context.
     yield* store
       .createAssignment({
-        id: WorkbenchAssignmentId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie)),
+        id: WorkbenchAssignmentId.make(yield* random.uuidV4()),
         ticketId: ticket.id,
         threadId,
         createdAt: yield* currentAt,

@@ -1,7 +1,7 @@
 import { CommandId, MessageId, ThreadId, WorkbenchOperationError } from "@t3tools/contracts";
 import { WorkbenchAgentHost } from "@t3tools/workbench/WorkbenchAgentHost";
 import { layer as serviceLayer } from "@t3tools/workbench/WorkbenchAgentService";
-import * as Crypto from "effect/Crypto";
+import * as SecureRandom from "effect/crypto/SecureRandom";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -39,12 +39,8 @@ const hostLayer = Layer.effect(
     const path = yield* Path.Path;
     const projects = yield* ProjectStoreV2;
     const threads = yield* ThreadManagementService;
-    const crypto = yield* Crypto.Crypto;
-    const newId = (prefix: string) =>
-      crypto.randomUUIDv4().pipe(
-        Effect.orDie,
-        Effect.map((id) => `${prefix}:${id}`),
-      );
+    const random = yield* SecureRandom.SecureRandom;
+    const newId = (prefix: string) => random.uuidV4().pipe(Effect.map((id) => `${prefix}:${id}`));
     const threadFailure = unavailable("The new Thread could not be started.");
     return WorkbenchAgentHost.of({
       ensureArtifactsDir: Effect.fn("WorkbenchAgentHost.ensureArtifactsDir")(function* (ownerId) {
@@ -83,7 +79,7 @@ const hostLayer = Layer.effect(
           .getThreadShell(input.callerThreadId)
           .pipe(Effect.mapError(threadFailure));
         if (caller === null) return yield* threadFailure();
-        const threadId = ThreadId.make(yield* crypto.randomUUIDv4().pipe(Effect.orDie));
+        const threadId = ThreadId.make(yield* random.uuidV4());
         const commandId = CommandId.make(yield* newId("workbench:thread-create"));
         // thread.create skips this check and the first message does not, so check before anything commits.
         yield* threads
