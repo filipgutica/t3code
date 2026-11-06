@@ -1357,10 +1357,10 @@ function WorkbenchThreadRowTrailing({
       {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
       {time && quickAction ? (
         <span className="relative flex items-center">
-          <span className="transition-opacity group-focus-within/thread-row:opacity-0 group-any-hover/thread-row:opacity-0 motion-reduce:transition-none">
+          <span className="transition-opacity group-focus-within/thread-row:opacity-0 group-hover/thread-row:opacity-0 motion-reduce:transition-none">
             {time}
           </span>
-          <span className="pointer-events-none absolute inset-y-0 end-0 flex items-center opacity-0 transition-opacity group-focus-within/thread-row:pointer-events-auto group-focus-within/thread-row:opacity-100 group-any-hover/thread-row:pointer-events-auto group-any-hover/thread-row:opacity-100 motion-reduce:transition-none">
+          <span className="absolute inset-y-0 end-0 flex items-center opacity-0 transition-opacity group-focus-within/thread-row:opacity-100 group-hover/thread-row:opacity-100 motion-reduce:transition-none">
             {quickAction}
           </span>
         </span>
