@@ -40,7 +40,7 @@ test("the commit graph still follows scroll without JavaScript", async ({ page }
 test("no-JavaScript system appearance uses the public page palette", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "light" });
   await page.goto("/t3code/");
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 252)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 246)");
   await expect
     .poll(() =>
       page
@@ -49,7 +49,7 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
     )
     .toMatch(/board-light[.]/);
   await page.emulateMedia({ colorScheme: "dark" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(0, 0, 0)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(13, 16, 18)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
   await expect
     .poll(() =>
@@ -65,5 +65,5 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
   await expect(page).toHaveURL(darkOriginal);
   await page.goBack();
   await page.emulateMedia({ colorScheme: "light" });
-  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(252, 252, 252)");
+  await expect(page.locator("body")).toHaveCSS("background-color", "rgb(244, 245, 246)");
 });

@@ -116,7 +116,11 @@ const atReadingTop = async (page: Page, id: string) =>
         navRule: box(".section-navigation").width - innerWidth,
         frameLeft: box("main").left,
         frameRight: box("main").right,
-        brand: box(".fg-site-projects__trigger span").left,
+        brand:
+          box(".fg-site-projects__trigger").left +
+          parseFloat(
+            getComputedStyle(document.querySelector(".fg-site-projects__trigger")!).paddingLeft,
+          ),
         nav: box("nav.section-nav a").left,
         graphLeft: Math.min(...graphs.map((graph) => graph.left)),
         graphRight: Math.max(...graphs.map((graph) => graph.right)),
