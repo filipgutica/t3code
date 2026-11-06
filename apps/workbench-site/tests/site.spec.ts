@@ -151,7 +151,7 @@ test("section anchors, active state, and history retain native scrolling", async
     "location",
   );
   await markScrollEnd(page);
-  await nav.getByRole("link", { name: "Worktrees", exact: true }).click();
+  await nav.getByRole("link", { name: "Start work", exact: true }).click();
   await ended(page);
   await atReadingTop(page, "worktrees-heading");
   await markScrollEnd(page);
@@ -465,7 +465,7 @@ test("reduced motion shows the whole graph drawn and keeps navigation immediate"
   expect(lines.every((line) => Math.abs(line.drawnTo - line.bottom) < 0.5)).toBe(true);
   await page
     .getByRole("navigation", { name: "On this page" })
-    .getByRole("link", { name: "Worktrees", exact: true })
+    .getByRole("link", { name: "Start work", exact: true })
     .click();
   await atReadingTop(page, "worktrees-heading");
   await noOverflow(page);
