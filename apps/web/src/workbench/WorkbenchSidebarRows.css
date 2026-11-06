@@ -1,5 +1,5 @@
 /* Like native folder rows, Board children fill the full width and their titles line up with
-   the Board name. Leading glyphs, such as a status dot or draft icon, sit under the Board icon. */
+   the Board name. A draft icon sits under the Board icon; a status dot leads its status label. */
 :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
   --workbench-sidebar-disclosure-width: 32px;
   --workbench-sidebar-title-inset: 36px;
@@ -150,8 +150,8 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-metadata-icon] {
   display: grid;
   place-items: center;
-  flex: 0 0 16px;
-  margin-inline: -26px 6px;
+  flex: none;
+  margin-inline-end: 2px;
 }
 
 [data-workbench-sidebar-ticket-planning] {
