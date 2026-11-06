@@ -211,10 +211,12 @@ button[data-workbench-sidebar-disclosure] {
   transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* The button's 8px padding hangs past the row inset, so its glyph lines up with the Board
+   chevron. */
 [data-workbench-sidebar-quick-actions] {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: 0;
+  inset-inline-end: -8px;
   display: flex;
   align-items: center;
   gap: 2px;
@@ -227,6 +229,7 @@ button[data-workbench-sidebar-disclosure] {
   [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge])
   [data-workbench-sidebar-quick-actions] {
   position: static;
+  margin-inline-end: -8px;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
@@ -372,8 +375,9 @@ button[data-workbench-sidebar-disclosure] {
 
 /* Wraps the native section header so its label, inside the header's 8px padding, lines up
    with Ticket titles. */
+/* The native header's 8px end padding plus 2px puts its chevron under the Board chevron. */
 [data-workbench-sidebar-group-toggle] {
-  padding-inline-start: calc(var(--workbench-sidebar-title-inset) - 8px);
+  padding-inline: calc(var(--workbench-sidebar-title-inset) - 8px) 2px;
 }
 
 /* The native header's focus ring is a box-shadow, which forced colors drop. */
@@ -396,6 +400,7 @@ button[data-workbench-sidebar-disclosure] {
   /* Touch has no hover, so the quick action stays beside the status. */
   [data-workbench-sidebar-quick-actions] {
     position: static;
+    margin-inline-end: -8px;
     opacity: 1;
   }
 
