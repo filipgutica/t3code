@@ -1,15 +1,16 @@
-/* Like native folder rows, Board children fill the full width. Their content lines up with
-   the Board icon, past the chevron. */
+/* Like native folder rows, Board children fill the full width and their titles line up with
+   the Board name. Leading glyphs, such as a status dot or draft icon, sit under the Board icon. */
 :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
   --workbench-sidebar-disclosure-width: 20px;
   --workbench-sidebar-child-inset: calc(var(--workbench-sidebar-disclosure-width) + 4px);
+  --workbench-sidebar-title-inset: calc(var(--workbench-sidebar-child-inset) + 22px);
 }
 
 /* The disclosure and its destination share one row surface. Like native rows, it stays
    transparent at rest so the sidebar's grain shows through. */
 [data-workbench-sidebar-surface] {
   --workbench-sidebar-row-surface: transparent;
-  --workbench-sidebar-row-end-inset: 8px;
+  --workbench-sidebar-row-end-inset: 10px;
   background: var(--workbench-sidebar-row-surface);
   border-radius: var(--radius-md);
 }
@@ -53,13 +54,13 @@ button[data-workbench-sidebar-disclosure] {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: 6px var(--workbench-sidebar-row-end-inset, 8px) 6px var(--workbench-sidebar-child-inset);
+  padding: 6px var(--workbench-sidebar-row-end-inset, 10px) 6px var(--workbench-sidebar-title-inset);
 }
 
 [data-workbench-sidebar-line] {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   height: 24px;
 }
@@ -141,7 +142,7 @@ button[data-workbench-sidebar-disclosure] {
   display: grid;
   place-items: center;
   flex: 0 0 16px;
-  margin-inline-end: 2px;
+  margin-inline: -22px 2px;
 }
 
 [data-workbench-sidebar-ticket-planning] {
@@ -251,8 +252,7 @@ button[data-workbench-sidebar-disclosure] {
 
 [data-workbench-sidebar-quick-action]:focus-visible,
 [data-workbench-sidebar-disclosure]:focus-visible,
-[data-workbench-sidebar-filter-chip]:focus-visible,
-[data-workbench-sidebar-group-toggle]:focus-visible {
+[data-workbench-sidebar-filter-chip]:focus-visible {
   outline: 2px solid var(--ring);
   outline-offset: -2px;
 }
@@ -266,7 +266,7 @@ button[data-workbench-sidebar-disclosure] {
   align-items: center;
   min-width: 0;
   min-height: 36px;
-  padding-inline-end: var(--workbench-sidebar-row-end-inset, 8px);
+  padding-inline-end: var(--workbench-sidebar-row-end-inset, 10px);
 }
 
 [data-workbench-sidebar-filter-dot] {
@@ -298,25 +298,10 @@ button[data-workbench-sidebar-disclosure] {
   background: color-mix(in srgb, var(--primary) 16%, transparent);
 }
 
+/* Wraps the native section header so its label, inside the header's 8px padding, lines up
+   with Ticket titles. */
 [data-workbench-sidebar-group-toggle] {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  width: 100%;
-  padding-inline: var(--workbench-sidebar-child-inset) 4px;
-  border: 0;
-  border-radius: var(--radius-md);
-  background: transparent;
-  color: var(--sidebar-muted-foreground);
-  text-align: left;
-  font-size: var(--text-xs);
-  cursor: pointer;
-}
-
-[data-workbench-sidebar-group-toggle]:hover {
-  background: var(--sidebar-row-hover);
-  color: var(--sidebar-foreground);
+  padding-inline-start: calc(var(--workbench-sidebar-title-inset) - 8px);
 }
 
 @media (any-pointer: coarse), (max-width: 767px) {
@@ -352,8 +337,7 @@ button[data-workbench-sidebar-disclosure] {
   }
 
   [data-workbench-sidebar-navigation="compact"],
-  [data-workbench-sidebar-item-row="compact"],
-  [data-workbench-sidebar-group-toggle] {
+  [data-workbench-sidebar-item-row="compact"] {
     min-height: 44px;
   }
 }

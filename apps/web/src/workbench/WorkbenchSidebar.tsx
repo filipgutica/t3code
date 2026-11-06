@@ -71,6 +71,8 @@ import {
 
 type SidebarDraft = WorkbenchSidebarDraft;
 
+import { Alert, AlertDescription } from "../components/ui/alert";
+import { CollapsibleSectionHeader } from "../components/ui/collapsible-section-header";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
@@ -1369,20 +1371,16 @@ function WorkbenchSidebarDoneTickets({
 }) {
   return (
     <section aria-label="Done Tickets" className="mt-1">
-      <button
-        aria-controls={panelId}
-        aria-expanded={expanded}
-        data-workbench-sidebar-group-toggle=""
-        onClick={onToggle}
-        type="button"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
-        />
-        <span>Done</span>
-        <span className="tabular-nums">{groups.length}</span>
-      </button>
+      <div data-workbench-sidebar-group-toggle="">
+        <CollapsibleSectionHeader
+          aria-controls={panelId}
+          expanded={expanded}
+          onClick={onToggle}
+          accessory={<span className="font-normal tabular-nums">{groups.length}</span>}
+        >
+          Done
+        </CollapsibleSectionHeader>
+      </div>
       <div aria-label="Done Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? <WorkbenchSidebarTicketGroups groups={groups} {...rowProps} /> : null}
       </div>
@@ -1440,20 +1438,16 @@ function WorkbenchSidebarArchivedTickets({
 }) {
   return (
     <section aria-label="Archived Tickets" className="mt-1">
-      <button
-        aria-controls={panelId}
-        aria-expanded={expanded}
-        data-workbench-sidebar-group-toggle=""
-        onClick={onToggle}
-        type="button"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
-        />
-        <span>Archived</span>
-        <span className="tabular-nums">{archivedTickets.length}</span>
-      </button>
+      <div data-workbench-sidebar-group-toggle="">
+        <CollapsibleSectionHeader
+          aria-controls={panelId}
+          expanded={expanded}
+          onClick={onToggle}
+          accessory={<span className="font-normal tabular-nums">{archivedTickets.length}</span>}
+        >
+          Archived
+        </CollapsibleSectionHeader>
+      </div>
       <div aria-label="Archived Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? (
           <SidebarMenu>
@@ -1494,15 +1488,15 @@ function WorkbenchSidebarWorkspaceState({
       <Skeleton className="h-8 w-5/6" />
     </div>
   ) : query.error && snapshot === null ? (
-    <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-foreground">
-      <p className="flex items-start gap-2">
-        <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
-        <span>{query.error}</span>
-      </p>
-      <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
-        <RefreshCwIcon /> Retry
-      </Button>
-    </div>
+    <Alert variant="error" controlAlignment="first-line">
+      <AlertCircleIcon />
+      <AlertDescription>
+        {query.error}
+        <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
+          <RefreshCwIcon /> Retry
+        </Button>
+      </AlertDescription>
+    </Alert>
   ) : snapshot?.projects.length === 0 ? (
     <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
       No Boards yet. Use Add Board above.
