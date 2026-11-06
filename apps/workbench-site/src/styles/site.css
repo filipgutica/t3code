@@ -14,9 +14,8 @@
   --border-subtle: var(--color-border-subtle);
   --text: var(--color-text);
   --text-muted: var(--color-muted);
-  --accent: var(--color-button-bg);
-  --accent-text: var(--color-button-text);
-  --accent-hover: var(--color-button-hover);
+  --accent: var(--color-project);
+  --accent-text: var(--color-bg);
   --font-sans: var(--font-ui);
   --radius-md: var(--radius-control);
   --radius-lg: var(--radius-panel);
@@ -43,7 +42,7 @@
   --line: 3px;
   --node: 14px;
   --curve: 64px;
-  --track: var(--border);
+  --track: var(--border-subtle);
 }
 @media (min-width: 641px) {
   :root {
@@ -64,7 +63,7 @@
 }
 @media (max-width: 640px) {
   :root {
-    --h1: 40px;
+    --h1: clamp(34px, 10.5vw, 40px);
     --h1-leading: 1.05;
     --h2: 28px;
     --h2-leading: 1.15;
@@ -105,8 +104,12 @@ h3 {
   font-weight: var(--weight-semibold);
   text-wrap: balance;
 }
+h1,
+h2 {
+  font-family: var(--font-mono);
+}
 h1 {
-  max-width: 14ch;
+  max-width: 18ch;
   font-size: var(--h1);
   line-height: var(--h1-leading);
   letter-spacing: -0.035em;
@@ -143,32 +146,13 @@ p {
   margin-inline: auto;
 }
 
-/* Header: full-bleed rules, content on the frame. */
-.fg-site-header .fg-site-header__inner {
-  width: var(--frame);
-  min-height: var(--space-16);
-  padding-inline: 0;
-  padding-block: var(--space-3);
+/* Align the shared header to the timeline frame. */
+.fg-site-header {
+  --site-frame: var(--frame);
+  --site-gutter: 0px;
 }
 .fg-site-header .fg-site-projects__trigger {
   margin-inline-start: calc(-1 * var(--space-3));
-}
-.fg-site-header .fg-site-appearance {
-  gap: 2px;
-  padding: 2px;
-  border: 0;
-  border-radius: var(--radius-control);
-  background: var(--color-surface-muted);
-}
-.fg-site-header .fg-site-appearance__choice {
-  width: var(--control-md);
-  min-height: var(--control-md);
-  border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
-}
-.fg-site-header .fg-site-appearance__choice[aria-pressed="true"] {
-  background: var(--color-bg);
-  box-shadow: 0 0 0 1px var(--border-subtle);
 }
 .section-navigation {
   position: sticky;
@@ -309,7 +293,7 @@ p.provenance {
   display: grid;
   gap: var(--space-1);
   padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--border-subtle);
 }
 .facts dt {
   font-weight: var(--weight-semibold);
@@ -384,16 +368,16 @@ p.provenance {
   padding-inline: var(--space-5);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--color-text);
+  color: var(--color-bg);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   white-space: nowrap;
   transition: background var(--duration-fast) var(--ease-out);
 }
 .button:hover {
-  background: var(--accent-hover);
-  color: var(--accent-text);
+  background: var(--color-button-hover);
+  color: var(--color-bg);
   text-decoration: none;
 }
 .text-link {
@@ -482,12 +466,6 @@ main p a {
 @media (max-width: 640px) {
   nav.section-nav {
     gap: var(--space-4);
-  }
-  /* The links and theme switch wrap below the brand; keep them on the frame's edges. */
-  .fg-site-header .fg-site-header__end {
-    width: 100%;
-    justify-content: space-between;
-    margin-inline-start: 0;
   }
   .actions {
     gap: var(--space-4);

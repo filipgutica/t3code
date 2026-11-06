@@ -135,7 +135,7 @@ const darkTokens = [libraryThemeCss, sitePaletteCss].map((css) => {
   if (!tokens) throw new Error("The dark theme tokens are missing.");
   return tokens;
 }).join("\n");
-const lightCanvas = sitePaletteCss.match(/--color-bg:\s*([^;]+);/)?.[1];
+const lightCanvas = libraryThemeCss.match(/--color-bg:\s*([^;]+);/)?.[1];
 const darkCanvas = darkTokens.match(/--color-bg:\s*([^;]+);/g)?.at(-1)?.match(/:\s*([^;]+);/)?.[1];
 if (!lightCanvas || !darkCanvas) throw new Error("The canvas colors are missing.");
 const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) { ${darkTokens} } }`;
