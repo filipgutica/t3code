@@ -272,18 +272,21 @@ button[data-workbench-sidebar-disclosure] {
   padding-inline: 10px 0;
 }
 
+/* Sits beside the chevron, not over it, so each keeps its own hit area. */
 [data-workbench-sidebar-folder-action] {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: calc(var(--workbench-sidebar-disclosure-width) - 8px);
+  inset-inline-end: var(--workbench-sidebar-disclosure-width);
   display: flex;
   align-items: center;
   opacity: 0;
+  pointer-events: none;
 }
 
 [data-workbench-sidebar-folder]:hover [data-workbench-sidebar-folder-action],
 [data-workbench-sidebar-folder-action]:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 
 [data-workbench-sidebar-folder]:is(
@@ -401,10 +404,10 @@ button[data-workbench-sidebar-disclosure] {
 
   /* The + stays visible and in its own 44px column, so it never covers the Board name. */
   [data-workbench-sidebar-folder-action] {
-    inset-inline-end: var(--workbench-sidebar-disclosure-width);
     justify-content: center;
     width: 44px;
     opacity: 1;
+    pointer-events: auto;
   }
 
   [data-workbench-sidebar-folder] [data-workbench-sidebar-navigation] {

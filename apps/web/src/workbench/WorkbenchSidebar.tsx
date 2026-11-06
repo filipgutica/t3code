@@ -1420,7 +1420,7 @@ function WorkbenchSidebarDisclosure({
     >
       <ChevronDownIcon
         aria-hidden
-        className={`size-3 shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
+        className={`size-3 shrink-0 transition-transform motion-reduce:transition-none ${expanded ? "" : "-rotate-90"}`}
       />
     </button>
   );
