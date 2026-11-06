@@ -304,6 +304,14 @@ button[data-workbench-sidebar-disclosure] {
   padding-inline-start: calc(var(--workbench-sidebar-title-inset) - 8px);
 }
 
+/* The native header's focus ring is a box-shadow, which forced colors drop. */
+@media (forced-colors: active) {
+  [data-workbench-sidebar-group-toggle] > button:focus-visible {
+    outline: 2px solid CanvasText;
+    outline-offset: -2px;
+  }
+}
+
 @media (any-pointer: coarse), (max-width: 767px) {
   :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
     --workbench-sidebar-disclosure-width: 44px;
@@ -337,7 +345,8 @@ button[data-workbench-sidebar-disclosure] {
   }
 
   [data-workbench-sidebar-navigation="compact"],
-  [data-workbench-sidebar-item-row="compact"] {
+  [data-workbench-sidebar-item-row="compact"],
+  [data-workbench-sidebar-group-toggle] > button {
     min-height: 44px;
   }
 }
