@@ -29,9 +29,9 @@ import "../styles/site.css";
 const repository = "https://github.com/filipgutica/t3code";
 const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
 const downloads = `${repository}/releases/latest`;
-const title = "T3 Code Workbench | Your work, across repositories";
+const title = "T3 Code Workbench | Plan work across repositories";
 const description =
-  "Tickets, isolated worktrees, native T3 Threads, and pull requests across repositories. An independent T3 Code fork.";
+  "Plan Tickets across repositories, continue in native T3 Threads and isolated worktrees, and review linked pull requests. An independent T3 Code fork.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
 const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
@@ -77,56 +77,56 @@ const images = {
   board: await prepareImage({
     src: board,
     light: boardLight,
-    alt: "Beacon Workbench Board with Tickets across Beacon CLI and Beacon Docs and the board chat",
+    alt: "Demo Beacon Workbench Board with Tickets for Beacon CLI and Beacon Docs",
     sizes: sizes.full,
     eager: true,
   }),
   planning: await prepareImage({
     src: planning,
     light: planningLight,
-    alt: "Native planning conversation proposing a Beacon Ticket beside its editable draft",
+    alt: "Demo planning Thread beside an editable Ticket draft",
     sizes: sizes.split,
   }),
   boardChat: await prepareImage({
     src: boardChat,
     light: boardChatLight,
-    alt: "Board chat with its Thread menu open, showing recaps, a Thread waiting for approval, and New ticket draft",
+    alt: "Demo Board chat with its Thread menu open, showing recaps, an approval request, and New ticket draft",
     sizes: sizes.split,
   }),
   ticket: await prepareImage({
     src: ticket,
     light: ticketLight,
-    alt: "Workbench Ticket showing its description and linked native T3 Threads",
+    alt: "Demo Ticket with its description and linked planning Thread",
     sizes: sizes.split,
   }),
   workspace: await prepareImage({
     src: workspace,
     light: workspaceLight,
-    alt: "Prepared Ticket work area with worktrees for Beacon Docs and Beacon CLI",
+    alt: "Demo work area with prepared worktrees for Beacon Docs and Beacon CLI",
     sizes: sizes.full,
   }),
   thread: await prepareImage({
     src: thread,
     light: threadLight,
-    alt: "Native T3 Thread continuing the planning conversation in the Ticket work area",
+    alt: "Demo planning Thread continued in the Ticket's prepared work area",
     sizes: sizes.pair,
   }),
   ticketChat: await prepareImage({
     src: ticketChat,
     light: ticketChatLight,
-    alt: "Ticket chat on a Ticket page, its Thread menu showing one Thread waiting for approval and another with its recap",
+    alt: "Demo ticket chat with a Thread awaiting approval, another Thread's recap, and New Thread in the menu",
     sizes: sizes.pair,
   }),
   pullRequest: await prepareImage({
     src: pullRequest,
     light: pullRequestLight,
-    alt: "Native pull request panel over a demo Ticket showing its summary and failing checks",
+    alt: "Illustrative pull request panel beside a demo Ticket, showing its summary and failed checks",
     sizes: sizes.full,
   }),
   notifications: await prepareImage({
     src: notifications,
     light: notificationsLight,
-    alt: "Ticket Needs attention list with failed checks, requested changes, and unresolved threads on linked pull requests",
+    alt: "Illustrative Needs attention list showing failed checks, requested changes, and unresolved review threads on linked PRs",
     sizes: sizes.split,
   }),
 };
@@ -159,7 +159,7 @@ const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) 
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={new URL(shareImage.src, Astro.site)} />
-    <meta property="og:image:alt" content="T3 Code Workbench Board showing Tickets across workflow statuses." />
+    <meta property="og:image:alt" content="Demo Beacon Workbench Board with Tickets across To Do, In Progress, and Done" />
     <meta name="twitter:card" content="summary_large_image" />
     <noscript><style is:global set:html={noScriptDarkCss}></style></noscript>
   </head>

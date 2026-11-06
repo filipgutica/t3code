@@ -64,16 +64,15 @@ onMounted(() => {
         <div class="step-body">
           <h1 id="hero-heading">Your work, across repositories.</h1>
           <p class="lead">
-            Plan a Ticket in conversation, branch a worktree in each repository it touches, and
-            carry the work through native T3 Threads to reviewed pull requests.
+            Plan a change across repositories in one Ticket. Keep its native T3 Threads, isolated
+            worktrees, and pull requests together as you work.
           </p>
           <div class="actions">
             <a class="button" :href="downloads">Download Workbench</a>
             <a class="text-link" :href="guide">Read the guide</a>
           </div>
           <p class="provenance">
-            An independent fork of <a href="https://t3.codes">T3 Code</a>, regularly synced
-            upstream.
+            An independent fork of <a href="https://t3.codes">T3 Code</a>, synced with upstream.
           </p>
           <figure class="shot hero-media">
             <ProductImage :image="images.board" @open="openImage" />
@@ -86,11 +85,18 @@ onMounted(() => {
         <CommitGraph kind="commit" />
         <div class="step-body layout-split">
           <div class="copy">
-            <h2 id="plan-heading">Plan in a conversation</h2>
+            <h2 id="plan-heading">Plan the change in conversation</h2>
             <p>
-              Choose New Ticket and describe the work in the draft's native Thread. The agent fills
-              in the draft as you talk. Planning can read the repositories but is told not to change
-              them. Ask for changes in the same conversation.
+              New ticket on the Board opens a planning Thread. You can begin without a title or
+              repository selection.
+            </p>
+            <p>
+              As you talk, the agent fills in the draft's title, description, and repositories. Its
+              edits apply at once.
+            </p>
+            <p>
+              Planning can read the Workspace's repositories. Its instructions tell it not to change
+              them or start implementation.
             </p>
           </div>
           <figure id="walkthrough-planning" class="shot">
@@ -100,10 +106,10 @@ onMounted(() => {
             <ProductImage :image="images.boardChat" @open="openImage" />
           </figure>
           <div class="copy copy--aside">
-            <h3>Or start from the Board</h3>
+            <h3>Use the Board chat</h3>
             <p>
-              The Board's chat lists the Threads of the Workspace's Tickets and drafts. Start a
-              ticket draft there, plan it, and create the Ticket without leaving the Board.
+              Use New ticket draft in the board chat to plan a Ticket without leaving the Board.
+              Create ticket then opens the new Ticket, where the same Thread continues.
             </p>
             <a class="text-link" :href="`${guide}#chat-with-threads`">Chat guide</a>
           </div>
@@ -114,12 +120,13 @@ onMounted(() => {
         <CommitGraph kind="commit" />
         <div class="step-body layout-wide">
           <div class="head">
-            <h2 id="ticket-heading">Save it as a Ticket</h2>
+            <h2 id="ticket-heading">Create the Ticket</h2>
             <div class="copy">
               <p>
-                Choose Create ticket to save the draft. Filling in the draft does not create the
-                Ticket. The planning conversation stays attached.
+                The draft becomes a Ticket only when you choose Create ticket. Its planning Thread
+                stays linked, ready to continue into implementation.
               </p>
+              <p>Creating the Ticket alone prepares no worktrees.</p>
             </div>
           </div>
           <div class="layout-detail">
@@ -129,7 +136,7 @@ onMounted(() => {
             <dl class="facts">
               <div>
                 <dt>Brief</dt>
-                <dd>The goal, constraints, and acceptance criteria.</dd>
+                <dd>The goal, open questions, and decisions.</dd>
               </div>
               <div>
                 <dt>Progress</dt>
@@ -137,7 +144,7 @@ onMounted(() => {
               </div>
               <div>
                 <dt>Repositories</dt>
-                <dd>Which repositories the work touches. Each Thread works in one of them.</dd>
+                <dd>The repositories included in this Ticket.</dd>
               </div>
             </dl>
           </div>
@@ -148,15 +155,13 @@ onMounted(() => {
         <CommitGraph kind="fork" />
         <div class="step-body layout-wide">
           <div class="head">
-            <h2 id="worktrees-heading">Branch a worktree per repository</h2>
+            <h2 id="worktrees-heading">Prepare the work area</h2>
             <div class="copy">
               <p>
-                Start work prepares an isolated worktree in each repository in the Ticket's scope.
+                Start work prepares one isolated worktree per Ticket repository. It continues the
+                planning Thread in the first repository's worktree.
               </p>
-              <p>
-                Preparing worktrees or creating a Thread does not start an agent. Send a message
-                when ready.
-              </p>
+              <p>Start work sends no message. No agent starts until you send one.</p>
               <a class="text-link" :href="`${guide}#start-agent-work`">Work area guide</a>
             </div>
           </div>
@@ -170,30 +175,31 @@ onMounted(() => {
         <CommitGraph kind="branch" />
         <div class="step-body layout-pair">
           <div class="head">
-            <h2 id="threads-heading">Work in native Threads</h2>
+            <h2 id="threads-heading">Add Threads as the work splits</h2>
             <div class="copy">
               <p>
-                The planning conversation continues in the work area. Add more Threads to the Ticket
-                as the work splits.
+                Each Thread works in one repository. Add another with Create Thread on the Ticket,
+                or New Thread in the ticket chat. Creating a Thread does not start the agent.
               </p>
               <p class="note">
                 When other Threads wait for your approval or input, or their run failed, the chat
-                shows how many. Select the count to open the menu on the first of them.
+                shows how many, such as “2 need you”. Select the count to open the Thread menu on
+                the first of them.
               </p>
             </div>
           </div>
           <figure id="walkthrough-thread" class="shot">
             <ProductImage :image="images.thread" @open="openImage" />
             <figcaption>
-              <strong>Continue the same Thread.</strong> The agent receives the Ticket's context
-              with your next message.
+              <strong>Your next message starts the work.</strong> The agent receives the Ticket's
+              context with it.
             </figcaption>
           </figure>
           <figure id="walkthrough-chat" class="shot">
             <ProductImage :image="images.ticketChat" @open="openImage" />
             <figcaption>
-              <strong>Talk to the Ticket's Threads.</strong> Switch between them without leaving the
-              Ticket. After a Thread finishes a run, its recap can tell the others what it did.
+              <strong>Keep the Threads in view.</strong> Switch between them in the Ticket's chat.
+              After a run, a Thread's recap can tell the Ticket's other Threads what it did.
             </figcaption>
           </figure>
         </div>
@@ -203,12 +209,15 @@ onMounted(() => {
         <CommitGraph kind="merge" />
         <div class="step-body layout-wide">
           <div class="head">
-            <h2 id="review-heading">Review the pull requests</h2>
+            <h2 id="review-heading">Review the linked pull requests</h2>
             <div class="copy">
               <p>
-                Check linked PR status and review feedback without leaving the Ticket. A finished
-                agent turn does not mark the Ticket Done. After you review and accept the work, set
-                the Ticket to Done.
+                Open linked pull requests beside the Ticket to check their status and review
+                feedback.
+              </p>
+              <p>
+                A finished agent turn does not mark the Ticket Done. Set its status after you review
+                and accept the work.
               </p>
               <p class="note">A second demo Ticket. PR feedback and outcomes are illustrative.</p>
             </div>
@@ -218,10 +227,10 @@ onMounted(() => {
           </figure>
           <div class="layout-split layout-split--nested">
             <div class="copy">
-              <h3>See what needs attention</h3>
+              <h3>Find PR feedback in Needs attention</h3>
               <p>
-                Failed checks, requested changes, and unresolved review threads that await your
-                reply on linked PRs.
+                For PRs linked to the Ticket's Threads, this list shows failed checks, requested
+                changes, and unresolved review threads awaiting your reply.
               </p>
             </div>
             <figure id="walkthrough-notifications" class="shot">
@@ -235,7 +244,7 @@ onMounted(() => {
         <CommitGraph kind="end" />
         <div class="step-body">
           <h2 id="install-heading">Install Workbench alongside T3 Code</h2>
-          <p class="lead">Workbench stores its data separately from the official app.</p>
+          <p class="lead">T3 Code Workbench keeps its saved data separate from official T3 Code.</p>
           <div class="actions">
             <a class="button" :href="downloads">Download Workbench</a>
             <a class="text-link" :href="guide">Read the guide</a>
