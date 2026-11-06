@@ -2,6 +2,7 @@
 
 @import "tailwindcss/utilities.css" source(none);
 @import "@filipgutica/ui/theme.css";
+@import "@filipgutica/ui/themes/graphite-indigo.css";
 @import "@filipgutica/ui/components.css";
 @import "./t3-theme.css";
 @import "@filipgutica/ui/site.css";

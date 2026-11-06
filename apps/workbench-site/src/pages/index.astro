@@ -4,6 +4,7 @@ import App from "../App.vue";
 import type { ProductImageDescriptor, ProductImageSource } from "../images";
 import type { ImageMetadata } from "astro";
 import libraryThemeCss from "@filipgutica/ui/theme.css?raw";
+import graphiteThemeCss from "@filipgutica/ui/themes/graphite-indigo.css?raw";
 import sitePaletteCss from "../styles/t3-theme.css?raw";
 import { siteThemeBootScript } from "@filipgutica/ui/site";
 import board from "../assets/screenshots/board.png";
@@ -130,12 +131,12 @@ const images = {
     sizes: sizes.split,
   }),
 };
-const darkTokens = [libraryThemeCss, sitePaletteCss].map((css) => {
+const darkTokens = [libraryThemeCss, graphiteThemeCss, sitePaletteCss].map((css) => {
   const tokens = css.match(/:root\.dark\s*\{([^}]+)\}/)?.[1];
   if (!tokens) throw new Error("The dark theme tokens are missing.");
   return tokens;
 }).join("\n");
-const lightCanvas = libraryThemeCss.match(/--color-bg:\s*([^;]+);/)?.[1];
+const lightCanvas = graphiteThemeCss.match(/--color-bg:\s*([^;]+);/)?.[1];
 const darkCanvas = darkTokens.match(/--color-bg:\s*([^;]+);/g)?.at(-1)?.match(/:\s*([^;]+);/)?.[1];
 if (!lightCanvas || !darkCanvas) throw new Error("The canvas colors are missing.");
 const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) { ${darkTokens} } }`;
