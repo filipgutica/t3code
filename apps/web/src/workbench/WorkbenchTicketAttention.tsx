@@ -229,7 +229,7 @@ function AttentionBadge({
   nativeStatusKind?: WorkbenchThreadExecutionStatus["kind"] | null | undefined;
   nativeStatus?: ReactNode;
   side?: "bottom" | "right";
-  /** Icon only, for rows where the label would crowd out the title. */
+  /** Sidebar size: a smaller icon, like native folder rows. */
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -254,10 +254,8 @@ function AttentionBadge({
       >
         {LeadingIcon && leadingPresentation ? (
           <>
-            <LeadingIcon aria-hidden className="size-4 shrink-0" />
-            <span data-attention-label="" className={compact ? "sr-only" : undefined}>
-              {leadingPresentation.label}
-            </span>
+            <LeadingIcon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} />
+            <span data-attention-label="">{leadingPresentation.label}</span>
           </>
         ) : (
           <span data-attention-label="">{nativeStatus}</span>

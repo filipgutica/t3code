@@ -9,6 +9,7 @@ import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import type { EnvironmentId, ProjectId, PullRequestState } from "@t3tools/contracts";
 import { type MouseEvent } from "react";
 
+import { Button } from "../components/ui/button";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { linkedPullRequestDetailAtom, useSharedPullRequestSummary } from "../state/pullRequests";
 import { useEnvironmentQuery } from "../state/query";
@@ -44,7 +45,9 @@ function WorkbenchPullRequestIdentifier({
       className={`inline-flex items-center ${compact ? "gap-0.5" : "gap-1.5"} leading-5 ${stateClass}`}
     >
       <Icon aria-hidden className={`${compact ? "size-3" : "size-3.5"} shrink-0`} />
-      <span className="tabular-nums">#{number}</span>
+      <span className={compact ? "tabular-nums text-secondary-label" : "tabular-nums"}>
+        #{number}
+      </span>
     </span>
   );
 }
@@ -144,16 +147,15 @@ function WorkbenchPullRequestExternalLink({
     <Tooltip>
       <TooltipTrigger
         render={
-          <a
+          <Button
+            variant="ghost-muted"
+            size="icon"
             aria-label={`Open pull request #${pullRequest.number} in browser`}
-            className="inline-flex min-h-9 w-9 shrink-0 items-center justify-center rounded-lg text-muted-foreground outline-none hover:bg-accent/50 hover:text-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            href={pullRequest.url}
-            rel="noopener noreferrer"
-            target="_blank"
+            render={<a href={pullRequest.url} rel="noopener noreferrer" target="_blank" />}
           />
         }
       >
-        <ExternalLinkIcon aria-hidden className="size-3" />
+        <ExternalLinkIcon aria-hidden />
       </TooltipTrigger>
       <TooltipPopup>Open in browser</TooltipPopup>
     </Tooltip>

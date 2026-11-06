@@ -111,7 +111,7 @@ button[data-workbench-sidebar-disclosure] {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--sidebar-foreground);
+  color: var(--color-foreground);
   font-weight: 500;
   white-space: nowrap;
 }
@@ -120,7 +120,7 @@ button[data-workbench-sidebar-disclosure] {
 [data-workbench-sidebar-surface]:not(:hover, :focus-within)
   [data-workbench-sidebar-recede]
   [data-workbench-sidebar-title] {
-  color: color-mix(in srgb, var(--foreground) 75%, transparent);
+  color: color-mix(in srgb, var(--color-foreground) 75%, transparent);
   font-weight: 400;
 }
 
@@ -130,7 +130,7 @@ button[data-workbench-sidebar-disclosure] {
   align-items: center;
   gap: 4px;
   min-width: 0;
-  color: var(--sidebar-muted-foreground);
+  color: var(--color-secondary-label);
   font-size: var(--text-xs);
   font-weight: 400;
   line-height: 16px;

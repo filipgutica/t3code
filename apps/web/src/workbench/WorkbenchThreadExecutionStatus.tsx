@@ -50,7 +50,7 @@ export function WorkbenchThreadExecutionStatus({
   const Icon = STATUS_ICONS[status.icon];
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1 ${compact ? "text-2xs font-normal" : "font-medium"} ${status.className}`}
+      className={`inline-flex shrink-0 items-center gap-1 font-medium ${compact ? "text-xs" : ""} ${status.className}`}
     >
       <Icon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} />
       {/* Keep the clock outside the live label so screen readers do not announce each second. */}
