@@ -201,8 +201,7 @@ button[data-workbench-sidebar-disclosure] {
   white-space: nowrap;
 }
 
-/* Like native rows, hover fades a plain status out and the row's quick action in, in place.
-   An attention badge is a control, so it keeps room beside it for the action instead. */
+/* Like native rows, hover fades a plain status out and the row's quick action in, in place. */
 :is(
   [data-workbench-sidebar-quick-actions],
   [data-workbench-sidebar-slot="actions"] > [data-workbench-sidebar-native-status],
@@ -222,8 +221,12 @@ button[data-workbench-sidebar-disclosure] {
   opacity: 0;
 }
 
-[data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
-  padding-inline-end: 30px;
+/* Like a native row whose status is itself clickable, the badge stays put and the action joins
+   it on hover rather than holding room at rest. */
+[data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
+  [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge])
+  [data-workbench-sidebar-quick-actions] {
+  position: static;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
@@ -436,7 +439,6 @@ button[data-workbench-sidebar-disclosure] {
   /* Wide enough that the enlarged + target below never overlaps the attention badge. */
   [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
     gap: 8px;
-    padding-inline-end: 0;
   }
 
   /* Extends the tap target past the 20px glyph without changing the row layout. */
