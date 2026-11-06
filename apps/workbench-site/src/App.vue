@@ -88,8 +88,9 @@ onMounted(() => {
           <div class="copy">
             <h2 id="plan-heading">Plan in a conversation</h2>
             <p>
-              Describe the work in a native Thread. The agent fills in the Ticket draft as you talk.
-              Review the draft and ask for changes in the same conversation.
+              Choose New Ticket and describe the work in the draft's native Thread. The agent fills
+              in the draft as you talk. Planning can read the repositories but is told not to change
+              them. Ask for changes in the same conversation.
             </p>
           </div>
           <figure id="walkthrough-planning" class="shot">
@@ -115,7 +116,10 @@ onMounted(() => {
           <div class="head">
             <h2 id="ticket-heading">Save it as a Ticket</h2>
             <div class="copy">
-              <p>The Ticket keeps what you agreed on. The planning conversation stays attached.</p>
+              <p>
+                Choose Create ticket to save the draft. Filling in the draft does not create the
+                Ticket. The planning conversation stays attached.
+              </p>
             </div>
           </div>
           <div class="layout-detail">
@@ -181,9 +185,8 @@ onMounted(() => {
           <figure id="walkthrough-thread" class="shot">
             <ProductImage :image="images.thread" @open="openImage" />
             <figcaption>
-              <strong>Continue the same Thread.</strong> Start work continues the planning
-              conversation in the work area. The agent receives the Ticket's context with your next
-              message.
+              <strong>Continue the same Thread.</strong> The agent receives the Ticket's context
+              with your next message.
             </figcaption>
           </figure>
           <figure id="walkthrough-chat" class="shot">
@@ -202,7 +205,11 @@ onMounted(() => {
           <div class="head">
             <h2 id="review-heading">Review the pull requests</h2>
             <div class="copy">
-              <p>Check linked PR status and review feedback without leaving the Ticket.</p>
+              <p>
+                Check linked PR status and review feedback without leaving the Ticket. A finished
+                agent turn does not mark the Ticket Done. After you review and accept the work, set
+                the Ticket to Done.
+              </p>
               <p class="note">A second demo Ticket. PR feedback and outcomes are illustrative.</p>
             </div>
           </div>
