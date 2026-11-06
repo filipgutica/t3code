@@ -88,8 +88,8 @@ onMounted(() => {
           <div class="copy">
             <h2 id="plan-heading">Plan in a conversation</h2>
             <p>
-              Describe the work in a native Thread. Review the proposal, apply it to the Ticket
-              draft, and keep follow-ups in the same conversation.
+              Describe the work in a native Thread. The agent fills in the Ticket draft as you talk.
+              Review the draft and ask for changes in the same conversation.
             </p>
           </div>
           <figure id="walkthrough-planning" class="shot">
@@ -124,16 +124,16 @@ onMounted(() => {
             </figure>
             <dl class="facts">
               <div>
-                <dt>Goal</dt>
-                <dd>What the work should achieve.</dd>
+                <dt>Brief</dt>
+                <dd>The goal, constraints, and acceptance criteria.</dd>
               </div>
               <div>
-                <dt>Acceptance criteria</dt>
-                <dd>How you will know it is done.</dd>
+                <dt>Progress</dt>
+                <dd>The agent's checklist of planned work.</dd>
               </div>
               <div>
-                <dt>Repository scope</dt>
-                <dd>Which repositories the work touches, and which one is primary.</dd>
+                <dt>Repositories</dt>
+                <dd>Which repositories the work touches. Each Thread works in one of them.</dd>
               </div>
             </dl>
           </div>
@@ -181,8 +181,9 @@ onMounted(() => {
           <figure id="walkthrough-thread" class="shot">
             <ProductImage :image="images.thread" @open="openImage" />
             <figcaption>
-              <strong>Continue the same Thread.</strong> Start work adds the Ticket's context to the
-              planning conversation. Send your next instruction when ready.
+              <strong>Continue the same Thread.</strong> Start work continues the planning
+              conversation in the work area. The agent receives the Ticket's context with your next
+              message.
             </figcaption>
           </figure>
           <figure id="walkthrough-chat" class="shot">
@@ -211,7 +212,10 @@ onMounted(() => {
           <div class="layout-split layout-split--nested">
             <div class="copy">
               <h3>See what needs attention</h3>
-              <p>Failed checks, requested changes, and open review threads on linked PRs.</p>
+              <p>
+                Failed checks, requested changes, and unresolved review threads that await your
+                reply on linked PRs.
+              </p>
             </div>
             <figure id="walkthrough-notifications" class="shot">
               <ProductImage :image="images.notifications" @open="openImage" />
