@@ -89,7 +89,8 @@ export const showWorkbenchPageChatThread = ({
 }: {
   readonly environmentId: EnvironmentId;
   readonly ticketId: WorkbenchTicketId;
-  readonly projectId: WorkbenchProjectId;
+  /** Without it, only the Ticket's own chat shows the Thread. */
+  readonly projectId?: WorkbenchProjectId;
   readonly threadId: ThreadId;
 }) => {
   const { pageChat } = useWorkbenchFloatingChatStore.getState();
@@ -102,8 +103,18 @@ export const showWorkbenchPageChatThread = ({
   return true;
 };
 
-/** Thread links show the Thread in a mounted Ticket chat; elsewhere they open its page. */
-export const useWorkbenchThreadOpenLabel = () =>
-  useWorkbenchFloatingChatStore((state) =>
-    state.pageChat?.kind === "ticket" ? "Show in chat" : "Open Thread",
+/**
+ * Thread links show the Thread in a mounted Ticket chat; elsewhere they open its page. With a
+ * Ticket, only that Ticket's chat counts.
+ */
+export const useWorkbenchThreadOpenLabel = (ticket?: {
+  readonly environmentId: EnvironmentId;
+  readonly ticketId: WorkbenchTicketId;
+}) =>
+  useWorkbenchFloatingChatStore(({ pageChat }) =>
+    pageChat?.kind === "ticket" &&
+    (ticket === undefined ||
+      (pageChat.environmentId === ticket.environmentId && pageChat.ticketId === ticket.ticketId))
+      ? "Show in chat"
+      : "Open Thread",
   );

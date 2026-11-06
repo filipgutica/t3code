@@ -29,6 +29,7 @@ import {
 import { WorkspacePageHeader } from "../components/WorkspacePageHeader";
 import { OpenInPicker } from "../components/chat/OpenInPicker";
 import { Badge } from "../components/ui/badge";
+import { Alert, AlertAction, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import {
   Empty,
@@ -267,29 +268,31 @@ function WorkbenchBoardErrors(
   return (
     <>
       {query.error || error || threadLookupError ? (
-        <div className="mx-3 mt-3 flex shrink-0 items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground sm:mx-4">
-          <AlertCircleIcon className="size-4 shrink-0" />
-          <span className="min-w-0 flex-1">{error ?? query.error ?? threadLookupError}</span>
-          {error === null && query.error ? (
-            <Button onClick={query.refresh} size="xs" variant="outline">
-              <RefreshCwIcon /> Retry
-            </Button>
-          ) : error === null && threadLookupError ? (
-            <Button onClick={refreshThreadLookup} size="xs" variant="outline">
-              <RefreshCwIcon /> Retry
-            </Button>
-          ) : null}
-          {error ? (
-            <Button
-              aria-label="Dismiss action error"
-              size="icon-xs"
-              variant="ghost"
-              onClick={() => setError(null)}
-            >
-              <XIcon />
-            </Button>
-          ) : null}
-        </div>
+        <Alert variant="error" className="mx-3 mt-3 shrink-0 sm:mx-4">
+          <AlertCircleIcon />
+          <AlertDescription>{error ?? query.error ?? threadLookupError}</AlertDescription>
+          <AlertAction>
+            {error === null && query.error ? (
+              <Button onClick={query.refresh} size="xs" variant="outline">
+                <RefreshCwIcon /> Retry
+              </Button>
+            ) : error === null && threadLookupError ? (
+              <Button onClick={refreshThreadLookup} size="xs" variant="outline">
+                <RefreshCwIcon /> Retry
+              </Button>
+            ) : null}
+            {error ? (
+              <Button
+                aria-label="Dismiss action error"
+                size="icon-xs"
+                variant="ghost"
+                onClick={() => setError(null)}
+              >
+                <XIcon />
+              </Button>
+            ) : null}
+          </AlertAction>
+        </Alert>
       ) : null}
     </>
   );

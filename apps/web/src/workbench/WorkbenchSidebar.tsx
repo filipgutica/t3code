@@ -12,7 +12,7 @@ import {
   AlertCircleIcon,
   BellIcon,
   BlocksIcon,
-  ChevronRightIcon,
+  ChevronDownIcon,
   CircleCheckIcon,
   LayoutDashboardIcon,
   ListFilterIcon,
@@ -71,6 +71,8 @@ import {
 
 type SidebarDraft = WorkbenchSidebarDraft;
 
+import { Alert, AlertDescription } from "../components/ui/alert";
+import { CollapsibleSectionHeader } from "../components/ui/collapsible-section-header";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Menu, MenuCheckboxItem, MenuPopup, MenuTrigger } from "../components/ui/menu";
@@ -1002,7 +1004,7 @@ function WorkbenchSidebarNavigation({
                     inspectionIncomplete={inspectionIncomplete}
                     onShowAll={() => changeAttentionFilter(false)}
                   />
-                  <SidebarMenu aria-label="Boards">
+                  <SidebarMenu aria-label="Boards" data-workbench-sidebar-boards="">
                     {visibleProjects.map(renderWorkspace)}
                   </SidebarMenu>
                   <WorkbenchSidebarArchivedWorkspaces
@@ -1053,7 +1055,7 @@ function WorkbenchSidebarArchivedWorkspaces({
       <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
         Archived Boards
       </summary>
-      <SidebarMenu aria-label="Archived Boards">
+      <SidebarMenu aria-label="Archived Boards" data-workbench-sidebar-boards="">
         {filtered.projects.map((workspace) => (
           <WorkbenchSidebarWorkspaceRow
             key={workspace.id}
@@ -1180,18 +1182,11 @@ function WorkbenchSidebarWorkspaceHeader({
 
   return (
     <div
-      data-workbench-sidebar-disclosure-row=""
       data-workbench-sidebar-surface=""
+      data-workbench-sidebar-folder=""
       data-active={workspaceIsDestination || undefined}
-      className="relative flex min-w-0 items-start rounded-md"
+      className="relative flex min-w-0 items-center rounded-md"
     >
-      <WorkbenchSidebarDisclosure
-        available={hasContents}
-        controls={workspacePanelId}
-        expanded={workspaceExpanded}
-        label={disclosureLabel}
-        onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
-      />
       <WorkbenchSidebarRowNavigation
         ref={workspaceButtonRef}
         label={boardLabel}
@@ -1206,13 +1201,28 @@ function WorkbenchSidebarWorkspaceHeader({
         preview={<span className="p-2">{boardLabel}</span>}
       >
         <LayoutDashboardIcon className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{workspace.title}</span>
-        <span aria-hidden className="ms-auto text-xs tabular-nums text-sidebar-muted-foreground">
-          {ticketCount}
+        <span className="min-w-0 flex-1 truncate font-medium text-sidebar-foreground/90">
+          {workspace.title}
         </span>
+        {!workspaceExpanded && ticketCount > 0 ? (
+          <span
+            aria-hidden
+            data-workbench-sidebar-folder-count=""
+            className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground"
+          >
+            {ticketCount}
+          </span>
+        ) : null}
       </WorkbenchSidebarRowNavigation>
+      <WorkbenchSidebarDisclosure
+        available={hasContents}
+        controls={workspacePanelId}
+        expanded={workspaceExpanded}
+        label={disclosureLabel}
+        onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
+      />
       {workspace.archivedAt == null ? (
-        <span className="flex h-8 shrink-0 items-center justify-center pe-1 pointer-coarse:size-11 max-md:size-11">
+        <span data-workbench-sidebar-folder-action="">
           <Button
             size="icon-xs"
             variant="ghost-muted"
@@ -1329,7 +1339,6 @@ function WorkbenchSidebarTicketRow({
   return (
     <SidebarMenuItem>
       <div
-        data-workbench-sidebar-disclosure-row=""
         data-workbench-sidebar-surface=""
         data-workbench-sidebar-ticket-row-id={ticket.id}
         data-active={isActive || undefined}
@@ -1348,7 +1357,7 @@ function WorkbenchSidebarTicketRow({
 
 function WorkbenchSidebarTicketGroups({ groups, ...rowProps }: WorkbenchSidebarTicketGroupsProps) {
   return (
-    <SidebarMenu>
+    <SidebarMenu data-workbench-sidebar-rows="">
       {groups.map(({ ticket }) => (
         <WorkbenchSidebarTicketRow key={ticket.id} ticket={ticket} {...rowProps} />
       ))}
@@ -1368,21 +1377,17 @@ function WorkbenchSidebarDoneTickets({
   readonly panelId: string;
 }) {
   return (
-    <section aria-label="Done Tickets" className="mt-1">
-      <button
-        aria-controls={panelId}
-        aria-expanded={expanded}
-        data-workbench-sidebar-group-toggle=""
-        onClick={onToggle}
-        type="button"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
-        />
-        <span>Done</span>
-        <span className="tabular-nums">{groups.length}</span>
-      </button>
+    <section aria-label="Done Tickets">
+      <div data-workbench-sidebar-group-toggle="">
+        <CollapsibleSectionHeader
+          aria-controls={panelId}
+          expanded={expanded}
+          onClick={onToggle}
+          accessory={<span className="font-normal tabular-nums">{groups.length}</span>}
+        >
+          Done
+        </CollapsibleSectionHeader>
+      </div>
       <div aria-label="Done Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? <WorkbenchSidebarTicketGroups groups={groups} {...rowProps} /> : null}
       </div>
@@ -1413,9 +1418,9 @@ function WorkbenchSidebarDisclosure({
       onClick={onToggle}
       type="button"
     >
-      <ChevronRightIcon
+      <ChevronDownIcon
         aria-hidden
-        className={`size-3.5 shrink-0 ${expanded ? "rotate-90" : ""}`}
+        className={`size-3 shrink-0 transition-transform motion-reduce:transition-none ${expanded ? "" : "-rotate-90"}`}
       />
     </button>
   );
@@ -1439,21 +1444,17 @@ function WorkbenchSidebarArchivedTickets({
   readonly selectedTicketId: WorkbenchTicketId | undefined;
 }) {
   return (
-    <section aria-label="Archived Tickets" className="mt-1">
-      <button
-        aria-controls={panelId}
-        aria-expanded={expanded}
-        data-workbench-sidebar-group-toggle=""
-        onClick={onToggle}
-        type="button"
-      >
-        <ChevronRightIcon
-          aria-hidden
-          className={`size-3 shrink-0 ${expanded ? "rotate-90" : ""}`}
-        />
-        <span>Archived</span>
-        <span className="tabular-nums">{archivedTickets.length}</span>
-      </button>
+    <section aria-label="Archived Tickets">
+      <div data-workbench-sidebar-group-toggle="">
+        <CollapsibleSectionHeader
+          aria-controls={panelId}
+          expanded={expanded}
+          onClick={onToggle}
+          accessory={<span className="font-normal tabular-nums">{archivedTickets.length}</span>}
+        >
+          Archived
+        </CollapsibleSectionHeader>
+      </div>
       <div aria-label="Archived Ticket list" hidden={!expanded} id={panelId}>
         {expanded ? (
           <SidebarMenu>
@@ -1494,15 +1495,15 @@ function WorkbenchSidebarWorkspaceState({
       <Skeleton className="h-8 w-5/6" />
     </div>
   ) : query.error && snapshot === null ? (
-    <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-xs text-destructive-foreground">
-      <p className="flex items-start gap-2">
-        <AlertCircleIcon className="mt-0.5 size-3.5 shrink-0" />
-        <span>{query.error}</span>
-      </p>
-      <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
-        <RefreshCwIcon /> Retry
-      </Button>
-    </div>
+    <Alert variant="error" controlAlignment="first-line">
+      <AlertCircleIcon />
+      <AlertDescription>
+        {query.error}
+        <Button className="w-full" onClick={query.refresh} size="xs" variant="outline">
+          <RefreshCwIcon /> Retry
+        </Button>
+      </AlertDescription>
+    </Alert>
   ) : snapshot?.projects.length === 0 ? (
     <p className="px-2 py-6 text-center text-xs text-sidebar-muted-foreground">
       No Boards yet. Use Add Board above.

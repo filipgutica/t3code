@@ -25,7 +25,10 @@ import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../componen
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import type { WorkbenchTicketPullRequest } from "./workbenchPullRequests.logic";
-import { useWorkbenchThreadOpenLabel } from "./workbenchFloatingChatState";
+import {
+  showWorkbenchPageChatThread,
+  useWorkbenchThreadOpenLabel,
+} from "./workbenchFloatingChatState";
 import {
   WorkbenchTicketPanelHeader,
   useWorkbenchTicketPanelCollapsed,
@@ -68,15 +71,16 @@ const reasonIcons = {
 
 function AttentionSignalItem({
   signal,
+  threadAction,
   onOpenSignal,
 }: {
   signal: WorkbenchAttentionSignal;
+  threadAction: string;
   onOpenSignal: (signal: WorkbenchAttentionSignal) => void;
 }) {
   const presentation = getWorkbenchAttentionSignalPresentation(signal);
   const { icon, className, label } = presentation;
-  const openLabel = useWorkbenchThreadOpenLabel();
-  const action = signal.source.type === "thread" ? openLabel : presentation.action;
+  const action = signal.source.type === "thread" ? threadAction : presentation.action;
   const Icon = reasonIcons[icon];
   return (
     <button
@@ -134,22 +138,27 @@ function ReviewThreadPreviews({ threads }: { threads: readonly PullRequestReview
 
 function AttentionItems({
   environmentId,
+  ticketId,
   cardTitle,
   signals,
   onOpenThread,
   onShowPullRequestOwner,
   onNavigate,
-}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread" | "onShowPullRequestOwner"> & {
+}: Pick<
+  TicketAttentionProps,
+  "environmentId" | "ticketId" | "onOpenThread" | "onShowPullRequestOwner"
+> & {
   cardTitle: string;
   signals: readonly WorkbenchAttentionSignal[];
   onNavigate?: () => void;
 }) {
   const navigate = useNavigate();
   const openPullRequest = useOpenWorkbenchPullRequest();
+  const threadAction = useWorkbenchThreadOpenLabel({ environmentId, ticketId });
   const openThread = (threadId: ThreadId) => {
     onNavigate?.();
     if (onOpenThread) onOpenThread(threadId);
-    else
+    else if (!showWorkbenchPageChatThread({ environmentId, ticketId, threadId }))
       void navigate({
         to: "/$environmentId/$threadId",
         params: { environmentId, threadId },
@@ -197,7 +206,11 @@ function AttentionItems({
             </h3>
             {group.map((signal) => (
               <div key={signal.kind === "waiting" ? `${signal.kind}:${signal.cause}` : signal.kind}>
-                <AttentionSignalItem signal={signal} onOpenSignal={openSignal} />
+                <AttentionSignalItem
+                  signal={signal}
+                  threadAction={threadAction}
+                  onOpenSignal={openSignal}
+                />
                 {signal.kind === "unresolved-feedback" ? (
                   <ReviewThreadPreviews threads={signal.unresolvedReviewThreads} />
                 ) : null}
@@ -215,21 +228,20 @@ function AttentionItems({
  * native Woke, the button stays visible on row hover while plain statuses give way.
  */
 function AttentionBadge({
-  environmentId,
   title,
   signals,
   nativeStatusKind = null,
   nativeStatus = null,
-  onOpenThread,
   side = "bottom",
   compact = false,
-}: Pick<TicketAttentionProps, "environmentId" | "onOpenThread"> & {
+  ...itemProps
+}: Pick<TicketAttentionProps, "environmentId" | "ticketId" | "onOpenThread"> & {
   title: string;
   signals: readonly WorkbenchAttentionSignal[];
   nativeStatusKind?: WorkbenchThreadExecutionStatus["kind"] | null | undefined;
   nativeStatus?: ReactNode;
   side?: "bottom" | "right";
-  /** Icon only, for rows where the label would crowd out the title. */
+  /** Sidebar size: a smaller icon, like native folder rows. */
   compact?: boolean;
 }) {
   const [open, setOpen] = useState(false);
@@ -254,10 +266,8 @@ function AttentionBadge({
       >
         {LeadingIcon && leadingPresentation ? (
           <>
-            <LeadingIcon aria-hidden className="size-4 shrink-0" />
-            <span data-attention-label="" className={compact ? "sr-only" : undefined}>
-              {leadingPresentation.label}
-            </span>
+            <LeadingIcon aria-hidden className={`shrink-0 ${compact ? "size-3" : "size-4"}`} />
+            <span data-attention-label="">{leadingPresentation.label}</span>
           </>
         ) : (
           <span data-attention-label="">{nativeStatus}</span>
@@ -271,9 +281,8 @@ function AttentionBadge({
         </div>
         <div className="max-h-80 overflow-y-auto">
           <AttentionItems
-            environmentId={environmentId}
+            {...itemProps}
             cardTitle={title}
-            {...(onOpenThread ? { onOpenThread } : {})}
             signals={signals}
             onNavigate={() => setOpen(false)}
           />
@@ -326,7 +335,7 @@ export function WorkbenchThreadAttentionBadge({
     threadId,
     signals: attentionSignalsByTicket.get(ticketId) ?? [],
   });
-  return <AttentionBadge {...props} signals={signals} title={threadTitle} />;
+  return <AttentionBadge {...props} ticketId={ticketId} signals={signals} title={threadTitle} />;
 }
 
 export function WorkbenchTicketAttentionPanel(props: TicketAttentionProps) {

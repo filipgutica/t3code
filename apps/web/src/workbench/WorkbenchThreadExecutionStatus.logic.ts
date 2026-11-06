@@ -1,11 +1,11 @@
 const EXECUTION_PRESENTATION = {
-  working: { label: "Working", icon: "working", className: "text-info" },
+  working: { label: "Working", icon: "working", className: "text-info-foreground" },
   waiting: { label: "Waiting", icon: "waiting", className: "text-muted-foreground" },
   approval: { label: "Approval", icon: "approval", className: "text-warning-foreground" },
   input: { label: "Input", icon: "input", className: "text-indigo-600 dark:text-indigo-300" },
   request: { label: "Request", icon: "request", className: "text-guest-foreground" },
-  limited: { label: "Limited", icon: "failed", className: "text-warning" },
-  failed: { label: "Failed", icon: "failed", className: "text-error" },
+  limited: { label: "Limited", icon: "failed", className: "text-warning-foreground" },
+  failed: { label: "Failed", icon: "failed", className: "text-error-foreground" },
 } as const;
 
 export function resolveWorkbenchThreadExecutionStatusPresentation({

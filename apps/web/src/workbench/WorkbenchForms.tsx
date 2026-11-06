@@ -89,6 +89,8 @@ import {
 import { isElectron } from "../env";
 
 import { Badge } from "../components/ui/badge";
+import { shouldRecedeSidebarThread } from "../components/Sidebar.logic";
+import { Alert, AlertAction, AlertDescription } from "../components/ui/alert";
 import { Button } from "../components/ui/button";
 import { ScrollArea } from "../components/ui/scroll-area";
 import {
@@ -1355,10 +1357,10 @@ function WorkbenchThreadRowTrailing({
       {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
       {time && quickAction ? (
         <span className="relative flex items-center">
-          <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
+          <span className="transition-opacity group-focus-within/thread-row:opacity-0 group-hover/thread-row:opacity-0 motion-reduce:transition-none">
             {time}
           </span>
-          <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
+          <span className="absolute inset-y-0 end-0 flex items-center opacity-0 transition-opacity group-focus-within/thread-row:opacity-100 group-hover/thread-row:opacity-100 motion-reduce:transition-none">
             {quickAction}
           </span>
         </span>
@@ -1462,25 +1464,42 @@ function WorkbenchThreadRow({
     ariaLabel,
     title,
   });
+  // Native rows recede settled and running Threads and emphasize ones that need the user.
+  const recede = shouldRecedeSidebarThread({
+    status: executionStatus?.kind ?? "ready",
+    isUnread: unread,
+    isWoke: false,
+    isActive: showing,
+    isSelected: false,
+  });
   const row = (
     <div
       className={cn(
-        "group/thread-row relative isolate flex min-h-8 min-w-0 items-center gap-2 rounded-md px-2 py-1 text-sm hover:bg-sidebar-row-hover focus-within:bg-sidebar-row-hover",
-        showing && "bg-sidebar-row-active hover:bg-sidebar-row-active",
+        "group/thread-row relative isolate flex h-9 min-w-0 items-center gap-2.5 rounded-md px-2.5 text-sm",
+        showing
+          ? "bg-sidebar-row-active light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+          : "hover:bg-sidebar-row-hover",
       )}
       {...getWorkbenchThreadRowMenuHandlers(menu).row}
     >
       <button
         aria-current={showing || undefined}
         aria-label={accessibleName}
-        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 text-left outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring disabled:cursor-default disabled:opacity-50"
+        className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5 text-left outline-none after:absolute after:inset-0 after:rounded-md after:content-[''] focus-visible:after:ring-2 focus-visible:after:ring-inset focus-visible:after:ring-ring disabled:cursor-default disabled:opacity-50"
         disabled={disabled}
         onClick={onClick}
         {...getWorkbenchThreadRowMenuHandlers(menu).button}
         type="button"
       >
         <WorkbenchThreadRowIcon executionStatus={executionStatus} thread={thread} unread={unread} />
-        <span className={cn("min-w-0 flex-1 truncate", unread && "font-medium")}>
+        <span
+          className={cn(
+            "min-w-0 flex-1 truncate",
+            recede
+              ? "font-normal text-foreground/75 group-focus-within/thread-row:text-foreground group-hover/thread-row:text-foreground"
+              : "font-medium text-foreground",
+          )}
+        >
           {titleUnderHeading(title, heading)}
         </span>
         <span
@@ -1577,18 +1596,17 @@ export function WorkbenchInlineError({
 }) {
   if (message === null) return null;
   return (
-    <div
-      className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive-foreground"
-      role="alert"
-    >
-      <CircleAlertIcon className="mt-0.5 size-4 shrink-0" />
-      <span className="min-w-0 flex-1">{message}</span>
+    <Alert variant="error" controlAlignment="first-line">
+      <CircleAlertIcon />
+      <AlertDescription>{message}</AlertDescription>
       {onRetry ? (
-        <Button onClick={onRetry} size="xs" variant="outline">
-          <RefreshCwIcon /> Retry
-        </Button>
+        <AlertAction>
+          <Button onClick={onRetry} size="xs" variant="outline">
+            <RefreshCwIcon /> Retry
+          </Button>
+        </AlertAction>
       ) : null}
-    </div>
+    </Alert>
   );
 }
 

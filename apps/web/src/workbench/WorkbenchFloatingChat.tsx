@@ -301,7 +301,7 @@ function FloatingChatThread({
     <div
       role="region"
       aria-label={thread.title}
-      className={cn("flex min-h-0 flex-1 flex-col", hidden && "hidden")}
+      className={cn("flex min-h-0 flex-1 flex-col bg-background", hidden && "hidden")}
     >
       {planning && planningThread ? planning.render(thread.threadId, conversation) : conversation}
     </div>

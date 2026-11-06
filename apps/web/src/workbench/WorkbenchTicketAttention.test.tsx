@@ -12,6 +12,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 
 import type { WorkbenchAttentionSignal } from "./workbenchAttention.logic";
+import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import {
   WorkbenchThreadAttentionBadge,
   WorkbenchTicketAttentionBadge,
@@ -63,6 +64,7 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  useWorkbenchFloatingChatStore.setState({ pageChat: null });
   mocks.signals = [
     { kind: "unresolved-feedback", source, unresolvedReviewThreads: [discussion] },
     { kind: "changes-requested", source, unresolvedReviewThreads: [] },
@@ -124,41 +126,63 @@ it.each(["Checks failed", "Changes requested", "1 unresolved thread"])(
   },
 );
 
-it("keeps the native status in the slot, counts other reasons, and opens the owning remote Thread", async () => {
-  mocks.signals = [
-    { kind: "question", source: threadSource },
-    { kind: "reply", source: threadSource },
-    {
-      kind: "waiting",
-      cause: "plan",
-      source: { ...threadSource, threadId: ThreadId.make("another") },
-    },
-  ];
-  await act(async () =>
-    root.render(
-      <WorkbenchThreadAttentionBadge
-        environmentId={environmentId}
-        ticketId={ticketId}
-        threadId={threadId}
-        threadTitle="Review settings"
-        nativeStatusKind="input"
-        nativeStatus={<span>Input</span>}
-      />,
-    ),
-  );
-  const trigger = button("Review settings needs attention: Input, Done");
-  expect(trigger.textContent).toBe("Input+1, Review settings needs attention: Input, Done");
-  await act(async () => trigger.click());
-  expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(
-    "Plan ready for review",
-  );
-  await act(async () => button("Agent replied").click());
-  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
-    to: "/$environmentId/$threadId",
-    params: { environmentId, threadId },
-  });
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
-});
+it.each([
+  { chat: "no", chatTicketId: null, shows: false },
+  { chat: "another Ticket's", chatTicketId: WorkbenchTicketId.make("other"), shows: false },
+  { chat: "this Ticket's", chatTicketId: ticketId, shows: true },
+])(
+  "keeps the native status in the slot, counts other reasons, and opens the owning remote Thread with $chat chat on screen",
+  async ({ chatTicketId, shows }) => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({
+      pageChat:
+        chatTicketId === null
+          ? null
+          : { kind: "ticket", environmentId, ticketId: chatTicketId, showThread },
+    });
+    mocks.signals = [
+      { kind: "question", source: threadSource },
+      { kind: "reply", source: threadSource },
+      {
+        kind: "waiting",
+        cause: "plan",
+        source: { ...threadSource, threadId: ThreadId.make("another") },
+      },
+    ];
+    await act(async () =>
+      root.render(
+        <WorkbenchThreadAttentionBadge
+          environmentId={environmentId}
+          ticketId={ticketId}
+          threadId={threadId}
+          threadTitle="Review settings"
+          nativeStatusKind="input"
+          nativeStatus={<span>Input</span>}
+        />,
+      ),
+    );
+    const trigger = button("Review settings needs attention: Input, Done");
+    expect(trigger.textContent).toBe("Input+1, Review settings needs attention: Input, Done");
+    await act(async () => trigger.click());
+    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain(
+      "Plan ready for review",
+    );
+    const reply = button("Agent replied");
+    expect(reply.textContent).toContain(shows ? "Show in chat" : "Open Thread");
+    await act(async () => reply.click());
+    if (shows) {
+      expect(showThread).toHaveBeenCalledExactlyOnceWith(threadId);
+      expect(mocks.navigate).not.toHaveBeenCalled();
+    } else {
+      expect(showThread).not.toHaveBeenCalled();
+      expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
+        to: "/$environmentId/$threadId",
+        params: { environmentId, threadId },
+      });
+    }
+    expect(trigger.getAttribute("aria-expanded")).toBe("false");
+  },
+);
 
 it("keeps the card reachable when the native status already shows the only reason", async () => {
   mocks.signals = [{ kind: "question", source: threadSource }];

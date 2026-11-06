@@ -1,9 +1,10 @@
 import type { EnvironmentId, WorkbenchProjectId, WorkbenchTicketId } from "@t3tools/contracts";
-import { ChevronRightIcon, FilePenLineIcon } from "lucide-react";
+import { FilePenLineIcon } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type RefObject } from "react";
 
 import { useStableCallback } from "../hooks/useStableCallback";
 import { Collapsible, CollapsiblePanel, CollapsibleTrigger } from "../components/ui/collapsible";
+import { CollapsibleSectionHeader } from "../components/ui/collapsible-section-header";
 import { SidebarMenu, SidebarMenuItem } from "../components/ui/sidebar";
 import { WorkbenchSidebarRowNavigation } from "./WorkbenchSidebarRowNavigation";
 import { toastManager } from "../components/ui/toast";
@@ -235,19 +236,23 @@ export function WorkbenchSidebarDrafts({
     });
   };
   return (
-    <Collapsible open={expanded} onOpenChange={onToggle} className="mb-1">
-      <CollapsibleTrigger
-        aria-label={`${expanded ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
-        data-workbench-sidebar-group-toggle=""
-        className="group"
-      >
-        <ChevronRightIcon aria-hidden className="size-3 shrink-0 group-data-panel-open:rotate-90" />
-        <span>Drafts</span>
-        <span className="tabular-nums">{drafts.length}</span>
-      </CollapsibleTrigger>
+    <Collapsible open={expanded} onOpenChange={onToggle}>
+      <div data-workbench-sidebar-group-toggle="">
+        <CollapsibleTrigger
+          aria-label={`${expanded ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
+          render={
+            <CollapsibleSectionHeader
+              expanded={expanded}
+              accessory={<span className="font-normal tabular-nums">{drafts.length}</span>}
+            />
+          }
+        >
+          Drafts
+        </CollapsibleTrigger>
+      </div>
       <CollapsiblePanel animate={false}>
         <div data-workbench-sidebar-draft-list="">
-          <SidebarMenu>
+          <SidebarMenu data-workbench-sidebar-rows="">
             {drafts.map((draft) => (
               <SidebarMenuItem key={draft.id}>
                 <div
