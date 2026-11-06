@@ -236,7 +236,7 @@ export function WorkbenchSidebarDrafts({
     });
   };
   return (
-    <Collapsible open={expanded} onOpenChange={onToggle} className="mb-1">
+    <Collapsible open={expanded} onOpenChange={onToggle}>
       <div data-workbench-sidebar-group-toggle="">
         <CollapsibleTrigger
           aria-label={`${expanded ? "Collapse" : "Expand"} drafts in ${workspaceTitle}`}
@@ -252,7 +252,7 @@ export function WorkbenchSidebarDrafts({
       </div>
       <CollapsiblePanel animate={false}>
         <div data-workbench-sidebar-draft-list="">
-          <SidebarMenu>
+          <SidebarMenu data-workbench-sidebar-rows="">
             {drafts.map((draft) => (
               <SidebarMenuItem key={draft.id}>
                 <div

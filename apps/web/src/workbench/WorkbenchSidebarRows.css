@@ -1,9 +1,16 @@
 /* Like native folder rows, Board children fill the full width and their titles line up with
    the Board name. Leading glyphs, such as a status dot or draft icon, sit under the Board icon. */
 :is([data-workbench-sidebar-surface], [data-workbench-sidebar-group-toggle]) {
-  --workbench-sidebar-disclosure-width: 20px;
-  --workbench-sidebar-child-inset: calc(var(--workbench-sidebar-disclosure-width) + 4px);
-  --workbench-sidebar-title-inset: calc(var(--workbench-sidebar-child-inset) + 22px);
+  --workbench-sidebar-disclosure-width: 32px;
+  --workbench-sidebar-title-inset: 36px;
+}
+
+[data-workbench-sidebar-rows] {
+  gap: 1px;
+}
+
+[data-workbench-sidebar-boards] {
+  gap: 8px;
 }
 
 /* The disclosure and its destination share one row surface. Like native rows, it stays
@@ -29,13 +36,15 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sidebar-border) 70%, transparent);
 }
 
+/* Native folder headers end in their chevron; here it is its own control because the
+   header opens the Board. */
 [data-workbench-sidebar-disclosure] {
   display: grid;
-  place-items: center;
+  place-items: center end;
   flex-shrink: 0;
-  width: var(--workbench-sidebar-disclosure-width, 20px);
+  width: var(--workbench-sidebar-disclosure-width);
   height: 32px;
-  padding: 0;
+  padding: 0 10px 0 0;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
@@ -142,7 +151,7 @@ button[data-workbench-sidebar-disclosure] {
   display: grid;
   place-items: center;
   flex: 0 0 16px;
-  margin-inline: -22px 2px;
+  margin-inline: -26px 6px;
 }
 
 [data-workbench-sidebar-ticket-planning] {
@@ -177,7 +186,7 @@ button[data-workbench-sidebar-disclosure] {
 
 /* Reserves the quick action's width so hover swaps the status without reflowing the title. */
 [data-workbench-sidebar-slot] {
-  min-width: 20px;
+  min-width: 32px;
   font-size: var(--text-xs);
 }
 
@@ -192,42 +201,57 @@ button[data-workbench-sidebar-disclosure] {
   white-space: nowrap;
 }
 
-/* Like native rows, hover swaps a plain status for the row's quick action in place. An
-   attention badge is a control, so it keeps room beside it for the action instead. */
+/* Like native rows, hover fades a plain status out and the row's quick action in, in place.
+   An attention badge is a control, so it keeps room beside it for the action instead. */
+:is(
+  [data-workbench-sidebar-quick-actions],
+  [data-workbench-sidebar-slot="actions"] > [data-workbench-sidebar-native-status],
+  [data-workbench-sidebar-folder-action],
+  [data-workbench-sidebar-folder-count]
+) {
+  transition: opacity 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
 [data-workbench-sidebar-quick-actions] {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: -4px;
-  display: none;
+  inset-inline-end: 0;
+  display: flex;
   align-items: center;
   gap: 2px;
+  opacity: 0;
 }
 
 [data-workbench-sidebar-slot="actions"]:has([data-workbench-attention-badge]) {
-  padding-inline-end: 22px;
+  padding-inline-end: 30px;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
   [data-workbench-sidebar-quick-actions] {
-  display: flex;
+  opacity: 1;
+}
+
+[data-workbench-sidebar-surface]:not(:hover, :has(:focus-visible))
+  [data-workbench-sidebar-quick-action] {
+  pointer-events: none;
 }
 
 [data-workbench-sidebar-surface]:is(:hover, :has(:focus-visible))
   [data-workbench-sidebar-slot="actions"]
   > [data-workbench-sidebar-native-status] {
-  visibility: hidden;
+  opacity: 0;
 }
 
+/* Native row quick actions are bare text buttons that brighten on hover. */
 [data-workbench-sidebar-quick-action] {
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  height: 24px;
+  padding: 0 8px;
   border: 0;
   border-radius: var(--radius-md);
   background: transparent;
-  color: var(--sidebar-muted-foreground);
+  color: var(--color-muted-foreground);
   cursor: pointer;
 }
 
@@ -237,8 +261,48 @@ button[data-workbench-sidebar-disclosure] {
 }
 
 [data-workbench-sidebar-quick-action]:hover {
-  color: var(--sidebar-foreground);
-  background: var(--sidebar-row-hover);
+  color: var(--color-foreground);
+}
+
+/* Native folder headers show the closed count at rest and swap it for the new-item action on
+   hover. */
+[data-workbench-sidebar-folder] [data-workbench-sidebar-navigation] {
+  gap: 10px;
+  min-height: 32px;
+  padding-inline: 10px 0;
+}
+
+[data-workbench-sidebar-folder-action] {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: calc(var(--workbench-sidebar-disclosure-width) - 8px);
+  display: flex;
+  align-items: center;
+  opacity: 0;
+}
+
+[data-workbench-sidebar-folder]:hover [data-workbench-sidebar-folder-action],
+[data-workbench-sidebar-folder-action]:focus-within {
+  opacity: 1;
+}
+
+[data-workbench-sidebar-folder]:is(
+    :hover,
+    :has([data-workbench-sidebar-folder-action] :focus-visible)
+  )
+  [data-workbench-sidebar-folder-count] {
+  opacity: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(
+    [data-workbench-sidebar-quick-actions],
+    [data-workbench-sidebar-slot="actions"] > [data-workbench-sidebar-native-status],
+    [data-workbench-sidebar-folder-action],
+    [data-workbench-sidebar-folder-count]
+  ) {
+    transition: none;
+  }
 }
 
 /* Like native rows, keyboard focus rings the whole row rather than the inset title area. */
@@ -257,8 +321,10 @@ button[data-workbench-sidebar-disclosure] {
   outline-offset: -2px;
 }
 
+/* The draft icon sits under the Board icon, so draft titles line up with Ticket titles. */
 [data-workbench-sidebar-draft-list] [data-workbench-sidebar-navigation="compact"] {
-  padding-inline-start: var(--workbench-sidebar-child-inset);
+  gap: 10px;
+  padding-inline-start: 10px;
 }
 
 [data-workbench-sidebar-item-row="compact"] {
@@ -324,7 +390,44 @@ button[data-workbench-sidebar-disclosure] {
   /* Touch has no hover, so the quick action stays beside the status. */
   [data-workbench-sidebar-quick-actions] {
     position: static;
-    display: flex;
+    opacity: 1;
+  }
+
+  [data-workbench-sidebar-surface]
+    [data-workbench-sidebar-quick-actions]
+    [data-workbench-sidebar-quick-action] {
+    pointer-events: auto;
+  }
+
+  /* The + stays visible and in its own 44px column, so it never covers the Board name. */
+  [data-workbench-sidebar-folder-action] {
+    inset-inline-end: var(--workbench-sidebar-disclosure-width);
+    justify-content: center;
+    width: 44px;
+    opacity: 1;
+  }
+
+  [data-workbench-sidebar-folder] [data-workbench-sidebar-navigation] {
+    min-height: 44px;
+  }
+
+  [data-workbench-sidebar-folder]:has([data-workbench-sidebar-folder-action])
+    [data-workbench-sidebar-navigation] {
+    padding-inline-end: 44px;
+  }
+
+  [data-workbench-sidebar-folder-action] > button {
+    position: relative;
+  }
+
+  [data-workbench-sidebar-folder-action] > button::after {
+    content: "";
+    position: absolute;
+    inset: -10px;
+  }
+
+  [data-workbench-sidebar-folder-count] {
+    visibility: hidden;
   }
 
   /* Wide enough that the enlarged + target below never overlaps the attention badge. */

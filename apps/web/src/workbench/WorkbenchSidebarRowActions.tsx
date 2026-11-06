@@ -43,7 +43,7 @@ export function WorkbenchSidebarQuickAction({
           />
         }
       >
-        <Icon aria-hidden className="size-3.5" />
+        <Icon aria-hidden className="size-3" />
       </TooltipTrigger>
       <TooltipPopup>{label}</TooltipPopup>
     </Tooltip>

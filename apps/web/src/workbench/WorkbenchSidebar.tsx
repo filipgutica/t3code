@@ -12,7 +12,7 @@ import {
   AlertCircleIcon,
   BellIcon,
   BlocksIcon,
-  ChevronRightIcon,
+  ChevronDownIcon,
   CircleCheckIcon,
   LayoutDashboardIcon,
   ListFilterIcon,
@@ -1004,7 +1004,7 @@ function WorkbenchSidebarNavigation({
                     inspectionIncomplete={inspectionIncomplete}
                     onShowAll={() => changeAttentionFilter(false)}
                   />
-                  <SidebarMenu aria-label="Boards">
+                  <SidebarMenu aria-label="Boards" data-workbench-sidebar-boards="">
                     {visibleProjects.map(renderWorkspace)}
                   </SidebarMenu>
                   <WorkbenchSidebarArchivedWorkspaces
@@ -1055,7 +1055,7 @@ function WorkbenchSidebarArchivedWorkspaces({
       <summary className="cursor-pointer px-2 py-2 text-xs font-medium text-sidebar-muted-foreground focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
         Archived Boards
       </summary>
-      <SidebarMenu aria-label="Archived Boards">
+      <SidebarMenu aria-label="Archived Boards" data-workbench-sidebar-boards="">
         {filtered.projects.map((workspace) => (
           <WorkbenchSidebarWorkspaceRow
             key={workspace.id}
@@ -1182,18 +1182,11 @@ function WorkbenchSidebarWorkspaceHeader({
 
   return (
     <div
-      data-workbench-sidebar-disclosure-row=""
       data-workbench-sidebar-surface=""
+      data-workbench-sidebar-folder=""
       data-active={workspaceIsDestination || undefined}
-      className="relative flex min-w-0 items-start rounded-md"
+      className="relative flex min-w-0 items-center rounded-md"
     >
-      <WorkbenchSidebarDisclosure
-        available={hasContents}
-        controls={workspacePanelId}
-        expanded={workspaceExpanded}
-        label={disclosureLabel}
-        onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
-      />
       <WorkbenchSidebarRowNavigation
         ref={workspaceButtonRef}
         label={boardLabel}
@@ -1208,13 +1201,28 @@ function WorkbenchSidebarWorkspaceHeader({
         preview={<span className="p-2">{boardLabel}</span>}
       >
         <LayoutDashboardIcon className="size-4 shrink-0" />
-        <span className="min-w-0 flex-1 truncate font-medium">{workspace.title}</span>
-        <span aria-hidden className="ms-auto text-xs tabular-nums text-sidebar-muted-foreground">
-          {ticketCount}
+        <span className="min-w-0 flex-1 truncate font-medium text-sidebar-foreground/90">
+          {workspace.title}
         </span>
+        {!workspaceExpanded && ticketCount > 0 ? (
+          <span
+            aria-hidden
+            data-workbench-sidebar-folder-count=""
+            className="shrink-0 text-xs tabular-nums text-sidebar-muted-foreground"
+          >
+            {ticketCount}
+          </span>
+        ) : null}
       </WorkbenchSidebarRowNavigation>
+      <WorkbenchSidebarDisclosure
+        available={hasContents}
+        controls={workspacePanelId}
+        expanded={workspaceExpanded}
+        label={disclosureLabel}
+        onToggle={() => onToggle({ type: "toggleWorkspace", workspaceId: workspace.id })}
+      />
       {workspace.archivedAt == null ? (
-        <span className="flex h-8 shrink-0 items-center justify-center pe-1 pointer-coarse:size-11 max-md:size-11">
+        <span data-workbench-sidebar-folder-action="">
           <Button
             size="icon-xs"
             variant="ghost-muted"
@@ -1331,7 +1339,6 @@ function WorkbenchSidebarTicketRow({
   return (
     <SidebarMenuItem>
       <div
-        data-workbench-sidebar-disclosure-row=""
         data-workbench-sidebar-surface=""
         data-workbench-sidebar-ticket-row-id={ticket.id}
         data-active={isActive || undefined}
@@ -1350,7 +1357,7 @@ function WorkbenchSidebarTicketRow({
 
 function WorkbenchSidebarTicketGroups({ groups, ...rowProps }: WorkbenchSidebarTicketGroupsProps) {
   return (
-    <SidebarMenu>
+    <SidebarMenu data-workbench-sidebar-rows="">
       {groups.map(({ ticket }) => (
         <WorkbenchSidebarTicketRow key={ticket.id} ticket={ticket} {...rowProps} />
       ))}
@@ -1370,7 +1377,7 @@ function WorkbenchSidebarDoneTickets({
   readonly panelId: string;
 }) {
   return (
-    <section aria-label="Done Tickets" className="mt-1">
+    <section aria-label="Done Tickets">
       <div data-workbench-sidebar-group-toggle="">
         <CollapsibleSectionHeader
           aria-controls={panelId}
@@ -1411,9 +1418,9 @@ function WorkbenchSidebarDisclosure({
       onClick={onToggle}
       type="button"
     >
-      <ChevronRightIcon
+      <ChevronDownIcon
         aria-hidden
-        className={`size-3.5 shrink-0 ${expanded ? "rotate-90" : ""}`}
+        className={`size-3 shrink-0 transition-transform ${expanded ? "" : "-rotate-90"}`}
       />
     </button>
   );
@@ -1437,7 +1444,7 @@ function WorkbenchSidebarArchivedTickets({
   readonly selectedTicketId: WorkbenchTicketId | undefined;
 }) {
   return (
-    <section aria-label="Archived Tickets" className="mt-1">
+    <section aria-label="Archived Tickets">
       <div data-workbench-sidebar-group-toggle="">
         <CollapsibleSectionHeader
           aria-controls={panelId}

@@ -1357,10 +1357,10 @@ function WorkbenchThreadRowTrailing({
       {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
       {time && quickAction ? (
         <span className="relative flex items-center">
-          <span className="group-hover/thread-row:invisible group-focus-within/thread-row:invisible">
+          <span className="transition-opacity group-focus-within/thread-row:opacity-0 group-any-hover/thread-row:opacity-0 motion-reduce:transition-none">
             {time}
           </span>
-          <span className="absolute inset-y-0 end-0 flex items-center opacity-0 group-hover/thread-row:opacity-100 group-focus-within/thread-row:opacity-100">
+          <span className="pointer-events-none absolute inset-y-0 end-0 flex items-center opacity-0 transition-opacity group-focus-within/thread-row:pointer-events-auto group-focus-within/thread-row:opacity-100 group-any-hover/thread-row:pointer-events-auto group-any-hover/thread-row:opacity-100 motion-reduce:transition-none">
             {quickAction}
           </span>
         </span>
@@ -1475,8 +1475,10 @@ function WorkbenchThreadRow({
   const row = (
     <div
       className={cn(
-        "group/thread-row relative isolate flex h-9 min-w-0 items-center gap-2.5 rounded-md px-2.5 text-sm hover:bg-sidebar-row-hover focus-within:bg-sidebar-row-hover",
-        showing && "bg-sidebar-row-active hover:bg-sidebar-row-active",
+        "group/thread-row relative isolate flex h-9 min-w-0 items-center gap-2.5 rounded-md px-2.5 text-sm",
+        showing
+          ? "bg-sidebar-row-active light:ring-1 light:ring-inset light:ring-sidebar-border/70"
+          : "hover:bg-sidebar-row-hover",
       )}
       {...getWorkbenchThreadRowMenuHandlers(menu).row}
     >
@@ -1494,7 +1496,7 @@ function WorkbenchThreadRow({
           className={cn(
             "min-w-0 flex-1 truncate",
             recede
-              ? "font-normal text-foreground/75 group-hover/thread-row:text-foreground"
+              ? "font-normal text-foreground/75 group-focus-within/thread-row:text-foreground group-hover/thread-row:text-foreground"
               : "font-medium text-foreground",
           )}
         >
