@@ -196,7 +196,9 @@ function WorkbenchLinkThreadList({
               onClick={() => onSelect(thread.id)}
             >
               <span className="min-w-0 flex-1 truncate text-left">{thread.title}</span>
-              <span className="max-w-32 truncate text-xs text-muted-foreground">{repository}</span>
+              <span className="max-w-1/2 truncate text-xs text-muted-foreground">
+                {[repository, thread.branch].filter(Boolean).join(" · ")}
+              </span>
               {selected ? <CheckIcon aria-hidden="true" /> : null}
             </Button>
           );
