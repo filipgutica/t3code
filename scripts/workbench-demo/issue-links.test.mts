@@ -34,7 +34,7 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
         db.prepare(
           "INSERT INTO workbench_projects (project_id, title, created_at, updated_at) VALUES ('beacon', 'Beacon', ?, ?)",
         ).run(NOW, NOW);
-        for (const id of ["orbit-001", "orbit-002", "orbit-005"]) {
+        for (const id of ["orbit-001", "orbit-002", "orbit-005", "orbit-017"]) {
           db.prepare(
             `INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown, primary_t3_project_id, status, blocked, created_at, updated_at)
              VALUES (?, 'orbit', ?, '', 'orbit-web', 'todo', 0, ?, ?)`,
@@ -66,6 +66,7 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
           [
             { id: "beacon-009", threadId: "beacon-009-thread", done: 2, total: 3 },
             { id: "orbit-001", threadId: "orbit-001-thread", done: 1, total: 3 },
+            { id: "orbit-017", threadId: "orbit-017-api", done: 1, total: 3 },
           ],
         );
         const references = read
@@ -87,8 +88,23 @@ it.effect("seeds Orbit References of every listed kind after the current migrati
             ["orbit-001", "file"],
             ["orbit-002", "jira_issue"],
             ["orbit-005", "jira_issue"],
+            ["orbit-017", "file"],
+            ["orbit-017", "file"],
+            ["orbit-017", "file"],
           ],
         );
+        const storyDir = NodePath.join(userdata, "workbench-artifacts", "orbit-017");
+        const storyFiles = references
+          .filter((reference) => reference.ticketId === "orbit-017")
+          .map(({ url }) => url);
+        assert.deepStrictEqual(
+          storyFiles,
+          ["requirements.md", "plan.md", "mockups/expired-invitation.html"].map((file) =>
+            NodePath.join(storyDir, file),
+          ),
+        );
+        for (const file of storyFiles)
+          assert.match(NodeFS.readFileSync(file, "utf8"), /[Ss]ynthetic/);
         const file = references.find((reference) => reference.kind === "file")?.url ?? "";
         assert.strictEqual(
           NodePath.dirname(file),
