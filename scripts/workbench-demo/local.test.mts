@@ -57,11 +57,10 @@ it("creates an idempotent local repository fixture", async () => {
 
     assert.deepStrictEqual(first.projects, second.projects);
     assert.include(first.tickets, "orbit-017");
-    assert.includeMembers(first.assignedThreads, [
-      "orbit-017-api",
-      "orbit-017-web",
-      "orbit-017-settings",
-    ]);
+    assert.includeMembers(
+      [...first.assignedThreads],
+      ["orbit-017-api", "orbit-017-web", "orbit-017-settings"],
+    );
     assert.equal(verification.repositoryCount, LOCAL_DEMO_REPOSITORIES.length);
     assert.equal(verification.repositoryHeadCount, LOCAL_DEMO_REPOSITORIES.length);
     assert.deepStrictEqual(verification.expectedWorkbenchCounts, {

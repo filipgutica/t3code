@@ -32,7 +32,7 @@ export const seedStoryOutcomes = (input: string) => {
         "orbit-017-web",
         "Web tests fail on toast timing; 1 review open. The page and Resend button are built. [Synthetic recap; no provider ran.]",
       ],
-    ]) {
+    ] as const) {
       db.prepare(`INSERT INTO workbench_thread_recaps (thread_id, run_id, text, updated_at)
         VALUES (?, ?, ?, ?) ON CONFLICT(thread_id) DO UPDATE
         SET run_id = excluded.run_id, text = excluded.text, updated_at = excluded.updated_at`).run(

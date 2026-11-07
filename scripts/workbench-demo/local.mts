@@ -230,7 +230,6 @@ const TICKETS: readonly TicketFixture[] = [
     id: "orbit-017",
     projectId: "orbit",
     title: "Let invitees recover an expired invitation",
-    primaryProjectId: "orbit-api",
     status: "in_progress",
     repositoryProjectIds: ["orbit-api", "orbit-web"],
     markdown: [
@@ -415,6 +414,7 @@ const ASSIGNED_THREADS = [
 
 export interface LocalDemoOptions {
   readonly home: string;
+  /** Override the model for every seeded Thread, including story fixtures. */
   readonly modelSelection?: ModelSelection;
   /** Local server WebSocket URL. Omit to prepare only local Git repositories. */
   readonly wsUrl?: string;
@@ -730,9 +730,11 @@ const seedWorkbench = async (
     readonly token?: string | undefined;
     readonly now: () => string;
     readonly prepareWorkspaces: boolean;
-    readonly modelSelection: ModelSelection;
+    readonly modelSelection: ModelSelection | undefined;
   },
 ): Promise<void> => {
+  const defaultModelSelection =
+    options.modelSelection ?? (await readDemoModelSelection(options.home));
   const existing = await runRpc(options.wsUrl, options.token, (client) =>
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
@@ -891,7 +893,9 @@ const seedWorkbench = async (
         threadId,
         projectId: ProjectId.make(thread.projectId),
         title: thread.title,
-        modelSelection: "modelSelection" in thread ? thread.modelSelection : options.modelSelection,
+        modelSelection:
+          options.modelSelection ??
+          ("modelSelection" in thread ? thread.modelSelection : defaultModelSelection),
         runtimeMode: DEFAULT_RUNTIME_MODE,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         branch,
@@ -1004,7 +1008,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
       token: options.token,
       now,
       prepareWorkspaces,
-      modelSelection: options.modelSelection ?? (await readDemoModelSelection(home)),
+      modelSelection: options.modelSelection,
     });
   }
   const manifest: LocalDemoManifest = {
