@@ -458,7 +458,7 @@ p.provenance {
   max-height: calc(100svh - var(--space-16) - var(--space-16));
   margin: auto;
   object-fit: contain;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-inline);
 }
 main p a {
   text-decoration: underline;
