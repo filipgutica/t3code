@@ -72,7 +72,7 @@ export function WorkbenchThreadReferencesMenu({
                   <WorkbenchReferenceKindIcon kind={parsed.kind} url={parsed.url} />
                   <MenuItemLabel>{title ?? parsed.label}</MenuItemLabel>
                 </TooltipTrigger>
-                <TooltipPopup>{parsed.url}</TooltipPopup>
+                <TooltipPopup side="right">{parsed.url}</TooltipPopup>
               </Tooltip>
             );
           })}
