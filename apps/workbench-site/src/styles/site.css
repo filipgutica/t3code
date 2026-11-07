@@ -369,17 +369,24 @@ p.provenance {
   padding-inline: var(--space-5);
   border: 1px solid transparent;
   border-radius: var(--radius-md);
-  background: var(--color-text);
-  color: var(--color-bg);
+  background: var(--color-button-bg);
+  color: var(--color-button-text);
+  box-shadow: var(--shadow-raise);
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   white-space: nowrap;
-  transition: background var(--duration-fast) var(--ease-out);
+  transition:
+    background var(--duration-fast) var(--ease-out),
+    box-shadow var(--duration-fast) var(--ease-out);
 }
 .button:hover {
   background: var(--color-button-hover);
-  color: var(--color-bg);
+  color: var(--color-button-text);
   text-decoration: none;
+}
+.button:active {
+  background: var(--color-button-hover);
+  box-shadow: var(--shadow-sink);
 }
 .text-link {
   display: inline-flex;
