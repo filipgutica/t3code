@@ -23,7 +23,11 @@ interface ScopePolicy {
 const policyPath = "scripts/workbench-ci-scope.json";
 const workflowPath = ".github/workflows/workbench-ci.yml";
 const git = (args: ReadonlyArray<string>) => {
-  const result = NodeChildProcess.spawnSync("git", [...args], { encoding: "utf8" });
+  // Published reference-repository updates can exceed Node's 1 MiB default.
+  const result = NodeChildProcess.spawnSync("git", [...args], {
+    encoding: "utf8",
+    maxBuffer: 32 * 1024 * 1024,
+  });
   if (result.status !== 0) throw new Error(result.stderr.trim() || `git ${args[0]} failed`);
   return result.stdout;
 };

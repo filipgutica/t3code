@@ -203,12 +203,28 @@ it.each([
   ["apps/mobile/src/owned.ts", { verify: true, build: false, packaging: false }],
   ["package.json", { verify: true, build: true, packaging: true }],
   ["scripts/packaging.test.ts", { verify: true, build: false, packaging: true }],
+  [".repos/large-update", { verify: true, build: true, packaging: false }],
 ])("routes %s through the Actions output contract", (path, expected) =>
   fixture((root, base) => {
-    const full = NodePath.join(root, path);
-    NodeFS.mkdirSync(NodePath.dirname(full), { recursive: true });
-    NodeFS.writeFileSync(full, "// changed\n");
-    NodeChildProcess.execFileSync("git", ["add", path], { cwd: root });
+    const paths =
+      path === ".repos/large-update"
+        ? [
+            "apps/server/src/owned.ts",
+            ...Array.from({ length: 6_000 }, (_, index) =>
+              NodePath.join(path, `${"reference-".repeat(22)}${index}.ts`),
+            ),
+          ]
+        : [path];
+    for (const relative of paths) {
+      const full = NodePath.join(root, relative);
+      NodeFS.mkdirSync(NodePath.dirname(full), { recursive: true });
+      NodeFS.writeFileSync(full, "// changed\n");
+    }
+    NodeChildProcess.execFileSync(
+      "git",
+      ["add", path, ...(path === ".repos/large-update" ? ["apps/server/src/owned.ts"] : [])],
+      { cwd: root },
+    );
     const output = NodePath.join(root, "actions-output");
     const result = execute(root, ["--scope", base], { GITHUB_OUTPUT: output });
     assert.equal(result.status, 0, result.stderr);
