@@ -25,8 +25,8 @@ import { test, expect } from "@playwright/test";
   });
 });
 test("static deep links reach content after all screenshots", async ({ page }) => {
-  await page.goto("/t3code/#worktrees-heading");
-  await expect(page.locator("#worktrees-heading")).toBeInViewport();
+  await page.goto("/t3code/#threads-heading");
+  await expect(page.locator("#threads-heading")).toBeInViewport();
 });
 test("the commit graph still follows scroll without JavaScript", async ({ page }) => {
   await page.goto("/t3code/");
@@ -47,7 +47,7 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
         .locator(".hero-media img")
         .evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : "")),
     )
-    .toMatch(/board-light[.]/);
+    .toMatch(/ticket-light[.]/);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("body")).toHaveCSS("background-color", "rgb(13, 16, 18)");
   await expect(page.locator("html")).toHaveCSS("color-scheme", "dark");
@@ -57,9 +57,9 @@ test("no-JavaScript system appearance uses the public page palette", async ({ pa
         .locator(".hero-media img")
         .evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : "")),
     )
-    .toMatch(/board[.]/);
+    .toMatch(/ticket[.]/);
   const original = page.locator(".hero-media [data-product-image]:visible");
-  await expect(original).toHaveAttribute("href", /board[.].*\.png$/);
+  await expect(original).toHaveAttribute("href", /ticket[.].*\.png$/);
   const darkOriginal = new URL((await original.getAttribute("href"))!, page.url()).href;
   await original.click();
   await expect(page).toHaveURL(darkOriginal);

@@ -146,6 +146,20 @@ test("section anchors, active state, and history retain native scrolling", async
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
   const nav = page.getByRole("navigation", { name: "On this page" });
+  expect(
+    await nav
+      .getByRole("link")
+      .evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+  ).toEqual([
+    "#hero-heading",
+    "#plan-heading",
+    "#ticket-heading",
+    "#references-heading",
+    "#threads-heading",
+    "#review-heading",
+    "#recaps-heading",
+    "#done-heading",
+  ]);
   await markScrollEnd(page);
   await nav.getByRole("link", { name: "Plan", exact: true }).click();
   await ended(page);
@@ -155,9 +169,9 @@ test("section anchors, active state, and history retain native scrolling", async
     "location",
   );
   await markScrollEnd(page);
-  await nav.getByRole("link", { name: "Start work", exact: true }).click();
+  await nav.getByRole("link", { name: "Threads", exact: true }).click();
   await ended(page);
-  await atReadingTop(page, "worktrees-heading");
+  await atReadingTop(page, "threads-heading");
   await markScrollEnd(page);
   await page.goBack();
   await ended(page);
@@ -166,17 +180,17 @@ test("section anchors, active state, and history retain native scrolling", async
   await page.evaluate(() =>
     scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
   );
-  await expect(nav.getByRole("link", { name: "Review", exact: true })).toHaveAttribute(
+  await expect(nav.getByRole("link", { name: "Done", exact: true })).toHaveAttribute(
     "aria-current",
     "location",
   );
   await expect(page).toHaveURL(/#plan-heading$/);
 });
 test("section and screenshot deep links land on their target", async ({ page }) => {
-  await load(page, "#worktrees-heading");
-  await atReadingTop(page, "worktrees-heading");
-  await load(page, "#walkthrough-notifications");
-  await atReadingTop(page, "walkthrough-notifications");
+  await load(page, "#threads-heading");
+  await atReadingTop(page, "threads-heading");
+  await load(page, "#walkthrough-recaps");
+  await atReadingTop(page, "walkthrough-recaps");
 });
 test("every screenshot links to its original PNG", async ({ page }) => {
   await load(page);
@@ -191,7 +205,7 @@ test("image dialog uses original pixels, scales to DPR, and restores focus", asy
   const link = page.locator(".hero-media [data-product-image]");
   const original = await link.getAttribute("href");
   await link.click();
-  const dialog = page.getByRole("dialog", { name: /Beacon Workbench Board/ });
+  const dialog = page.getByRole("dialog", { name: /Orbit Ticket/ });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("img")).toHaveAttribute("src", original!);
   const measured = await dialog.locator("img").evaluate((image) => ({
@@ -227,7 +241,7 @@ test("full-size screenshots keep one source pixel per screen pixel on Retina", a
     const page = await context.newPage();
     await load(page);
     await page.locator(".hero-media [data-product-image]").click();
-    const image = page.getByRole("dialog", { name: /Beacon Workbench Board/ }).locator("img");
+    const image = page.getByRole("dialog", { name: /Orbit Ticket/ }).locator("img");
     const pixels = await image.evaluate((element) => ({
       original: Number(element.getAttribute("width")),
       dpr: devicePixelRatio,
@@ -284,24 +298,24 @@ test("themes switch screenshot previews, originals, and an open lightbox", async
   const currentSource = () =>
     hero.evaluate((image) => (image instanceof HTMLImageElement ? image.currentSrc : ""));
   await page.getByRole("button", { name: "Light theme", exact: true }).click();
-  await expect.poll(currentSource).toMatch(/board-light[.]/);
+  await expect.poll(currentSource).toMatch(/ticket-light[.]/);
   const lightOriginal = await link.getAttribute("href");
   await page.getByRole("button", { name: "Dark theme", exact: true }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect.poll(currentSource).toMatch(/board[.]/);
+  await expect.poll(currentSource).toMatch(/ticket[.]/);
   const darkOriginal = await link.getAttribute("href");
   expect(darkOriginal).not.toBe(lightOriginal);
   await page.reload();
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect.poll(currentSource).toMatch(/board[.]/);
+  await expect.poll(currentSource).toMatch(/ticket[.]/);
   await expect(link).toHaveAttribute("href", darkOriginal!);
   await page.getByRole("button", { name: "System theme", exact: true }).click();
   await page.emulateMedia({ colorScheme: "light" });
   await expect(page.locator("html")).not.toHaveClass(/dark/);
-  await expect.poll(currentSource).toMatch(/board-light[.]/);
+  await expect.poll(currentSource).toMatch(/ticket-light[.]/);
   await page.emulateMedia({ colorScheme: "dark" });
   await expect(page.locator("html")).toHaveClass(/dark/);
-  await expect.poll(currentSource).toMatch(/board[.]/);
+  await expect.poll(currentSource).toMatch(/ticket[.]/);
   await link.click();
   const fullSize = page.getByRole("dialog").locator("img");
   await expect(fullSize).toHaveAttribute("src", darkOriginal!);
@@ -309,7 +323,7 @@ test("themes switch screenshot previews, originals, and an open lightbox", async
   await other.goto("/t3code/");
   await other.evaluate(() => localStorage.setItem("tool-site-theme", "light"));
   await expect(page.locator("html")).not.toHaveClass(/dark/);
-  await expect.poll(currentSource).toMatch(/board-light[.]/);
+  await expect.poll(currentSource).toMatch(/ticket-light[.]/);
   await expect(fullSize).toHaveAttribute("src", lightOriginal!);
   await page.keyboard.press("Escape");
   await expect(link).toBeFocused();
@@ -370,7 +384,7 @@ test("the commit graph draws to the viewport's centre line and is only scroll-li
   // Centre line inside the fork's branch lanes, then just past the merge node.
   for (const [id, offset] of [
     ["threads-heading", 240],
-    ["review-heading", 120],
+    ["done-heading", 120],
   ] as const) {
     await scrollToCentre(page, id, offset);
     await expect.poll(() => followsCentreLine(page)).toBe(0);
@@ -386,7 +400,7 @@ test("the commit graph draws to the viewport's centre line and is only scroll-li
   expect(animations.every(Boolean)).toBe(true);
 });
 
-test("the graph forks into a lane per repository and merges back at review", async ({ page }) => {
+test("the graph forks into a lane per repository and merges back at done", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
   const lanes = async () => {
@@ -395,24 +409,29 @@ test("the graph forks into a lane per repository and merges back at review", asy
     const lanesOf = (section: string) =>
       nodes.filter((node) => node.section === section).map((node) => Math.round(node.x - main));
     return {
-      worktrees: lanesOf("worktrees-heading"),
       threads: lanesOf("threads-heading"),
       review: lanesOf("review-heading"),
+      recaps: lanesOf("recaps-heading"),
+      done: lanesOf("done-heading"),
       install: lanesOf("install-heading"),
     };
   };
   const desktop = await lanes();
-  expect(desktop.worktrees).toHaveLength(2);
-  expect(desktop.worktrees.every((offset) => offset > 0)).toBe(true);
-  expect(desktop.threads).toEqual(desktop.worktrees);
-  expect(desktop.review).toEqual([0]);
+  expect(desktop.threads).toHaveLength(2);
+  expect(desktop.threads.every((offset) => offset > 0)).toBe(true);
+  expect(desktop.review).toEqual(desktop.threads);
+  expect(desktop.recaps).toEqual(desktop.threads);
+  expect(desktop.done).toEqual([0]);
   expect(desktop.install).toEqual([0]);
   await expect(page.locator(".graph-curve")).toHaveCount(2);
   await page.setViewportSize({ width: 390, height: 844 });
   await expect(page.locator(".graph-curve").first()).toBeHidden();
   const phone = await lanes();
-  expect(phone.worktrees).toEqual([0]);
   expect(phone.threads).toEqual([0]);
+  expect(phone.review).toEqual([0]);
+  expect(phone.recaps).toEqual([0]);
+  expect(phone.done).toEqual([0]);
+  expect(phone.install).toEqual([0]);
   await noOverflow(page);
 });
 
@@ -435,7 +454,7 @@ test("the graph forks into a lane per repository and merges back at review", asy
       }),
     );
     // Two worktree lanes on desktop; one lane on phones.
-    expect(offsets).toHaveLength(width === 1280 ? 9 : 7);
+    expect(offsets).toHaveLength(width === 1280 ? 12 : 9);
     for (const offset of offsets) expect(offset).toBeLessThan(1);
   });
 });
@@ -469,9 +488,9 @@ test("reduced motion shows the whole graph drawn and keeps navigation immediate"
   expect(lines.every((line) => Math.abs(line.drawnTo - line.bottom) < 0.5)).toBe(true);
   await page
     .getByRole("navigation", { name: "On this page" })
-    .getByRole("link", { name: "Start work", exact: true })
+    .getByRole("link", { name: "Threads", exact: true })
     .click();
-  await atReadingTop(page, "worktrees-heading");
+  await atReadingTop(page, "threads-heading");
   await noOverflow(page);
 });
 

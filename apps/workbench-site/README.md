@@ -26,14 +26,45 @@ emulating the color scheme; the app follows the system theme. Check the saved di
 and text at 1:1 before replacing both the site and user-guide images; keep the
 pointer outside the page, clear focus rings, and close popovers that expose local paths.
 
-The page follows one Ticket as a commit graph: plan, Ticket, a worktree per
-repository (the fork), native Threads, pull request review (the merge), and install.
-`src/components/CommitGraph.vue` draws each section's slice. Lines draw and nodes fill
-with CSS scroll-driven animations, so they need no JavaScript and nothing runs while the
-page is idle. Under reduced motion, or in browsers without scroll timelines, the graph is
-drawn in full. Below 900px it collapses to one lane. Each screenshot opens in the lightbox.
-The planning conversation is real; it does not show completed implementation work.
-Demo PR feedback and implementation outcomes are illustrative.
+The page follows one Ticket as a commit graph: plan, brief and Progress,
+References, a Thread per PR across repositories (the fork), PRs and attention,
+recap previews, Done (the merge), and install. The two lanes represent Orbit API
+and Orbit Web. `src/components/CommitGraph.vue` draws each section's slice. Lines
+draw and nodes fill with CSS scroll-driven animations, so they need no JavaScript
+and nothing runs while the page is idle. Under reduced motion, or in browsers
+without scroll timelines, the graph is drawn in full. Below 900px it collapses
+to one lane. Each screenshot opens in the lightbox.
+
+The demo Ticket's history, PR outcomes, and recaps are synthetic. Its planning
+conversation and prepared Git worktrees are real. The site and guide disclose
+this at the first screenshot.
+
+## Capture replacement pending
+
+The source now follows the Orbit story, but the retained PNGs still show the
+previous walkthrough. Their captions and alt text describe the intended captures;
+image/caption agreement is incomplete until both themes are recaptured from the
+native demo. Do not publish this intermediate source on its own. Keep all nine
+slots and use actual captures rather than drawing product frames.
+
+| Story slot       | Retained PNG basename | Section    |
+| ---------------- | --------------------- | ---------- |
+| `ticket`         | `ticket`              | Overview   |
+| `planning`       | `planning`            | Plan       |
+| `board`          | `board`               | Plan       |
+| `agent-edit`     | `board-chat`          | Ticket     |
+| `reference`      | `thread`              | References |
+| `thread-context` | `workspace`           | Threads    |
+| `terminal`       | `notifications`       | Threads    |
+| `pull-requests`  | `pull-request`        | Review     |
+| `recaps`         | `ticket-chat`         | Recaps     |
+
+Replace these pairs in `src/assets/screenshots` and `docs/user/media/workbench`
+together. When using the story's new basenames, update the imports in
+`src/pages/index.astro` and the guide image paths too. The `ticket` image is also
+the README hero and social share image. The current shared header, Graphite
+Indigo theme, IBM Plex fonts, and T3 accent stay unchanged. Final chrome checks
+and captures follow the separate shared UI dependency update.
 
 The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
 so the page matches the screenshots. Update it when that theme changes.

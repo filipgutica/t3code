@@ -6,13 +6,15 @@ An independent fork of [T3 Code](https://github.com/pingdotgg/t3code) that adds 
 
 **[Download the latest Workbench preview](https://github.com/filipgutica/t3code/releases)** · **[Workbench user guide](./docs/user/agent-workbench.md)** · **[Workbench site](https://filipgutica.github.io/t3code/)**
 
-- **Plan work:** group repositories into Workspaces, organize Tickets into Epics, and track progress.
-- **Start implementation:** create native Threads with Ticket context and Git worktrees for the selected repositories.
-- **Link Jira issues:** attach an issue to a Ticket or Epic by hand, or apply the link your agent proposes after it finds or creates the issue with its own Jira connector.
+- **Plan:** plan a Ticket in a conversation; the agent writes the brief, Progress, and requirements.
+- **Split:** start a Thread for each PR, each in its repository's worktree.
+- **Follow:** see every PR, what needs you, and recap previews on the Ticket.
 
-![Workbench Board with repository context, attention filters, and Tickets across workflow statuses.](./docs/user/media/workbench/board.png)
+The walkthrough uses a synthetic Orbit Ticket: three planned PRs across Orbit API and Orbit Web, with two PRs linked so far. Its history, PR outcomes, and recaps are illustrative.
 
-Follow a Ticket through [prepared worktrees and a native Thread](./docs/user/agent-workbench.md#start-agent-work), then [review pull requests and attention items](./docs/user/agent-workbench.md#follow-progress-and-review-results). The walkthrough uses screenshots from a fictional demo.
+![Demo Orbit Ticket with its brief, Progress, attention, and Threads for work across Orbit API and Orbit Web.](./docs/user/media/workbench/ticket.png)
+
+Follow a Ticket through [prepared worktrees and a Thread per PR](./docs/user/agent-workbench.md#start-agent-work), then [review pull requests and attention items](./docs/user/agent-workbench.md#follow-progress-and-review-results).
 
 Workbench is available in the web and desktop clients.
 

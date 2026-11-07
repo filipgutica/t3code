@@ -303,9 +303,6 @@ p.provenance {
   margin: 0;
   color: var(--text-muted);
 }
-.layout-split--nested {
-  margin-top: var(--space-6);
-}
 .layout-pair .head {
   grid-column: 1 / -1;
   display: grid;
