@@ -357,10 +357,12 @@ description and in the **References** list marked **In description**; remove
 one by editing the description. Hover a chip or row to see its full URL or path
 and where it opens.
 
-When the floating chat shows a Thread, a file Reference opens in that Thread's
-side panel, an HTML or PDF file opens in its browser panel, and other links
-follow **Settings › Browser**. Without a Thread, files open in a file preview and
-links open in your browser.
+When the floating chat shows a Thread, every file Reference, including HTML and
+PDF, opens in that Thread's file panel. On a Thread page, the breadcrumb's
+**References** menu lists the Ticket's files. Other links follow **Settings › Browser**.
+Without a Thread, files open in a file preview and links open in your browser.
+HTML relative assets outside the Thread's worktree may not load. Replacing an
+open HTML or image file may prevent its preview from reloading.
 
 Issue References show their key or repository and number, such as `PROJ-123` or
 `orbit-web#12`. Board cards show up to two, and Board and sidebar search match

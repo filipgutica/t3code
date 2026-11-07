@@ -91,8 +91,10 @@ describe("workbenchReferenceOpenTarget", () => {
 
   it("opens beside the chat's Thread when one shows", () => {
     expect(workbenchReferenceOpenTarget(file("/work/plan.md"), page)).toBe("file_panel");
-    expect(workbenchReferenceOpenTarget(file("/work/mockup.html"), page)).toBe("browser_panel");
-    expect(workbenchReferenceOpenTarget(file("/work/spec.pdf"), page)).toBe("browser_panel");
+    expect(workbenchReferenceOpenTarget(file("/work/mockup.html"), page)).toBe("file_panel");
+    expect(workbenchReferenceOpenTarget(file("/work/spec.pdf"), page)).toBe("file_panel");
+    expect(workbenchReferenceOpenTarget(file("/work/mockups"), page)).toBe("file_panel");
+    expect(workbenchReferenceOpenTarget(file("/work/screenshot.png"), page)).toBe("file_panel");
     expect(
       workbenchReferenceOpenTarget(file("/work/mockup.html"), { ...page, canOpenInApp: false }),
     ).toBe("file_panel");

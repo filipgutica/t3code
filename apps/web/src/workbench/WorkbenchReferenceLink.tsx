@@ -1,16 +1,11 @@
-import { scopeProjectRef } from "@t3tools/client-runtime/environment";
-import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import type {
-  ScopedThreadRef,
   ThreadId,
   WorkbenchParsedReferenceUrl,
   WorkbenchReferenceKind,
 } from "@t3tools/contracts";
-import { projectScriptCwd } from "@t3tools/shared/projectScripts";
 import { createContext, use, type MouseEvent, type ReactElement, type ReactNode } from "react";
 
 import { canOpenLinksInApp } from "../browser/browserLinkTarget";
-import { openFileInPreview } from "../browser/openFileInPreview";
 import { useOpenLink } from "../browser/useOpenLink";
 import { Badge } from "../components/ui/badge";
 import { PreviewCard, PreviewCardPopup, PreviewCardTrigger } from "../components/ui/preview-card";
@@ -18,12 +13,6 @@ import { toastManager } from "../components/ui/toast";
 import { useClientSettings } from "../hooks/useSettings";
 import { useOpenChangeRequestLink } from "../lib/openPullRequestLink";
 import { useRightPanelStore } from "../rightPanelStore";
-import { assetEnvironment } from "../state/assets";
-import { useProject, useQuietThreadShell } from "../state/entities";
-import { previewEnvironment } from "../state/preview";
-import { readPreparedConnection } from "../state/session";
-import { useAtomCommand } from "../state/use-atom-command";
-import { useAtomQueryRunner } from "../state/use-atom-query-runner";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { useOpenWorkbenchPullRequest } from "./WorkbenchPullRequestPreview";
 import { WorkbenchReferenceKindIcon } from "./WorkbenchReferenceKindIcon";
@@ -63,23 +52,8 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
     openWorkbenchPullRequest,
   );
   const openLink = useOpenLink(shownThread);
-  const shownThreadShell = useQuietThreadShell(shownThread ?? null);
-  const shownProject = useProject(
-    shownThreadShell
-      ? scopeProjectRef(shownThreadShell.environmentId, shownThreadShell.projectId)
-      : null,
-  );
-  // Like the Thread's own file links, so a workspace HTML page loads its relative assets.
-  const workspaceRoot = shownProject
-    ? projectScriptCwd({
-        project: { cwd: shownProject.workspaceRoot },
-        worktreePath: shownThreadShell?.worktreePath ?? null,
-      })
-    : undefined;
   const linksOpenInApp = useClientSettings((settings) => settings.browserLinkTarget) === "app";
   const openFileSheet = use(WorkbenchReferenceFileSheetContext);
-  const createAssetUrl = useAtomQueryRunner(assetEnvironment.createUrl, { reportFailure: false });
-  const openPreview = useAtomCommand(previewEnvironment.open, { reportFailure: false });
   const targetOf = (reference: WorkbenchParsedReferenceUrl) =>
     workbenchReferenceOpenTarget(reference, {
       hasThread: shownThread !== undefined,
@@ -87,42 +61,6 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
       linksOpenInApp,
       hasFileSheet: openFileSheet !== null,
     });
-  const openInSidePanel = (thread: ScopedThreadRef, path: string) =>
-    useRightPanelStore.getState().openFile(thread, path);
-  const openInBrowserPanel = (
-    thread: ScopedThreadRef,
-    event: MouseEvent<HTMLElement>,
-    reference: WorkbenchParsedReferenceUrl,
-  ) => {
-    if (reference.kind !== "file") {
-      void openLink(reference.url, { event }).catch((error: unknown) =>
-        toastManager.add({
-          type: "error",
-          title: "Unable to open link",
-          description: error instanceof Error ? error.message : "An error occurred.",
-        }),
-      );
-      return;
-    }
-    const connection = readPreparedConnection(thread.environmentId);
-    if (connection === null) {
-      openInSidePanel(thread, reference.url);
-      return;
-    }
-    // The file panel previews HTML and PDF too, so it stands in when the browser can't open one.
-    void openFileInPreview({
-      threadRef: thread,
-      filePath: reference.url,
-      workspaceRoot,
-      httpBaseUrl: connection.httpBaseUrl,
-      createAssetUrl,
-      openPreview,
-    }).then((result) => {
-      if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
-        openInSidePanel(thread, reference.url);
-      }
-    });
-  };
   return {
     targetOf,
     open: (event, reference, addedByThreadId = null) => {
@@ -138,8 +76,16 @@ export function useWorkbenchReferenceOpener(): WorkbenchReferenceOpener {
       if (target === "file_sheet")
         openFileSheet?.({ parsed: reference, threadId: addedByThreadId });
       else if (shownThread === undefined || target === "none") return;
-      else if (target === "file_panel") openInSidePanel(shownThread, reference.url);
-      else openInBrowserPanel(shownThread, event, reference);
+      else if (target === "file_panel")
+        useRightPanelStore.getState().openFile(shownThread, reference.url);
+      else
+        void openLink(reference.url, { event }).catch((error: unknown) =>
+          toastManager.add({
+            type: "error",
+            title: "Unable to open link",
+            description: error instanceof Error ? error.message : "An error occurred.",
+          }),
+        );
     },
   };
 }
