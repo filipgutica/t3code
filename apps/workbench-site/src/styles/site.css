@@ -137,10 +137,10 @@ p {
   a:hover {
     text-decoration: underline;
   }
-}
-:focus-visible {
-  outline: 2px solid var(--color-focus);
-  outline-offset: var(--space-1);
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: var(--space-1);
+  }
 }
 .frame {
   width: var(--frame);
