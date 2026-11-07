@@ -383,6 +383,26 @@ describe("linked Thread failure recovery", () => {
     expect(commands.createThread).not.toHaveBeenCalled();
   });
 
+  it.each([
+    { kind: "ticket" as const, ticketId: ticket.id },
+    { kind: "board" as const, projectId: workspace.id },
+  ])("shows the linked fork in the mounted $kind chat", async (owner) => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({
+      pageChat: { environmentId, ...owner, showThread },
+    });
+    const { router } = await mount();
+    const fork = ThreadId.make("linked-thread-fork");
+    commands.linkThread.mockResolvedValueOnce(
+      AsyncResult.success({ ...assignment, threadId: fork }),
+    );
+    await act(async () => actions.setAttachThreadTicket(ticket));
+    await act(async () => actions.attachExistingThread(assignment.threadId));
+    expect(showThread).toHaveBeenCalledExactlyOnceWith(fork);
+    expect(router.state.location.pathname).toBe("/workbench");
+    expect(actions.attachThreadTicket).toBeNull();
+  });
+
   it("reports an unlink failure and releases pending state so another action remains usable", async () => {
     await mount({
       snapshot: { ...snapshot, assignments: [assignment] },

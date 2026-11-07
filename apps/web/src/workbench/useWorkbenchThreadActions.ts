@@ -313,7 +313,16 @@ export function useWorkbenchThreadActions({
       setError(cause instanceof Error ? cause.message : "The linked Thread could not be opened.");
       return;
     }
-    await openAssignedThread(linkedThreadId);
+    if (
+      !showWorkbenchPageChatThread({
+        environmentId,
+        ticketId: attachThreadTicket.id,
+        projectId: attachThreadTicket.projectId,
+        threadId: linkedThreadId,
+      })
+    ) {
+      await openAssignedThread(linkedThreadId);
+    }
   };
 
   /** The latest Ticket, or null when its repositories changed and the user must review them. */

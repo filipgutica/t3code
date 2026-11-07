@@ -86,14 +86,14 @@ const setup = (dirty: boolean) => {
   return { onAttach };
 };
 
-const renderDialog = (onAttach: () => Promise<void>) =>
+const renderDialog = (onAttach: () => Promise<void>, candidates = threads) =>
   render(
     <WorkbenchAttachThreadDialog
       environmentId={environmentId}
       ticket={ticket}
       workspace={workspace}
       projects={projects}
-      threads={threads}
+      threads={candidates}
       pending={false}
       error={null}
       onClose={() => {}}
@@ -104,7 +104,7 @@ const renderDialog = (onAttach: () => Promise<void>) =>
 it("links a Thread in a Ticket worktree as it is", async () => {
   const { onAttach } = setup(false);
   await using _screen = await renderDialog(onAttach);
-  await userEvent.click(page.getByRole("button", { name: "Already here" }));
+  await userEvent.click(page.getByRole("button", { name: `Already here, api repo, ${branch}` }));
   await expect.element(page.getByText(/Links a fork/)).not.toBeInTheDocument();
   await userEvent.click(page.getByRole("button", { name: "Link Thread" }));
   expect(onAttach).toHaveBeenCalledWith(ThreadId.make("in-ticket"), undefined);
@@ -113,7 +113,9 @@ it("links a Thread in a Ticket worktree as it is", async () => {
 it("explains the fork and names the source branch when it has uncommitted changes", async () => {
   const { onAttach } = setup(true);
   await using _screen = await renderDialog(onAttach);
-  await userEvent.click(page.getByRole("button", { name: "Drafted elsewhere" }));
+  await userEvent.click(
+    page.getByRole("button", { name: "Drafted elsewhere, api repo, feature/draft" }),
+  );
   await expect
     .element(
       page.getByText("Links a fork that works in the api repo Ticket worktree.", { exact: false }),
@@ -132,7 +134,7 @@ it("explains the fork and names the source branch when it has uncommitted change
 it("forks a Thread from an unlinked repository into the Ticket repository the user picks", async () => {
   const { onAttach } = setup(false);
   await using _screen = await renderDialog(onAttach);
-  await userEvent.click(page.getByRole("button", { name: "Other repository" }));
+  await userEvent.click(page.getByRole("button", { name: "Other repository, elsewhere repo" }));
   await expect.element(page.getByText(/don’t move to the fork/)).toBeVisible();
   expect(mocks.status).toHaveBeenLastCalledWith({
     environmentId,
@@ -147,4 +149,25 @@ it("forks a Thread from an unlinked repository into the Ticket repository the us
     .toBeVisible();
   await userEvent.click(page.getByRole("button", { name: "Link Thread" }));
   expect(onAttach).toHaveBeenCalledWith(ThreadId.make("foreign"), web);
+});
+
+it("distinguishes duplicate titles and keeps the selected source clear after filtering", async () => {
+  const { onAttach } = setup(false);
+  await using _screen = await renderDialog(onAttach, [
+    { ...threads[0]!, title: "Same title" },
+    { ...threads[1]!, title: "Same title", projectId: web },
+  ]);
+  const source = page.getByRole("button", { name: `Same title, api repo, ${branch}` });
+  await userEvent.click(source);
+  await expect.element(source).toHaveAttribute("aria-pressed", "true");
+  await expect
+    .element(page.getByRole("button", { name: "Same title, web repo, feature/draft" }))
+    .toHaveAttribute("aria-pressed", "false");
+  await userEvent.fill(page.getByRole("textbox", { name: "Find a Thread" }), "no match");
+  await expect.element(source).not.toBeInTheDocument();
+  await expect.element(page.getByText("Selected Thread", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Same title", { exact: true })).toBeVisible();
+  await expect.element(page.getByText(`api repo · ${branch}`, { exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole("button", { name: "Link Thread" }));
+  expect(onAttach).toHaveBeenCalledWith(ThreadId.make("in-ticket"), undefined);
 });

@@ -9,7 +9,7 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
-import { LinkIcon } from "lucide-react";
+import { CheckIcon, LinkIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "../components/ui/button";
@@ -96,14 +96,13 @@ function WorkbenchForkSourceChanges({
   );
 }
 
-function WorkbenchForkDetails({
+function WorkbenchLinkDetails({
   environmentId,
   thread,
   ticket,
   workspace,
   projects,
-  repositoryProjectId,
-  picked,
+  target,
   pending,
   onPickRepository,
 }: {
@@ -112,11 +111,11 @@ function WorkbenchForkDetails({
   readonly ticket: LinkTicket;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly projects: ReadonlyArray<RepositoryProject>;
-  readonly repositoryProjectId: ProjectId | null;
-  readonly picked: boolean;
+  readonly target: ReturnType<typeof getWorkbenchLinkTarget>;
   readonly pending: boolean;
   readonly onPickRepository: (id: ProjectId) => void;
 }) {
+  const { repositoryProjectId, picked } = target;
   const ticketRepositories = projects.filter((project) =>
     ticket.repositoryProjectIds.includes(project.id),
   );
@@ -124,40 +123,48 @@ function WorkbenchForkDetails({
     thread.worktreePath ??
     projects.find((project) => project.id === thread.projectId)?.workspaceRoot;
   return (
-    <div className="space-y-2 text-xs text-muted-foreground">
-      {picked ? (
-        <WorkbenchThreadRepositoryPicker
-          ticketRepositoryIds={ticket.repositoryProjectIds}
-          projects={ticketRepositories}
-          workspace={workspace}
-          value={repositoryProjectId}
-          disabled={pending}
-          onChange={onPickRepository}
-        />
+    <>
+      <WorkbenchLinkSource thread={thread} projects={projects} direct={target.kind === "direct"} />
+      {target.kind === "fork" ? (
+        <div className="space-y-2 text-xs text-muted-foreground">
+          {picked ? (
+            <WorkbenchThreadRepositoryPicker
+              ticketRepositoryIds={ticket.repositoryProjectIds}
+              projects={ticketRepositories}
+              workspace={workspace}
+              value={repositoryProjectId}
+              disabled={pending}
+              onChange={onPickRepository}
+            />
+          ) : null}
+          <p>
+            Links a fork that works in the{" "}
+            {getWorkbenchRepositoryTitle(ticketRepositories, repositoryProjectId)} Ticket worktree.
+            The original Thread stays where it is.
+          </p>
+          <p>A fork needs a completed turn with a checkpoint.</p>
+          {sourceCwd ? (
+            <WorkbenchForkSourceChanges
+              environmentId={environmentId}
+              cwd={sourceCwd}
+              branch={thread.branch}
+            />
+          ) : null}
+        </div>
       ) : null}
-      <p>
-        Links a fork that works in the{" "}
-        {getWorkbenchRepositoryTitle(ticketRepositories, repositoryProjectId)} Ticket worktree. The
-        original Thread stays where it is.
-      </p>
-      {sourceCwd ? (
-        <WorkbenchForkSourceChanges
-          environmentId={environmentId}
-          cwd={sourceCwd}
-          branch={thread.branch}
-        />
-      ) : null}
-    </div>
+    </>
   );
 }
 
 function WorkbenchLinkThreadList({
   threads,
+  projects,
   selectedId,
   pending,
   onSelect,
 }: {
   readonly threads: ReadonlyArray<LinkableThread>;
+  readonly projects: ReadonlyArray<RepositoryProject>;
   readonly selectedId: ThreadId | null;
   readonly pending: boolean;
   readonly onSelect: (id: ThreadId) => void;
@@ -175,17 +182,25 @@ function WorkbenchLinkThreadList({
         onChange={(event) => setSearch(event.currentTarget.value)}
       />
       <div className="max-h-72 space-y-1 overflow-x-hidden overflow-y-auto">
-        {matching.map((thread) => (
-          <Button
-            key={thread.id}
-            className="w-full min-w-0 justify-start"
-            variant={selectedId === thread.id ? "secondary" : "ghost"}
-            disabled={pending}
-            onClick={() => onSelect(thread.id)}
-          >
-            <span className="truncate">{thread.title}</span>
-          </Button>
-        ))}
+        {matching.map((thread) => {
+          const repository = getWorkbenchRepositoryTitle(projects, thread.projectId);
+          const selected = selectedId === thread.id;
+          return (
+            <Button
+              key={thread.id}
+              className="w-full min-w-0 justify-start"
+              aria-label={[thread.title, repository, thread.branch].filter(Boolean).join(", ")}
+              aria-pressed={selected}
+              variant={selected ? "secondary" : "ghost"}
+              disabled={pending}
+              onClick={() => onSelect(thread.id)}
+            >
+              <span className="min-w-0 flex-1 truncate text-left">{thread.title}</span>
+              <span className="max-w-32 truncate text-xs text-muted-foreground">{repository}</span>
+              {selected ? <CheckIcon aria-hidden="true" /> : null}
+            </Button>
+          );
+        })}
         {matching.length === 0 ? (
           <p className="py-3 text-sm text-muted-foreground">
             {threads.length === 0
@@ -195,6 +210,29 @@ function WorkbenchLinkThreadList({
         ) : null}
       </div>
     </>
+  );
+}
+
+function WorkbenchLinkSource({
+  thread,
+  projects,
+  direct,
+}: {
+  readonly thread: LinkableThread;
+  readonly projects: ReadonlyArray<RepositoryProject>;
+  readonly direct: boolean;
+}) {
+  return (
+    <div className="min-w-0 space-y-1 text-xs">
+      <p className="text-muted-foreground">Selected Thread</p>
+      <p className="break-words">{thread.title}</p>
+      <p className="break-words text-muted-foreground">
+        {[getWorkbenchRepositoryTitle(projects, thread.projectId), thread.branch]
+          .filter(Boolean)
+          .join(" · ")}
+      </p>
+      {direct ? <p>Links this Thread as it is.</p> : null}
+    </div>
   );
 }
 
@@ -229,6 +267,11 @@ export function WorkbenchAttachThreadDialog({
     : null;
   const repositoryProjectId = target?.repositoryProjectId ?? null;
   const canLink = !disabled && !pending && selected !== undefined && repositoryProjectId !== null;
+  const attachSelectedThread = () => {
+    if (!canLink) return;
+    // Only a picked repository is sent; otherwise the server uses the Thread's own.
+    void onAttach(selected.id, target?.picked ? repositoryProjectId : undefined);
+  };
   return (
     <Dialog
       open
@@ -240,29 +283,27 @@ export function WorkbenchAttachThreadDialog({
         <DialogHeader>
           <DialogTitle>Link existing Thread</DialogTitle>
           <DialogDescription>
-            Choose a non-archived Thread in this environment that isn’t on a Ticket. A Thread in one
-            of this Ticket’s worktrees is linked as it is. Any other Thread is forked into the
-            Ticket’s worktree, and the original stays where it is. A fork needs a completed turn
-            with a checkpoint. No prompt is sent.
+            Choose an unassigned Thread. Threads outside this Ticket’s worktrees are forked; the
+            original stays where it is. No prompt is sent.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="min-w-0">
           <div className="space-y-3">
             <WorkbenchLinkThreadList
               threads={threads}
+              projects={projects}
               selectedId={selectedId}
               pending={pending}
               onSelect={setSelectedId}
             />
-            {selected && target?.kind === "fork" ? (
-              <WorkbenchForkDetails
+            {selected && target ? (
+              <WorkbenchLinkDetails
                 environmentId={environmentId}
                 thread={selected}
                 ticket={ticket}
                 workspace={workspace}
                 projects={projects}
-                repositoryProjectId={target.repositoryProjectId}
-                picked={target.picked}
+                target={target}
                 pending={pending}
                 onPickRepository={setPickedRepositoryId}
               />
@@ -275,19 +316,14 @@ export function WorkbenchAttachThreadDialog({
           </div>
         </DialogPanel>
         <DialogFooter>
+          <p role="status" className="sr-only">
+            {pending ? "Linking Thread…" : null}
+          </p>
           <Button variant="outline" disabled={pending} onClick={onClose}>
             Cancel
           </Button>
-          <Button
-            className="[&_svg]:mx-0"
-            disabled={!canLink}
-            onClick={() => {
-              if (!canLink) return;
-              // Only a picked repository is sent; otherwise the server uses the Thread's own.
-              void onAttach(selected.id, target?.picked ? repositoryProjectId : undefined);
-            }}
-          >
-            <LinkIcon /> Link Thread
+          <Button className="[&_svg]:mx-0" disabled={!canLink} onClick={attachSelectedThread}>
+            <LinkIcon /> {pending ? "Linking…" : "Link Thread"}
           </Button>
         </DialogFooter>
       </DialogPopup>
