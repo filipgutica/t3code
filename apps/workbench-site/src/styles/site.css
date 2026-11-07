@@ -361,32 +361,9 @@ p.provenance {
   flex-wrap: wrap;
   gap: var(--space-6);
 }
-.button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
+.download-action {
+  min-height: var(--control-lg);
   padding-inline: var(--space-5);
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
-  background: var(--color-button-bg);
-  color: var(--color-button-text);
-  box-shadow: var(--shadow-raise);
-  font-size: var(--text-sm);
-  font-weight: var(--weight-medium);
-  white-space: nowrap;
-  transition:
-    background var(--duration-fast) var(--ease-out),
-    box-shadow var(--duration-fast) var(--ease-out);
-}
-.button:hover {
-  background: var(--color-button-hover);
-  color: var(--color-button-text);
-  text-decoration: none;
-}
-.button:active {
-  background: var(--color-button-hover);
-  box-shadow: var(--shadow-sink);
 }
 .text-link {
   display: inline-flex;
@@ -435,19 +412,6 @@ p.provenance {
 .site-footer .brand span {
   color: var(--text-muted);
   font-weight: var(--weight-regular);
-}
-.skip-link {
-  position: absolute;
-  top: -100%;
-  left: var(--space-4);
-  z-index: 40;
-  padding: var(--space-3);
-  border-radius: var(--radius-md);
-  background: var(--accent);
-  color: var(--accent-text);
-}
-.skip-link:focus {
-  top: var(--space-3);
 }
 .image-lightbox {
   width: calc(var(--lightbox-image-width, 32rem) + var(--space-8) + 2px);
