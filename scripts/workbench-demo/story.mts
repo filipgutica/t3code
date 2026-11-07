@@ -37,7 +37,9 @@ export const seedStoryOutcomes = (input: string) => {
         VALUES (?, ?, ?, ?) ON CONFLICT(thread_id) DO UPDATE
         SET run_id = excluded.run_id, text = excluded.text, updated_at = excluded.updated_at`).run(
         threadId,
-        `synthetic-story-recap-${threadId}`,
+        threadId === "orbit-017-web"
+          ? "synthetic-story-web-reply"
+          : `synthetic-story-recap-${threadId}`,
         text,
         timestamp,
       );

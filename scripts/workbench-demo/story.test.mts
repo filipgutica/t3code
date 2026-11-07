@@ -100,8 +100,12 @@ it.effect(
                     "SELECT COUNT(*) AS count FROM orchestration_v2_projection_runs WHERE run_id = ?",
                   )
                   .get(String(recap.run_id))?.count,
-                0,
+                recap.thread_id === "orbit-017-web" ? 1 : 0,
               );
+            assert.equal(
+              recaps.find((recap) => recap.thread_id === "orbit-017-web")?.run_id,
+              "synthetic-story-web-reply",
+            );
             const summary = db
               .prepare(
                 "SELECT generated_summary_status AS status, generated_summary AS text FROM workbench_tickets WHERE ticket_id = 'orbit-017'",
