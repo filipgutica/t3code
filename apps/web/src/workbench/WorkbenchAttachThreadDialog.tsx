@@ -296,7 +296,7 @@ export function WorkbenchAttachThreadDialog({
               pending={pending}
               onSelect={setSelectedId}
             />
-            {selected && target ? (
+            {selected && target && (
               <WorkbenchLinkDetails
                 environmentId={environmentId}
                 thread={selected}
@@ -307,7 +307,7 @@ export function WorkbenchAttachThreadDialog({
                 pending={pending}
                 onPickRepository={setPickedRepositoryId}
               />
-            ) : null}
+            )}
             {error ? (
               <p role="alert" className="text-sm text-destructive">
                 {error}
