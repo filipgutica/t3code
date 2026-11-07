@@ -48,7 +48,7 @@ onMounted(() => {
 </script>
 <template>
   <div :data-enhanced="enhanced">
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="fg-site-skip" href="#main">Skip to content</a>
     <UiSiteHeader
       project="workbench"
       :links="[
@@ -68,7 +68,13 @@ onMounted(() => {
             worktrees, and pull requests together as you work.
           </p>
           <div class="actions">
-            <a class="button" :href="downloads">Download Workbench</a>
+            <a
+              class="fg-button download-action"
+              data-variant="primary"
+              data-size="sm"
+              :href="downloads"
+              >Download Workbench</a
+            >
             <a class="text-link" :href="guide">Read the guide</a>
           </div>
           <p class="provenance">
@@ -246,7 +252,13 @@ onMounted(() => {
           <h2 id="install-heading">Install Workbench alongside T3 Code</h2>
           <p class="lead">T3 Code Workbench keeps its saved data separate from official T3 Code.</p>
           <div class="actions">
-            <a class="button" :href="downloads">Download Workbench</a>
+            <a
+              class="fg-button download-action"
+              data-variant="primary"
+              data-size="sm"
+              :href="downloads"
+              >Download Workbench</a
+            >
             <a class="text-link" :href="guide">Read the guide</a>
           </div>
           <p class="note">
