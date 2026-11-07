@@ -843,11 +843,16 @@ function WorkbenchPageThreadDialogs(
           }}
         />
       ) : null}
-      {attachThreadTicket ? (
+      {attachThreadTicket && environmentId ? (
         <WorkbenchAttachThreadDialog
+          environmentId={environmentId}
+          ticket={attachThreadTicket}
+          workspace={snapshot?.ticketWorkspaces.find(
+            (workspace) => workspace.ticketId === attachThreadTicket.id,
+          )}
+          projects={pageData.projects}
           threads={[...threadsById.values()].filter(
             (thread) =>
-              attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
               !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,

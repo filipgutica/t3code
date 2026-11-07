@@ -527,6 +527,17 @@ export const WorkbenchCreateAssignmentInput = Schema.Struct({
 });
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
 
+/** Links a Thread directly when it runs in a Ticket worktree, otherwise links a fork bound to one. */
+export const WorkbenchLinkThreadInput = Schema.Struct({
+  id: WorkbenchAssignmentId,
+  ticketId: WorkbenchTicketId,
+  threadId: ThreadId,
+  /** Where the fork works when the Ticket does not link the Thread's repository. */
+  repositoryProjectId: Schema.optionalKey(ProjectId),
+  createdAt: IsoDateTime,
+});
+export type WorkbenchLinkThreadInput = typeof WorkbenchLinkThreadInput.Type;
+
 export const WorkbenchUnlinkAssignmentInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,

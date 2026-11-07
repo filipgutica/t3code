@@ -266,6 +266,13 @@ export const workbenchEnvironment = {
     concurrency: serialPerEnvironment,
     onSuccess: refreshSnapshot,
   }),
+  linkThread: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:link-thread",
+    tag: WS_METHODS.workbenchLinkThread,
+    scheduler,
+    concurrency: serialPerEnvironment,
+    onSuccess: refreshSnapshot,
+  }),
   unlinkAssignment: createEnvironmentRpcCommand(connectionAtomRuntime, {
     label: "environment-data:workbench:unlink-assignment",
     tag: WS_METHODS.workbenchUnlinkAssignment,
