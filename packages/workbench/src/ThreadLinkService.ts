@@ -109,7 +109,20 @@ const make = Effect.gen(function* () {
         const forkId = yield* host.forkThread(input.threadId);
         return yield* host.rebindThread({ threadId: forkId, from, to }).pipe(
           Effect.andThen(store.createAssignment({ ...input, threadId: forkId })),
-          Effect.onError(() => host.deleteThread(forkId).pipe(Effect.ignore)),
+          Effect.catchCause((linkCause) =>
+            host.deleteThread(forkId).pipe(
+              Effect.matchEffect({
+                onFailure: () =>
+                  Effect.fail(
+                    new WorkbenchOperationError({
+                      code: "persistence_failed",
+                      message: `The Thread could not be linked and its fork ${forkId} could not be deleted. Delete the unlinked fork before retrying.`,
+                    }),
+                  ),
+                onSuccess: () => Effect.failCause(linkCause),
+              }),
+            ),
+          ),
         );
       }),
     );

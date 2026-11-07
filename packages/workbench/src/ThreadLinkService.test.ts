@@ -283,24 +283,62 @@ describe("ThreadLinkService", () => {
     }).pipe(Effect.provide(makeTestLayer(native, host)));
   });
 
-  it.effect("deletes the fork when its Assignment cannot be created", () => {
+  it.effect("reports the unlinked fork when cleanup also fails", () => {
     const native = makeNative();
-    // The fork reuses an id that another Ticket already links, so the Assignment write fails.
     const host = makeHost(native, {
-      forkThread: (sourceThreadId) =>
-        Effect.sync(() => {
-          native.threads.set(assignedElsewhere, { ...native.threads.get(sourceThreadId)! });
-          native.events.push(`fork ${sourceThreadId}`);
-          return assignedElsewhere;
-        }),
+      rebindThread: () =>
+        Effect.fail(
+          new WorkbenchOperationError({
+            code: "persistence_failed",
+            message: "The fork could not be moved.",
+          }),
+        ),
+      deleteThread: () =>
+        Effect.fail(
+          new WorkbenchOperationError({
+            code: "persistence_failed",
+            message: "The fork could not be deleted.",
+          }),
+        ),
     });
     return Effect.gen(function* () {
       yield* seed;
-      expect(yield* Effect.flip(link(otherWorktree))).toMatchObject({
-        code: "assignment_already_exists",
-      });
-      expect(native.events.at(-1)).toBe(`delete ${assignedElsewhere}`);
+      const failure = yield* Effect.flip(link(otherWorktree));
+      const fork = ThreadId.make(`${otherWorktree}-fork`);
+      expect(failure.message).toContain(fork);
+      expect(failure.message).toContain("could not be deleted");
+      expect(native.threads.has(fork)).toBe(true);
+      expect(yield* ownerOf(fork)).toEqual(Option.none());
       expect(yield* ownerOf(otherWorktree)).toEqual(Option.none());
     }).pipe(Effect.provide(makeTestLayer(native, host)));
+  });
+
+  it.effect("deletes the fork when its Assignment cannot be created", () => {
+    const native = makeNative();
+    return Effect.gen(function* () {
+      yield* seed;
+      const links = yield* ThreadLinkService;
+      const failure = yield* Effect.flip(
+        links.linkThread({
+          id: WorkbenchAssignmentId.make("link-other-assignment"),
+          ticketId,
+          threadId: otherWorktree,
+          createdAt,
+        }),
+      );
+      expect(failure).toMatchObject({ code: "persistence_failed" });
+      const fork = ThreadId.make(`${otherWorktree}-fork`);
+      expect(native.events.at(-1)).toBe(`delete ${fork}`);
+      expect(native.threads.has(fork)).toBe(false);
+      expect(yield* ownerOf(fork)).toEqual(Option.none());
+      expect(yield* ownerOf(otherWorktree)).toEqual(Option.none());
+      expect(native.threads.has(assignedElsewhere)).toBe(true);
+      expect(yield* ownerOf(assignedElsewhere)).toEqual(
+        Option.some({
+          kind: "ticket",
+          ticketId: WorkbenchTicketId.make("link-other-ticket"),
+        }),
+      );
+    }).pipe(Effect.provide(makeTestLayer(native, makeHost(native))));
   });
 });

@@ -242,7 +242,8 @@ export function WorkbenchAttachThreadDialog({
           <DialogDescription>
             Choose a non-archived Thread in this environment that isn’t on a Ticket. A Thread in one
             of this Ticket’s worktrees is linked as it is. Any other Thread is forked into the
-            Ticket’s worktree, and the original stays where it is. No prompt is sent.
+            Ticket’s worktree, and the original stays where it is. A fork needs a completed turn
+            with a checkpoint. No prompt is sent.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="min-w-0">

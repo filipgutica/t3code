@@ -35,7 +35,9 @@ export const hostLayer = Layer.effect(
           })
           .pipe(
             Effect.mapError(
-              failure("The Thread could not be forked. Only a Thread with a finished turn can be."),
+              failure(
+                "The Thread could not be forked. A fork needs a completed turn with a checkpoint.",
+              ),
             ),
           );
         return targetThreadId;
