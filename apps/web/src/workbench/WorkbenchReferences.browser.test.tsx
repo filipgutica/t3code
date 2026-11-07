@@ -12,6 +12,8 @@ import { render } from "../../test/render";
 import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanelStore";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { WorkbenchDraftReferences } from "./WorkbenchReferences";
+import { WorkbenchThreadReferencesMenu } from "./WorkbenchThreadReferencesMenu";
+import { workbenchDescriptionLinks } from "./workbenchReferences.logic";
 
 const mocks = vi.hoisted(() => ({
   add: vi.fn(),
@@ -125,16 +127,80 @@ it("shows who added a Reference and its full path on hover", async () => {
   await expect.element(page.getByText(references[0]!.url)).toBeVisible();
 });
 
-it("opens a file Reference in the side panel of the Thread the floating chat shows", async () => {
+it.each(["outline.md", "mockup.html", "spec.pdf", "image.png", "mockups"])(
+  "opens %s in the side panel of the Thread the floating chat shows",
+  async (name) => {
+    setup();
+    const shownThread = {
+      environmentId: EnvironmentId.make("remote-environment"),
+      threadId: planner,
+    };
+    const reference = { ...references[0]!, url: `/work/artifacts/${name}` };
+    useWorkbenchFloatingChatStore.setState({ shownThread });
+    await using screen = await renderDraftReferences([reference]);
+    await userEvent.click(screen.getByRole("button", { name, exact: true }));
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
+    ).toMatchObject({ kind: "file", relativePath: reference.url });
+    expect(
+      selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, {
+        environmentId,
+        threadId: planner,
+      }),
+    ).toBeNull();
+    expect(mocks.readFile).not.toHaveBeenCalled();
+  },
+);
+
+it("lists saved and description files once and opens the chosen path in the breadcrumb's Thread", async () => {
   setup();
-  const shownThread = { environmentId, threadId: planner };
-  useWorkbenchFloatingChatStore.setState({ shownThread });
-  await using screen = await renderDraftReferences();
-  await userEvent.click(screen.getByRole("button", { name: "outline.md" }));
+  const remoteEnvironmentId = EnvironmentId.make("remote-environment");
+  const first = { ...references[0]!, url: "/work/first/plan.md", title: "Saved plan" };
+  const secondPath = "/work/second/plan.md";
+  const descriptionLinks = workbenchDescriptionLinks(
+    `[Duplicate](${first.url}) [Other plan](${secondPath}) [Mockup](/work/mockup.html) [Spec](https://example.com/spec) [PR](https://github.com/acme/app/pull/3)`,
+  );
+  await using screen = await render(
+    <WorkbenchThreadReferencesMenu
+      environmentId={remoteEnvironmentId}
+      threadId={planner}
+      references={[first, { ...first, url: "https://github.com/acme/app/pull/4" }]}
+      descriptionLinks={descriptionLinks}
+    />,
+  );
+  await userEvent.click(screen.getByRole("button", { name: "References, 3" }));
+  await expect.element(page.getByRole("menuitem")).toHaveLength(3);
+  await expect.element(page.getByRole("menuitem", { name: "Saved plan" })).toBeVisible();
+  await userEvent.hover(page.getByRole("menuitem", { name: "Other plan" }));
+  await expect.element(page.getByText(secondPath, { exact: true })).toBeVisible();
+  await userEvent.click(page.getByRole("menuitem", { name: "Other plan" }));
   expect(
-    selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, shownThread),
-  ).toMatchObject({ kind: "file", relativePath: references[0]!.url });
-  expect(mocks.readFile).not.toHaveBeenCalled();
+    selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, {
+      environmentId: remoteEnvironmentId,
+      threadId: planner,
+    }),
+  ).toMatchObject({ kind: "file", relativePath: secondPath });
+  expect(
+    selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, {
+      environmentId,
+      threadId: planner,
+    }),
+  ).toBeNull();
+});
+
+it("omits the Thread References menu when only links are present", async () => {
+  setup();
+  await using screen = await render(
+    <WorkbenchThreadReferencesMenu
+      environmentId={environmentId}
+      threadId={planner}
+      references={[]}
+      descriptionLinks={workbenchDescriptionLinks("[Spec](https://example.com/spec)")}
+    />,
+  );
+  await expect
+    .element(screen.getByRole("button", { name: /^References,/ }))
+    .not.toBeInTheDocument();
 });
 
 it("reads a file Reference through the environment and reports a missing file", async () => {

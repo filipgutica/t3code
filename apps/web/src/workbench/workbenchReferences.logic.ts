@@ -11,8 +11,6 @@ import remarkGfm from "remark-gfm";
 import remarkParse from "remark-parse";
 import { unified } from "unified";
 
-import { isBrowserPreviewFile } from "../browser/openFileInPreview";
-
 export type WorkbenchReferencesByTicket = ReadonlyMap<
   WorkbenchTicketId,
   ReadonlyArray<WorkbenchReference>
@@ -151,9 +149,7 @@ export function workbenchReferenceOpenTarget(
   }
   if (reference.kind === "file") {
     if (!page.hasThread) return page.hasFileSheet ? "file_sheet" : "none";
-    return page.canOpenInApp && isBrowserPreviewFile(reference.url)
-      ? "browser_panel"
-      : "file_panel";
+    return "file_panel";
   }
   return page.hasThread && page.canOpenInApp && page.linksOpenInApp
     ? "browser_panel"
