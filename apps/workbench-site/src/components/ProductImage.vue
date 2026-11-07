@@ -38,6 +38,7 @@ const open = (event: MouseEvent) => {
         :sizes="image.sizes"
         :width="image.width"
         :height="image.height"
+        :style="{ aspectRatio: `${image.width} / ${image.height}` }"
         :loading="image.eager ? 'eager' : 'lazy'"
         :fetchpriority="image.eager ? 'high' : 'auto'"
         decoding="async"

@@ -93,8 +93,8 @@ to see the diff, then **Accept** it or **Undo** it. To request another revision,
 use **Ask for change** for the whole brief or a selected passage.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-chat-light.png">
-  <img src="./media/workbench/board-chat.png" alt="Agent edit to the Ticket brief with the change, Undo, and Accept available for review.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/agent-edit-light.png">
+  <img src="./media/workbench/agent-edit.png" alt="Agent edit to the Ticket brief with the change, Undo, and Accept available for review.">
 </picture>
 
 ## References
@@ -120,8 +120,8 @@ your browser. HTML relative assets outside the Thread's worktree may not load;
 replacing an open HTML or image file may prevent its preview from reloading.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-light.png">
-  <img src="./media/workbench/thread.png" alt="Expired-invitation HTML mockup open beside its Thread's conversation on the Ticket.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/reference-light.png">
+  <img src="./media/workbench/reference.png" alt="Expired-invitation HTML mockup open beside its Thread's conversation on the Ticket.">
 </picture>
 
 A file path belongs to the machine running the environment, including when you
@@ -159,8 +159,8 @@ chosen repository's worktree. To prepare worktrees without opening a Thread,
 choose **Prepare work area** in **Work area**.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/workspace-light.png">
-  <img src="./media/workbench/workspace.png" alt="Shared context listing the Ticket's Threads with recaps and two prepared repository worktrees.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-context-light.png">
+  <img src="./media/workbench/thread-context.png" alt="Shared context listing the Ticket's Threads with recaps and two prepared repository worktrees.">
 </picture>
 
 Threads in the same worktree share its branch, files, and uncommitted changes.
@@ -174,8 +174,8 @@ the Ticket to open its terminal where that Thread works. The side panel button
 opens that Thread's panel too. These controls also work on the Board.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">
-  <img src="./media/workbench/notifications.png" alt="Pending invitations Thread's terminal showing git status in its separate Orbit Web checkout.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/terminal-light.png">
+  <img src="./media/workbench/terminal.png" alt="Pending invitations Thread's terminal showing git status in its separate Orbit Web checkout.">
 </picture>
 
 ## Chat with Threads
@@ -191,8 +191,8 @@ shows a one-line preview under each Thread that has one. Recaps also go into
 shared context to help you and the other Threads catch up.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-chat-light.png">
-  <img src="./media/workbench/ticket-chat.png" alt="Ticket Threads menu with status and one-line recap previews, the unread Thread first.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/recaps-light.png">
+  <img src="./media/workbench/recaps.png" alt="Ticket Threads menu with status and one-line recap previews, the unread Thread first.">
 </picture>
 
 Select the message field to expand the chat, or choose **Show chat** in the
@@ -223,8 +223,8 @@ and an unresolved review thread. Open a PR beside the Ticket to read its summary
 checks, and review threads.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-request-light.png">
-  <img src="./media/workbench/pull-request.png" alt="Ticket with merged Orbit API PR 41 and open Orbit Web PR 88, attention, and PR 88's summary panel.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-requests-light.png">
+  <img src="./media/workbench/pull-requests.png" alt="Ticket with merged Orbit API PR 41 and open Orbit Web PR 88, attention, and PR 88's summary panel.">
 </picture>
 
 To attach a delivery PR, choose **Link PR**, select a Thread if prompted, and

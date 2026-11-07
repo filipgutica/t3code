@@ -39,32 +39,19 @@ The demo Ticket's history, PR outcomes, and recaps are synthetic. Its planning
 conversation and prepared Git worktrees are real. The site and guide disclose
 this at the first screenshot.
 
-## Capture replacement pending
+## Capture sources
 
-The source now follows the Orbit story, but the retained PNGs still show the
-previous walkthrough. Their captions and alt text describe the intended captures;
-image/caption agreement is incomplete until both themes are recaptured from the
-native demo. Do not publish this intermediate source on its own. Keep all nine
-slots and use actual captures rather than drawing product frames.
+The nine image pairs follow the approved Orbit story: `ticket`, `planning`,
+`board`, `agent-edit`, `reference`, `thread-context`, `terminal`, `pull-requests`,
+and `recaps`. The site and `docs/user/media/workbench` use the same original PNGs.
+Keep both themes at 2560 × 1800 with matching framing. The `ticket` image is also
+the README hero and social share image.
 
-| Story slot       | Retained PNG basename | Section    |
-| ---------------- | --------------------- | ---------- |
-| `ticket`         | `ticket`              | Overview   |
-| `planning`       | `planning`            | Plan       |
-| `board`          | `board`               | Plan       |
-| `agent-edit`     | `board-chat`          | Ticket     |
-| `reference`      | `thread`              | References |
-| `thread-context` | `workspace`           | Threads    |
-| `terminal`       | `notifications`       | Threads    |
-| `pull-requests`  | `pull-request`        | Review     |
-| `recaps`         | `ticket-chat`         | Recaps     |
-
-Replace these pairs in `src/assets/screenshots` and `docs/user/media/workbench`
-together. When using the story's new basenames, update the imports in
-`src/pages/index.astro` and the guide image paths too. The `ticket` image is also
-the README hero and social share image. The current shared header, Graphite
-Indigo theme, IBM Plex fonts, and T3 accent stay unchanged. Final chrome checks
-and captures follow the separate shared UI dependency update.
+Capture native UI using normal sidebar/chat resizing, section toggles, search,
+and scrolling. Keep seeded outcomes distinct from real planning or agent edits.
+Shared context can use the native stacked layout to make its text readable.
+The current shared header, Graphite Indigo theme, IBM Plex fonts, and T3 accent
+stay unchanged.
 
 The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
 so the page matches the screenshots. Update it when that theme changes.
