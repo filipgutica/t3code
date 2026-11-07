@@ -32,35 +32,48 @@ export function WorkbenchThreadReferencesMenu({
   return (
     <WorkspaceBreadcrumbItem className="shrink-0">
       <Menu>
-        <MenuTrigger
-          render={
-            <Button variant="ghost" size="compact" aria-label={`References, ${files.length}`} />
-          }
-        >
-          <LibraryIcon />
-          {files.length}
-        </MenuTrigger>
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <MenuTrigger
+                render={
+                  <Button
+                    variant="ghost"
+                    size="compact"
+                    aria-label={`References, ${files.length}`}
+                  />
+                }
+              />
+            }
+          >
+            <LibraryIcon />
+            {files.length}
+          </TooltipTrigger>
+          <TooltipPopup>References</TooltipPopup>
+        </Tooltip>
         <MenuPopup align="start">
           {files.map((item) => {
             const { parsed } = item;
             const title = item.source === "saved" ? item.reference.title : item.title;
             return (
-              <MenuItem
-                key={parsed.url}
-                onClick={() =>
-                  useRightPanelStore
-                    .getState()
-                    .openFile(scopeThreadRef(environmentId, threadId), parsed.url)
-                }
-              >
-                <WorkbenchReferenceKindIcon kind={parsed.kind} url={parsed.url} />
-                <Tooltip>
-                  <TooltipTrigger render={<MenuItemLabel />}>
-                    {title ?? parsed.label}
-                  </TooltipTrigger>
-                  <TooltipPopup>{parsed.url}</TooltipPopup>
-                </Tooltip>
-              </MenuItem>
+              <Tooltip key={parsed.url}>
+                <TooltipTrigger
+                  render={
+                    <MenuItem
+                      aria-description={parsed.url}
+                      onClick={() =>
+                        useRightPanelStore
+                          .getState()
+                          .openFile(scopeThreadRef(environmentId, threadId), parsed.url)
+                      }
+                    />
+                  }
+                >
+                  <WorkbenchReferenceKindIcon kind={parsed.kind} url={parsed.url} />
+                  <MenuItemLabel>{title ?? parsed.label}</MenuItemLabel>
+                </TooltipTrigger>
+                <TooltipPopup>{parsed.url}</TooltipPopup>
+              </Tooltip>
             );
           })}
         </MenuPopup>

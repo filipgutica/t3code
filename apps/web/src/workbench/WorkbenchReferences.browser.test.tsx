@@ -158,7 +158,7 @@ it("lists saved and description files once and opens the chosen path in the brea
   const first = { ...references[0]!, url: "/work/first/plan.md", title: "Saved plan" };
   const secondPath = "/work/second/plan.md";
   const descriptionLinks = workbenchDescriptionLinks(
-    `[Duplicate](${first.url}) [Other plan](${secondPath}) [Mockup](/work/mockup.html) [Spec](https://example.com/spec) [PR](https://github.com/acme/app/pull/3)`,
+    `[Duplicate](${first.url}) [Saved plan](${secondPath}) [Mockup](/work/mockup.html) [Spec](https://example.com/spec) [PR](https://github.com/acme/app/pull/3)`,
   );
   await using screen = await render(
     <WorkbenchThreadReferencesMenu
@@ -168,12 +168,22 @@ it("lists saved and description files once and opens the chosen path in the brea
       descriptionLinks={descriptionLinks}
     />,
   );
+  await userEvent.hover(screen.getByRole("button", { name: "References, 3" }));
+  await expect.element(page.getByText("References", { exact: true })).toBeVisible();
   await userEvent.click(screen.getByRole("button", { name: "References, 3" }));
   await expect.element(page.getByRole("menuitem")).toHaveLength(3);
-  await expect.element(page.getByRole("menuitem", { name: "Saved plan" })).toBeVisible();
-  await userEvent.hover(page.getByRole("menuitem", { name: "Other plan" }));
+  const plans = page.getByRole("menuitem", { name: "Saved plan", exact: true });
+  await expect.element(plans).toHaveLength(2);
+  await userEvent.keyboard("{Home}");
+  await expect.element(plans.nth(0)).toHaveFocus();
+  await expect.element(page.getByText(first.url, { exact: true })).toBeVisible();
+  await expect.element(plans.nth(0)).toHaveAccessibleDescription(first.url);
+  await userEvent.keyboard("{ArrowDown}");
+  await expect.element(plans.nth(1)).toHaveFocus();
+  await expect.element(plans.nth(1)).toHaveAccessibleDescription(secondPath);
+  await userEvent.hover(plans.nth(1));
   await expect.element(page.getByText(secondPath, { exact: true })).toBeVisible();
-  await userEvent.click(page.getByRole("menuitem", { name: "Other plan" }));
+  await userEvent.click(plans.nth(1));
   expect(
     selectActiveRightPanelSurface(useRightPanelStore.getState().byThreadKey, {
       environmentId: remoteEnvironmentId,
