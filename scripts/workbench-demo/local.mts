@@ -235,12 +235,15 @@ const TICKETS: readonly TicketFixture[] = [
     repositoryProjectIds: ["orbit-api", "orbit-web"],
     markdown: [
       "Goal: Let invitees recover an expired invitation without asking an administrator.",
+      "",
       "Decisions:",
       "- Invitation links expire after 7 days.",
       "- Resend keeps the original team and role.",
       "- Pending invitations stay in team settings until accepted or revoked.",
+      "",
       "Open question: Should a resend also notify the team administrator?",
-      "Synthetic demo story; no provider ran. Scope and acceptance: requirements.md.",
+      "",
+      "Synthetic demo story. PR outcomes and seeded history are illustrative. Scope and acceptance: requirements.md.",
     ].join("\n"),
   },
   {
