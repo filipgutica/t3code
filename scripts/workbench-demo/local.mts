@@ -30,7 +30,6 @@ import type {
   WorkbenchSnapshot,
 } from "../../packages/contracts/src/workbench.ts";
 import {
-  workbenchProgressCounts,
   WorkbenchAssignmentId,
   WorkbenchProjectId,
   WorkbenchTicketId,
@@ -1136,8 +1135,7 @@ const verifyStoryOutcomes = async ({
     )
   )
     throw new Error("Missing story recap previews.");
-  const progress = workbenchProgressCounts(story.progress ?? "");
-  if (progress.done !== 1 || progress.total !== 3)
+  if (story.progressDone !== 1 || story.progressTotal !== 3)
     throw new Error("Story Progress must be 1 of 3.");
 };
 
