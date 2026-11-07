@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One section's slice of the page's commit graph. Lane 0 is main; lanes 1 and 2 are the
-// per-repository branches between the fork (worktrees) and the merge (review).
+// Orbit API and Orbit Web branches between the fork (Threads) and the merge (Done).
 type Kind = "root" | "commit" | "fork" | "branch" | "merge" | "end";
 type Span = "above" | "below" | "full" | "after-fork" | "before-merge";
 type Segment = { lane: 0 | 1 | 2; span: Span; idle?: boolean };

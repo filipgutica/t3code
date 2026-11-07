@@ -52,6 +52,31 @@ The shared attention scenarios live in [`attention.mts`](attention.mts). Both
 local runs and private PR previews seed them. They are labelled synthetic and
 use a read-only GitHub adapter.
 
+## Invitation recovery story
+
+`orbit-017`, **Let invitees recover an expired invitation**, is the guide and site
+story. It scopes Orbit API and Orbit Web, with a short Brief, Progress **1 of 3**,
+and three file References in its artifacts folder: `requirements.md`, `plan.md`,
+and `mockups/expired-invitation.html`. Existing Tickets keep their regression
+content and generic issue References.
+
+| Thread                   | Repository | Synthetic PR | Staged state                                                             |
+| ------------------------ | ---------- | ------------ | ------------------------------------------------------------------------ |
+| Expiry and resend API    | Orbit API  | #41, Merged  | Idle, with recap                                                         |
+| Expired-invitation page  | Orbit Web  | #88, Open    | Unread reply, failed Web tests, one unresolved review thread, with recap |
+| Pending invitations list | Orbit Web  | None         | Planned, in its own `pending-invitations` checkout                       |
+
+Start work prepares two repository worktrees. The third checkout is bound to the
+pending-invitations Thread and appears in Work area and its terminal; Shared
+context still lists only the two prepared worktrees. Native startup recovery
+interrupts offline nonterminal runs, so this fixture leaves PR 3 planned rather
+than showing an agent working. A Working capture needs an authorized live run.
+
+History, recaps, Generated summary, and PR states are labelled synthetic. No
+provider runs during seeding. Normal runs use only the read-only synthetic
+adapter for these PRs and never mutate remote PRs. Capture the unread reply before
+opening the Web Thread, which clears its notification.
+
 ## Attention fixtures
 
 Every fresh local run and private PR preview seeds synthetic attention Tickets
@@ -101,22 +126,22 @@ Ticket header has the same reasons. Its **Needs attention** section, above Agent
 Threads, keeps the same actions visible and can be collapsed.
 
 In the sidebar, open the filter menu beside search and turn on **Needs
-attention**. Expect the three confirmed-action Tickets, sorted by urgency. Both
+attention**. Expect the three confirmed-action attention fixtures and `orbit-017`, sorted by urgency. Both
 feedback assignments remain because they link PR 902; only the original also
 links the failed PR 901. The API assignment is included with **Approved**. Remove the filter
 with its chip. Workspace and Ticket chevrons still collapse and expand while the
 filter is on, and text search expands matching groups until it is cleared.
 
-On the Board, select **Needs attention** to see the same three Tickets. The
-separate environment inspection line shows four of six linked PRs fully
+On the Board, select **Needs attention** to see the same four Tickets. The
+separate environment inspection line shows six of eight linked PRs fully
 inspected; two deliberately remain unavailable/incomplete. Use the **Refresh
 linked PRs** icon to repeat inspection and confirm it finishes. Loading or
 uncertain coverage alone does not add a Ticket to either attention filter.
 In **All**, open the unavailable/incomplete examples: their **PR inspection**
 section explains the status and offers **Refresh**. Known actions remain visible
 while refreshing their PR inspection.
-Select **Agent replies** to isolate the **Review-ready work** fixture before
-visiting its Thread. This fixture records a completed turn, not task completion. Navigate away and
+Select **Agent replies** to see **Review-ready work** and `orbit-017` before
+visiting their unread Threads. This fixture records a completed turn, not task completion. Navigate away and
 back to check filter persistence. Search for `no-matching-synthetic-ticket`, then
 use **Clear filters** to restore All.
 Search for an excluded Ticket in All and inspect
@@ -129,7 +154,8 @@ runtime verification.
 
 Synthetic PRs 901–905 belong to the fictional
 `workbench-synthetic/attention-fixtures` repository; PR 906 belongs to the separate
-fictional `workbench-synthetic/attention-api` repository. A credential-free executable
+fictional `workbench-synthetic/attention-api` repository. Story PRs #41 and #88 use
+`workbench-synthetic/orbit-api` and `workbench-synthetic/orbit-web`. A credential-free executable
 adapter supplies only their allowlisted inspection data; it never forwards a
 command to GitHub and refuses every write. Local `run.sh` uses the same adapter for PR inspection and does not link the
 configured repositories' real PRs. Setup and maintenance still use the real

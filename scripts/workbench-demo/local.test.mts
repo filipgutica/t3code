@@ -56,12 +56,17 @@ it("creates an idempotent local repository fixture", async () => {
     const verification = await verifyLocal({ home });
 
     assert.deepStrictEqual(first.projects, second.projects);
+    assert.include(first.tickets, "orbit-017");
+    assert.includeMembers(
+      [...first.assignedThreads],
+      ["orbit-017-api", "orbit-017-web", "orbit-017-settings"],
+    );
     assert.equal(verification.repositoryCount, LOCAL_DEMO_REPOSITORIES.length);
     assert.equal(verification.repositoryHeadCount, LOCAL_DEMO_REPOSITORIES.length);
     assert.deepStrictEqual(verification.expectedWorkbenchCounts, {
       projects: 2,
-      tickets: 16,
-      assignments: 4,
+      tickets: 17,
+      assignments: 7,
     });
     assert.equal(
       await NodeFSP.readFile(NodePath.join(home, "projects", "orbit-web", "README.md"), "utf8"),

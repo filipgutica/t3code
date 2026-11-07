@@ -7,13 +7,14 @@ import * as NodeCrypto from "node:crypto";
 import { withDemoAccess } from "./access.mts";
 import { requireHome, setupHome } from "./environment.mts";
 import { seedDemoReferences } from "./issue-links.mts";
+import { seedStoryOutcomes } from "./story.mts";
 import { launchDemo } from "./launch.mts";
 import {
   installAttentionGitHubAdapter,
   seedAttentionOutcomes,
   seedAttentionRecords,
 } from "./attention.mts";
-import { readDemoModelSelection } from "./local.mts";
+import { readDemoModelSelection, verifyLocal } from "./local.mts";
 import { seedInstalledDemoProviders } from "./providers.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { resetToBaseline } from "./reset-to-baseline.mts";
@@ -184,7 +185,11 @@ export const startDisposableDemo = async (input: {
     await server.stop();
     await seedAttentionOutcomes(runHome);
     seedDemoReferences(runHome);
+    seedStoryOutcomes(runHome);
     server = await launchDemo({ home: runHome, env: attentionEnv });
+    await withDemoAccess(runHome, (access) =>
+      verifyLocal({ home: runHome, ...access, storyOutcomes: true }),
+    );
   } catch (error) {
     await server?.stop().catch(() => undefined);
     throw new Error(

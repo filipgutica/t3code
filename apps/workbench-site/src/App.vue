@@ -13,13 +13,13 @@ const { images, base, repository, guide, downloads } = defineProps<{
   images: Record<
     | "board"
     | "planning"
-    | "boardChat"
     | "ticket"
-    | "workspace"
-    | "thread"
-    | "ticketChat"
-    | "pullRequest"
-    | "notifications",
+    | "agentEdit"
+    | "reference"
+    | "threadContext"
+    | "terminal"
+    | "pullRequests"
+    | "recaps",
     ProductImageDescriptor
   >;
   base: string;
@@ -64,8 +64,9 @@ onMounted(() => {
         <div class="step-body">
           <h1 id="hero-heading">Your work, across repositories.</h1>
           <p class="lead">
-            Plan a change across repositories in one Ticket. Keep its native T3 Threads, isolated
-            worktrees, and pull requests together as you work.
+            Plan connected work once, then split it into a Thread for each PR across your
+            repositories. The Ticket keeps the plan, the requirements, the PRs, and what each agent
+            did in one place.
           </p>
           <div class="actions">
             <a
@@ -81,8 +82,11 @@ onMounted(() => {
             An independent fork of <a href="https://t3.codes">T3 Code</a>, synced with upstream.
           </p>
           <figure class="shot hero-media">
-            <ProductImage :image="images.board" @open="openImage" />
-            <figcaption>Demo workspace across two repositories.</figcaption>
+            <ProductImage :image="images.ticket" @open="openImage" />
+            <figcaption>
+              Demo Orbit Ticket, with synthetic data: three planned PRs across Orbit API and Orbit
+              Web, two linked so far. History, PR outcomes, and recaps are illustrative.
+            </figcaption>
           </figure>
         </div>
       </section>
@@ -93,31 +97,35 @@ onMounted(() => {
           <div class="copy">
             <h2 id="plan-heading">Plan the change in conversation</h2>
             <p>
-              New ticket on the Board opens a planning Thread. You can begin without a title or
-              repository selection.
+              Choose New Ticket on the Board and describe the change. A planning Thread opens in the
+              Board chat. You don't need a title or repositories to start.
             </p>
             <p>
-              As you talk, the agent fills in the draft's title, description, and repositories. Its
-              edits apply at once.
+              As you talk, the agent fills in the draft: title, brief, Progress, and repositories.
+              It saves longer plans and requirements in the Ticket's artifacts folder and adds them
+              as References.
             </p>
             <p>
-              Planning can read the Workspace's repositories. Its instructions tell it not to change
-              them or start implementation.
+              Planning can read your repositories. Its instructions tell it not to change them.
+              Choose Create ticket when the plan is right.
             </p>
           </div>
           <figure id="walkthrough-planning" class="shot">
             <ProductImage :image="images.planning" @open="openImage" />
+            <figcaption>
+              The agent writes the brief, Progress, and requirements while you talk.
+            </figcaption>
           </figure>
-          <figure id="walkthrough-board-chat" class="shot shot--secondary">
-            <ProductImage :image="images.boardChat" @open="openImage" />
+          <figure id="walkthrough-board" class="shot shot--secondary">
+            <ProductImage :image="images.board" @open="openImage" />
           </figure>
           <div class="copy copy--aside">
-            <h3>Use the Board chat</h3>
+            <h3>Start from the Board</h3>
             <p>
-              Use New ticket draft in the board chat to plan a Ticket without leaving the Board.
-              Create ticket then opens the new Ticket, where the same Thread continues.
+              Drafts wait on the Board until you return to them. Each Ticket card shows its Progress
+              and what needs you.
             </p>
-            <a class="text-link" :href="`${guide}#chat-with-threads`">Chat guide</a>
+            <a class="text-link" :href="`${guide}#plan-a-ticket`">Planning guide</a>
           </div>
         </div>
       </section>
@@ -126,18 +134,25 @@ onMounted(() => {
         <CommitGraph kind="commit" />
         <div class="step-body layout-wide">
           <div class="head">
-            <h2 id="ticket-heading">Create the Ticket</h2>
+            <h2 id="ticket-heading">A short brief, a checklist, and a requirements file</h2>
             <div class="copy">
               <p>
-                The draft becomes a Ticket only when you choose Create ticket. Its planning Thread
-                stays linked, ready to continue into implementation.
+                The brief stays short: the goal, open questions, and decisions, with scope and
+                acceptance in a requirements file. The agent keeps Progress as a checklist, usually
+                one line per task or PR.
               </p>
-              <p>Creating the Ticket alone prepares no worktrees.</p>
+              <p>
+                Each Thread on the Ticket gets the brief, Progress, and References on its first
+                turn. Later turns receive updates.
+              </p>
             </div>
           </div>
           <div class="layout-detail">
-            <figure id="walkthrough-ticket" class="shot">
-              <ProductImage :image="images.ticket" @open="openImage" />
+            <figure id="walkthrough-agent-edit" class="shot">
+              <ProductImage :image="images.agentEdit" @open="openImage" />
+              <figcaption>
+                When an agent edits the brief, review the change. Accept it or undo it.
+              </figcaption>
             </figure>
             <dl class="facts">
               <div>
@@ -146,103 +161,123 @@ onMounted(() => {
               </div>
               <div>
                 <dt>Progress</dt>
-                <dd>The agent's checklist of planned work.</dd>
+                <dd>A checklist the agent maintains. Here, one line for each PR.</dd>
               </div>
               <div>
-                <dt>Repositories</dt>
-                <dd>The repositories included in this Ticket.</dd>
+                <dt>Requirements</dt>
+                <dd>Scope and acceptance for each PR, in a file the Ticket references.</dd>
               </div>
             </dl>
           </div>
         </div>
       </section>
 
-      <section class="step" aria-labelledby="worktrees-heading">
-        <CommitGraph kind="fork" />
-        <div class="step-body layout-wide">
-          <div class="head">
-            <h2 id="worktrees-heading">Prepare the work area</h2>
-            <div class="copy">
-              <p>
-                Start work prepares one isolated worktree per Ticket repository. It continues the
-                planning Thread in the first repository's worktree.
-              </p>
-              <p>Start work sends no message. No agent starts until you send one.</p>
-              <a class="text-link" :href="`${guide}#start-agent-work`">Work area guide</a>
-            </div>
+      <section class="step" aria-labelledby="references-heading">
+        <CommitGraph kind="commit" />
+        <div class="step-body layout-split">
+          <div class="copy">
+            <h2 id="references-heading">Keep specs and mockups beside the chat</h2>
+            <p>
+              Requirements, plans, designs, and issues are References. With a Thread open in the
+              chat, a self-contained HTML mockup opens in that Thread's panel beside the
+              conversation. You stay on the Ticket.
+            </p>
+            <p class="note">Delivery PRs link through their Threads, not as References.</p>
           </div>
-          <figure id="walkthrough-workspace" class="shot">
-            <ProductImage :image="images.workspace" @open="openImage" />
+          <figure id="walkthrough-reference" class="shot">
+            <ProductImage :image="images.reference" @open="openImage" />
           </figure>
         </div>
       </section>
 
       <section class="step" aria-labelledby="threads-heading">
-        <CommitGraph kind="branch" />
+        <CommitGraph kind="fork" />
         <div class="step-body layout-pair">
           <div class="head">
-            <h2 id="threads-heading">Add Threads as the work splits</h2>
+            <h2 id="threads-heading">A Thread for each PR, in the right repository</h2>
             <div class="copy">
               <p>
-                Each Thread works in one repository. Add another with Create Thread on the Ticket,
-                or New Thread in the ticket chat. Creating a Thread does not start the agent.
+                Start work prepares a worktree for each repository on the Ticket. Create a Thread
+                for each PR and choose its repository. Here, one Thread works in Orbit API and two
+                in Orbit Web.
               </p>
-              <p class="note">
-                When other Threads wait for your approval or input, or their run failed, the chat
-                shows how many, such as “2 need you”. Select the count to open the Thread menu on
-                the first of them.
+              <p>
+                Creating a Thread doesn't start the agent. Your first message does, and the Thread
+                gets the Ticket's shared context with it.
               </p>
+              <a class="text-link" :href="`${guide}#start-agent-work`">Work area guide</a>
             </div>
           </div>
-          <figure id="walkthrough-thread" class="shot">
-            <ProductImage :image="images.thread" @open="openImage" />
+          <figure id="walkthrough-thread-context" class="shot">
+            <ProductImage :image="images.threadContext" @open="openImage" />
             <figcaption>
-              <strong>Your next message starts the work.</strong> The agent receives the Ticket's
-              context with it.
+              <strong>See what every Thread receives.</strong> Shared context shows the brief,
+              Progress, References, the prepared worktrees, and the other Threads with their recaps.
             </figcaption>
           </figure>
-          <figure id="walkthrough-chat" class="shot">
-            <ProductImage :image="images.ticketChat" @open="openImage" />
+          <figure id="walkthrough-terminal" class="shot">
+            <ProductImage :image="images.terminal" @open="openImage" />
             <figcaption>
-              <strong>Keep the Threads in view.</strong> Switch between them in the Ticket's chat.
-              After a run, a Thread's recap can tell the Ticket's other Threads what it did.
+              <strong>Run commands where the Thread works.</strong> Separate PRs need separate
+              branches. PR 3 has its own Orbit Web checkout; the chat Thread's terminal opens there.
             </figcaption>
           </figure>
         </div>
       </section>
 
       <section class="step" aria-labelledby="review-heading">
-        <CommitGraph kind="merge" />
+        <CommitGraph kind="branch" />
         <div class="step-body layout-wide">
           <div class="head">
-            <h2 id="review-heading">Review the linked pull requests</h2>
+            <h2 id="review-heading">Every PR and what needs you, in one place</h2>
             <div class="copy">
               <p>
-                Open linked pull requests beside the Ticket to check their status and review
-                feedback.
+                Pull requests collects PRs from the Ticket's Threads and branches. Needs attention
+                lists failed checks, requested changes, unresolved review threads, and Threads with
+                unread replies or requests.
               </p>
-              <p>
-                A finished agent turn does not mark the Ticket Done. Set its status after you review
-                and accept the work.
-              </p>
-              <p class="note">A second demo Ticket. PR feedback and outcomes are illustrative.</p>
+              <p>Open a PR beside the Ticket to read its summary, checks, and review threads.</p>
             </div>
           </div>
-          <figure id="walkthrough-pull-request" class="shot">
-            <ProductImage :image="images.pullRequest" @open="openImage" />
+          <figure id="walkthrough-pull-requests" class="shot">
+            <ProductImage :image="images.pullRequests" @open="openImage" />
           </figure>
-          <div class="layout-split layout-split--nested">
-            <div class="copy">
-              <h3>Find PR feedback in Needs attention</h3>
-              <p>
-                For PRs linked to the Ticket's Threads, this list shows failed checks, requested
-                changes, and unresolved review threads awaiting your reply.
-              </p>
-            </div>
-            <figure id="walkthrough-notifications" class="shot">
-              <ProductImage :image="images.notifications" @open="openImage" />
-            </figure>
+        </div>
+      </section>
+
+      <section class="step" aria-labelledby="recaps-heading">
+        <CommitGraph kind="branch" />
+        <div class="step-body layout-split">
+          <div class="copy">
+            <h2 id="recaps-heading">Catch up with recap previews</h2>
+            <p>
+              After a Thread finishes a run, Workbench writes a short recap of it. The chat's Thread
+              list shows a one-line preview under each Thread that has one.
+            </p>
+            <p>
+              Recaps also go into the shared context, so they help you and the other Threads catch
+              up.
+            </p>
+            <a class="text-link" :href="`${guide}#chat-with-threads`">Chat guide</a>
           </div>
+          <figure id="walkthrough-recaps" class="shot">
+            <ProductImage :image="images.recaps" @open="openImage" />
+          </figure>
+        </div>
+      </section>
+
+      <section class="step" aria-labelledby="done-heading">
+        <CommitGraph kind="merge" />
+        <div class="step-body copy">
+          <h2 id="done-heading">Done when you say so</h2>
+          <p>
+            Finishing a run or checking off Progress doesn't close the Ticket. Review the PRs, then
+            set the Ticket to Done.
+          </p>
+          <p>
+            Settle Threads you're finished with. They stay in the chat's Thread list if you need
+            them again.
+          </p>
         </div>
       </section>
 

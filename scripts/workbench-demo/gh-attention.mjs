@@ -6,7 +6,14 @@ import * as NodeTimersPromises from "node:timers/promises";
 const args = process.argv.slice(2);
 const repository = "workbench-synthetic/attention-fixtures";
 const apiRepository = "workbench-synthetic/attention-api";
-const repositoryForPullRequest = (number) => (number === 906 ? apiRepository : repository);
+const repositoryForPullRequest = (number) =>
+  number === 41
+    ? "workbench-synthetic/orbit-api"
+    : number === 88
+      ? "workbench-synthetic/orbit-web"
+      : number === 906
+        ? apiRepository
+        : repository;
 const viewer = "synthetic-demo-viewer";
 const at = "2026-09-29T12:00:00.000Z";
 const output = (value) => process.stdout.write(JSON.stringify(value) + "\n");
@@ -71,16 +78,25 @@ if (args.includes("--input")) {
 if (/\bmutation\b/.test(query))
   refuse("Writes and failed-check reruns are disabled for synthetic PRs");
 const title = (number) =>
-  `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection", 906: "Verify invitation expiry and empty-response recovery across the API contract" }[number]}`;
+  number === 41
+    ? "Expiry and resend contract"
+    : number === 88
+      ? "Show a recovery page for expired invitations"
+      : `[Synthetic attention] ${{ 901: "Failed PR checks", 902: "Unresolved PR feedback", 903: "Inspection unavailable", 904: "Inspection incomplete", 905: "Slow inspection", 906: "Verify invitation expiry and empty-response recovery across the API contract" }[number]}`;
 const checks = (number) =>
-  (number === 901 ? ["API tests", "Web tests"] : ["demo-check"]).map((name) => ({
+  (number === 901
+    ? ["API tests", "Web tests"]
+    : number === 88
+      ? ["Web tests"]
+      : ["demo-check"]
+  ).map((name) => ({
     __typename: "CheckRun",
     name: `[Synthetic attention] ${name}`,
     startedAt: at,
     workflowName: "[Synthetic attention] Attention CI",
     checkSuite: { workflowRun: { workflow: { name: "[Synthetic attention] Attention CI" } } },
     status: "COMPLETED",
-    conclusion: number === 901 ? "FAILURE" : "SUCCESS",
+    conclusion: number === 901 || number === 88 ? "FAILURE" : "SUCCESS",
     detailsUrl: `https://github.com/${repositoryForPullRequest(number)}/pull/${number}`,
     completedAt: at,
   }));
@@ -108,7 +124,7 @@ const pr = (number) => ({
   number,
   title: title(number),
   url: `https://github.com/${repositoryForPullRequest(number)}/pull/${number}`,
-  state: "OPEN",
+  state: number === 41 ? "MERGED" : "OPEN",
   isDraft: false,
   headRefName: `synthetic/${number}`,
   baseRefName: "main",
@@ -131,8 +147,8 @@ const pr = (number) => ({
   mergeStateStatus: "UNKNOWN",
   createdAt: at,
   updatedAt: at,
-  mergedAt: null,
-  closedAt: null,
+  mergedAt: number === 41 ? at : null,
+  closedAt: number === 41 ? at : null,
   body: "Synthetic inspection data. No GitHub request is sent; reruns and all other writes are refused.",
   additions: number === 902 ? 2 : 1,
   deletions: 0,
@@ -147,7 +163,7 @@ const pr = (number) => ({
   baseRef: { compare: { behindBy: 0 } },
 });
 const validateRepository = (number, selectedRepository) => {
-  if (![901, 902, 903, 904, 905, 906].includes(number))
+  if (![41, 88, 901, 902, 903, 904, 905, 906].includes(number))
     refuse("PR is outside the fixture allowlist");
   if (selectedRepository !== repositoryForPullRequest(number))
     refuse("Repository is outside the fixture allowlist");
@@ -158,7 +174,14 @@ const validate = async (number) => {
 };
 if (args[0] === "pr") {
   const selectedRepo = (flag("--repo") ?? flag("-R"))?.replace(/^(?:https:\/\/)?github\.com\//, "");
-  if (![repository, apiRepository].includes(selectedRepo))
+  if (
+    ![
+      repository,
+      apiRepository,
+      "workbench-synthetic/orbit-api",
+      "workbench-synthetic/orbit-web",
+    ].includes(selectedRepo)
+  )
     refuse("Repository is outside the fixture allowlist");
   if (args[1] === "list") {
     output([]);
@@ -220,7 +243,13 @@ if (
         reviewRequests: { nodes: [] },
         commits: {
           nodes: [
-            { commit: { statusCheckRollup: { state: number === 901 ? "FAILURE" : "SUCCESS" } } },
+            {
+              commit: {
+                statusCheckRollup: {
+                  state: number === 901 || number === 88 ? "FAILURE" : "SUCCESS",
+                },
+              },
+            },
           ],
         },
       },
@@ -242,10 +271,13 @@ if (/^query ReviewThreads\b/.test(query)) {
       avatarUrl: "https://example.invalid/synthetic-reviewer.png",
       name: null,
     },
-    body: "[Synthetic unresolved feedback] Handle the empty response before rendering.",
+    body:
+      number === 88
+        ? "[Synthetic unresolved feedback] Wait for the resend confirmation before showing the toast; Web tests currently fail on toast timing."
+        : "[Synthetic unresolved feedback] Handle the empty response before rendering.",
     createdAt: at,
     lastEditedAt: null,
-    url: `https://github.com/${repository}/pull/${number}#discussion_r1`,
+    url: `https://github.com/${repositoryForPullRequest(number)}/pull/${number}#discussion_r1`,
     reactionGroups: [],
   };
   pullRequest = {
@@ -253,9 +285,9 @@ if (/^query ReviewThreads\b/.test(query)) {
     reactionGroups: [],
     reviewDismissals: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } },
     reviewThreads: {
-      totalCount: number === 902 ? 3 : number === 904 ? 1 : 0,
+      totalCount: number === 902 ? 3 : number === 904 || number === 88 ? 1 : 0,
       nodes:
-        number === 902 || number === 904
+        number === 902 || number === 904 || number === 88
           ? [
               {
                 id: `synthetic-thread-${number}`,
@@ -348,7 +380,13 @@ if (/^query ReviewThreads\b/.test(query)) {
     ...pullRequest,
     latestReviews: { nodes: reviews(number) },
     commits: {
-      nodes: [{ commit: { statusCheckRollup: { state: number === 901 ? "FAILURE" : "SUCCESS" } } }],
+      nodes: [
+        {
+          commit: {
+            statusCheckRollup: { state: number === 901 || number === 88 ? "FAILURE" : "SUCCESS" },
+          },
+        },
+      ],
     },
   };
 } else if (/^query PullRequestCore\b/.test(query)) {

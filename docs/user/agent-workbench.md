@@ -1,303 +1,285 @@
 # Workbench user guide
 
-Workbench gives you one view of work across repositories: what’s to do, in progress,
-and done. Each Ticket brings together its context, agents, pull requests, and an
-isolated work area with worktrees for the repositories involved.
+Workbench keeps connected work in one Ticket: the plan, requirements and designs,
+a Thread for each PR across repositories, the PRs and what needs you, and recaps
+of what each agent did.
 
-Workbench is available in the web and desktop clients. Each T3 environment has its
-own Workspaces and Tickets, so records do not appear across environments. There is
-no dedicated Workbench mobile interface yet.
+This walkthrough follows a fictional Orbit Ticket, **Let invitees recover an
+expired invitation**. It has three planned PRs across Orbit API and Orbit Web,
+with two PRs linked so far. The demo's Ticket history, PR outcomes, and recaps are
+synthetic. The planning conversation and prepared Git worktrees are real.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-light.png">
-  <img src="./media/workbench/board.png" alt="Beacon Board with Tickets across To Do, In Progress, and Done, and the board chat below.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-light.png">
+  <img src="./media/workbench/ticket.png" alt="Demo Orbit Ticket with its brief, Progress, attention, and Threads for three planned PRs across two repositories.">
 </picture>
 
-The screenshots use fictional Orbit and Beacon projects in an isolated demo.
-Planning conversations and prepared Git worktrees are real. Recaps, approval requests,
-PR feedback, and implementation outcomes are illustrative; they do not show completed product work.
+Workbench is available in the web and desktop clients. Each T3 environment has
+its own Workspaces and Tickets. There is no dedicated Workbench mobile interface
+yet. For a visual tour, open the [Workbench site](https://filipgutica.github.io/t3code/).
 
-For a visual tour from plan to merged pull request, open the [Workbench site](https://filipgutica.github.io/t3code/).
-
-## Create a Workspace and Ticket
+## Create a Workspace
 
 A **Workbench workspace** groups T3 Projects that belong together. Linked Projects
-must point to Git repositories. A **Ticket** describes work to do; an **Epic** groups
-related Tickets. A Ticket's **work area** contains its prepared repository worktrees.
+must point to Git repositories. A **Ticket** describes connected work within that
+Workspace. Its **work area** holds the repository worktrees prepared for it.
 
 1. Add the repositories you need as T3 Projects.
 2. Open **Agent Workbench**, choose **Add Workspace**, select the Projects, and
    choose **Create Workspace**.
-3. Open the Workspace Board and choose **New Ticket** to start a draft in its floating chat.
-4. Describe what you want to work on in the planning conversation. Choose your
-   model using the native conversation controls.
-5. As you talk, the agent fills in the draft's title, description, and
-   repositories, and adds links you paste as [References](#references). You can edit
-   the title and repository selection. Ask the agent to change the brief or Progress.
-6. Choose **Create ticket** to save it.
+
+Use **Edit Workspace** to rename it or add repositories. Existing Tickets and
+Threads keep their scope.
+
+## Plan a Ticket
+
+Open the Workspace Board, choose **New Ticket**, and describe the change. A
+planning Thread opens in the Board chat. You can begin without a title or
+repository selection. Choose a model using the native conversation controls;
+planning supports Codex and Claude.
+
+As you talk, the agent fills in the draft's title, brief, Progress, and
+repositories. It saves longer plans and requirements in the Ticket's artifacts
+folder and adds them as [References](#references). Edit the title and repository
+selection yourself, or ask the agent to revise the brief and Progress.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/planning-light.png">
-  <img src="./media/workbench/planning.png" alt="A native planning conversation beside its editable Ticket draft.">
+  <img src="./media/workbench/planning.png" alt="Planning Thread in the Orbit Board chat with the draft's brief, Progress, and References.">
 </picture>
 
-You do not need a title or repository selection before starting the conversation.
-Planning can read the workspace's repositories, run commands, and write notes
-outside them, but it is told not to change them or start implementing. Ask
-follow-up questions to refine the draft. The agent's edits apply at once, and you
-can change editable fields back; see [Agents and the Ticket](#agents-and-the-ticket).
-Filling the draft does not create the Ticket.
+Planning can read the Workspace's repositories, run commands, and write notes
+outside them. Its instructions tell it not to change the repositories or start
+implementation. It can use your configured research tools and connectors.
+Planning runs in Auto, so the provider's automatic reviewer handles approval
+requests.
 
-Planning can use your configured connectors, web tools, the browser, and CLI tools
-such as `gh` for research. Ask it to find or create Jira or GitHub issues with its
-own connectors, and it records them as References. Planning runs in Auto, so the
-provider's automatic reviewer handles approval requests instead of you.
+Choose **Create ticket** when the plan is right. Filling in the draft alone does
+not create the Ticket, and creating the Ticket prepares no worktrees. The
+planning Thread stays attached for further conversation.
 
-Leaving the view keeps the draft in the Board’s **Drafts** section and the Workbench
-sidebar. Open it to resume its conversation and saved fields. Choose **New Ticket**
-to explore another idea in a separate draft. Planning conversations stay in
-Workbench until you start work.
-
-**Create manually** opens the form when you already know the requirements. If the
-planning conversation fails to start, choose **Retry** or **Create manually** in the chat.
-
-Creating the Ticket keeps the same conversation for further planning. Choose
-**Start work** when ready to prepare its work area and continue that Thread in the
-first repository's worktree. Start work does not send a message; send your next instruction
-to begin implementation. Planning supports Codex and Claude providers.
-
-A Ticket can include several repositories when the work spans several
-codebases. Each Thread works in one of them. Use **Edit Workspace** to
-rename a Workspace or add repositories; existing Tickets and Threads
-keep their scope.
+Drafts wait in the Board's **Drafts** section and the Workbench sidebar. Open one
+to resume its conversation. Choose **New Ticket** to explore another idea.
+**Cancel** removes an unused draft; **Discard** removes a used draft after
+confirmation. **Create manually** opens the form when you already know the
+requirements. If planning fails to start, choose **Retry** or **Create manually**
+in the chat.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-light.png">
-  <img src="./media/workbench/ticket.png" alt="A prepared Ticket with its description and the same native planning Thread.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-light.png">
+  <img src="./media/workbench/board.png" alt="Orbit Board with the invitation Ticket In Progress and one of three planned PRs complete.">
 </picture>
 
-## Archive or delete a Workspace
+## Brief, Progress, and requirements
 
-Choose **Archive Workspace** from the Workspace actions menu to hide it from the
-active list and attention counts. Open **Archived Workspaces** in the sidebar to
-inspect its Tickets and Epics. Archived planning is read-only, and linked native
-Threads remain available. Choose **Restore Workspace** to resume planning.
-Restoration keeps individual Ticket and Epic archive states.
+Keep the brief short: the goal, open questions, and decisions. Put detailed scope
+and acceptance in a requirements file and add it as a Reference. The current
+Brief subtitle is “Goal, constraints, and acceptance criteria.” You can keep a
+pointer to the requirements there instead of repeating the file.
 
-Choose **Delete Workspace** from the same menu and review the Ticket and Epic
-counts before confirming. Deletion permanently removes the Workspace's planning
-data from Workbench. Native Projects, Threads, Git worktrees, branches, commits,
-and linked Jira issues remain. There is no undo. **Retained worktrees**
-in the sidebar remains available for cleanup even after deleting the last Workspace.
+**Progress** is a checklist the agent maintains, usually one line per task or PR.
+Ask it to write the list, revise the plan, or mark completed items. Progress is
+read-only in the draft and Ticket; the Board shows its completed and total
+counts. In this story, the Orbit API contract is complete, with two Orbit Web
+PRs still planned: one of three items checked.
+
+Each Thread receives the brief, Progress, References, prepared worktrees, and
+other Threads with their recaps on its first turn. Later turns receive updates.
+Expand **Shared context** to read what a new Thread would receive. Saved changes
+reach other Threads on their next turn.
+
+When an agent edits the brief, review the change. Select its **Updated by** badge
+to see the diff, then **Accept** it or **Undo** it. To request another revision,
+use **Ask for change** for the whole brief or a selected passage.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/agent-edit-light.png">
+  <img src="./media/workbench/agent-edit.png" alt="Agent edit to the Ticket brief with the change, Undo, and Accept available for review.">
+</picture>
+
+## References
+
+References are current sources a Thread should read: requirements, plans, specs,
+designs, issues, docs, and prior or example PRs. This Ticket keeps a requirements
+file, a plan by PR, and a self-contained HTML mockup. Link delivery PRs through
+their Threads instead of duplicating them as References.
+
+Choose **Add reference** and paste a URL or an absolute file path, with an
+optional title. Drafts and the manual Ticket form also have a References field.
+Links in the brief appear as chips and in the list marked **In description**;
+remove those by editing the brief. Other References have a remove button.
+Remove a Reference when its file is superseded, or ask the agent to retitle it
+when its status changes.
+
+With a Thread selected in the floating chat, every file Reference, including
+HTML and PDF, opens in that Thread's native file panel without leaving the
+Ticket. On a Thread page, the breadcrumb's **References** menu lists the Ticket's
+files. Other links follow **Settings → Browser**. Hover a chip or row to see its
+path or URL. Without a Thread, files use the existing file preview and links use
+your browser. HTML relative assets outside the Thread's worktree may not load;
+replacing an open HTML or image file may prevent its preview from reloading.
+
+<picture>
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/reference-light.png">
+  <img src="./media/workbench/reference.png" alt="Expired-invitation HTML mockup open beside its Thread's conversation on the Ticket.">
+</picture>
+
+A file path belongs to the machine running the environment, including when you
+connect remotely. A missing file shows as unavailable. Issue References show
+their key or repository and number; Board cards show up to two and search matches
+them. The first issue Reference also names the branch when the work area is
+prepared, so add it before preparation if you want that branch name.
+
+Earlier Jira links are kept as References. Workbench no longer syncs those
+Tickets from Jira. If an earlier link is missing, check the issue and add its URL
+as a Reference yourself.
 
 ## Start agent work
 
-For a Ticket prepared through a conversation, choose **Start work** to continue
-that same Thread in its prepared work area. Add your next instruction and send
-when ready.
+Choose **Start work** to prepare one worktree per Ticket repository and continue
+the planning Thread in the first repository's worktree. Start work sends no
+message. Send your next instruction when you are ready to begin implementation.
 
-For a manually created Ticket, or an additional conversation:
+Split the work into a Thread for each PR and choose its repository. Here, one
+Thread works on the expiry and resend contract in Orbit API, and two work on the
+expired-invitation page and pending invitations list in Orbit Web.
 
-1. Open a Ticket and choose **Create Thread**.
-2. Choose the repository the Thread works in, then a provider and model. The
-   repository defaults to the one the Ticket's active Thread uses, or else the
-   first. To work in a Workspace repository the Ticket does not include yet, pick
-   it under **Add repository**; it is added to the Ticket when you create the Thread.
+For another Thread, or for a manually created Ticket:
+
+1. Choose **Create Thread** on the Ticket, or **New Thread** in its chat.
+2. Choose the repository, provider, and model. The repository defaults to the
+   active Thread's repository, or the first one. **Add repository** also lets you
+   include another Workspace repository in the Ticket.
 3. Choose **Create Thread**, or **Create work area and Thread** when worktrees
    still need preparation.
-4. Add instructions and send the message.
+4. Add instructions and send the first message to start the agent.
 
-Creating a Thread does not start an agent turn. Workbench prepares one Git
-worktree per Ticket repository and opens the Thread in the chosen repository's worktree.
-
-Each Thread receives the full Ticket on its first turn: the brief, Progress,
-References, prepared worktrees, and other linked Threads. Later turns receive only
-changes. After compaction, a handoff, or a provider conversation change, the Thread
-receives the full context again.
-
-Expand **Shared context** on the Ticket to read what a new Thread would receive.
-If it is stale or incomplete, update the brief or References, or ask the agent to
-change Progress. Saved changes reach other Threads on their next turn.
-
-To prepare worktrees before opening a conversation, choose **Prepare work area**
-in **Work area**, review the repositories, and confirm.
+Creating a Thread does not start an agent turn. It opens the conversation in the
+chosen repository's worktree. To prepare worktrees without opening a Thread,
+choose **Prepare work area** in **Work area**.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/workspace-light.png">
-  <img src="./media/workbench/workspace.png" alt="A prepared Ticket work area with worktrees for Beacon Docs and Beacon CLI.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-context-light.png">
+  <img src="./media/workbench/thread-context.png" alt="Shared context listing the Ticket's Threads with recaps and two prepared repository worktrees.">
 </picture>
+
+Threads in the same worktree share its branch, files, and uncommitted changes.
+Separate PRs need separate branches, so ask the agent to create another checkout
+when needed. PR 3 has a separate Orbit Web checkout for the pending invitations
+list. Such checkouts appear in **Work area**; Shared context lists the two
+prepared repository worktrees.
+
+Select a Thread in the chat, then use the terminal button at the top right of
+the Ticket to open its terminal where that Thread works. The side panel button
+opens that Thread's panel too. These controls also work on the Board.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-light.png">
-  <img src="./media/workbench/thread.png" alt="The same native Thread continues from planning into the prepared Ticket work area.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/terminal-light.png">
+  <img src="./media/workbench/terminal.png" alt="Pending invitations Thread's terminal showing git status in its separate Orbit Web checkout.">
 </picture>
-
-Use **Create Thread** for another conversation on the same Ticket, or **Link existing
-Thread** to add an unassigned native conversation. Hover a Thread for its details, or
-right-click it to unlink it from the Ticket without deleting it, or to delete it.
-**Settle** moves a conversation out of the active group; **Thread history** keeps
-earlier conversations available.
-
-Selecting a Thread on a Ticket shows it in the Ticket's chat. Choose **Open full
-Thread** in the chat for the regular Thread page, and use its Board or Ticket links to
-return. The terminal and side panel buttons at the top right of the Board and of each
-Ticket open the chat Thread's terminal and side panel without leaving the page. The command palette also offers **Open
-Workbench**, **New Ticket** for the current Workspace, and **Back to Ticket** from a
-linked Thread.
-
-The Workbench sidebar lists Tickets. Reach a Ticket's Threads from its page or its
-chat, which list them like an inbox: **Unread** holds new replies and Threads waiting
-on you, then **Idle**, with **Working** and **Settled** collapsed.
 
 ## Chat with Threads
 
-The Board and each Ticket have a chat in the lower-right corner. The board chat
-lists the Threads of the Workspace's Tickets and drafts. The ticket chat lists that
-Ticket's Threads. Use it to follow and answer agents without leaving the page.
+The Board and each Ticket have a floating chat in the lower-right corner. Board
+chat lists Threads across the Workspace's Tickets and drafts; Ticket chat lists
+that Ticket's Threads. Select the open Thread's name to switch, search, or find
+settled and archived Threads. **Unread** holds new replies and Threads waiting
+on you, followed by **Idle**, with **Working** and **Settled** collapsed.
 
-- Select the open Thread's name to switch Threads, search them, or find settled and
-  archived ones.
-- After a Thread finishes a run, the menu can show a short recap of it. Threads on
-  the same Ticket read each other's recaps so they know what the others are doing.
-- When other Threads wait for your approval or input, or their run failed, **N need
-  you** opens the menu on the first of them.
-- Select the message field to expand the conversation, or choose **Show chat** in
-  the command palette. Drag the chat's left edge, top edge, or top-left corner to
-  resize it. Clicking elsewhere on the page collapses the chat; select it to expand it
-  again with your message intact.
-- Opening a Ticket from the Board keeps the chat on the same Thread when that Thread
-  is on the Ticket. Otherwise the chat collapses and shows the Ticket's Thread.
-- **Settle Thread** in the chat's header settles the open Thread and shows the
-  Ticket's next one. Open a settled Thread from the menu to **Un-settle** it.
+After a Thread finishes a run, Workbench writes a short recap. The Thread list
+shows a one-line preview under each Thread that has one. Recaps also go into
+shared context to help you and the other Threads catch up.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/ticket-chat-light.png">
-  <img src="./media/workbench/ticket-chat.png" alt="Ticket chat whose Thread menu shows one Thread waiting for approval, another with its recap, and New Thread.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/recaps-light.png">
+  <img src="./media/workbench/recaps.png" alt="Ticket Threads menu with status and one-line recap previews, the unread Thread first.">
 </picture>
 
-New-Thread actions end the Thread menu. In the ticket chat, **New Thread** starts
-another Thread on the Ticket, and it opens in the chat. In the board chat, **New
-Thread on** starts one on the open Thread's Ticket, and **New ticket draft** starts
-a planning conversation.
+Select the message field to expand the chat, or choose **Show chat** in the
+command palette. Drag its left edge, top edge, or top-left corner to resize it.
+Clicking elsewhere collapses it; expand it again with your message intact. When
+other Threads need approval or input, or their run failed, **N need you** opens
+the menu on the first of them.
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-chat-light.png">
-  <img src="./media/workbench/board-chat.png" alt="Board chat whose Thread menu shows recaps, a Ticket's two Threads, a Thread waiting for approval, and the new-Thread actions.">
-</picture>
+**Settle Thread** in the header moves the open Thread out of the active group
+and shows the Ticket's next one. Open a settled Thread from the menu to
+**Un-settle** it. Settling keeps the conversation available.
 
-A board draft plans the same way as **New Ticket** and runs in Auto. When the
-agent has filled in the draft, choose **Create ticket** and **Start work**; the same
-Thread continues throughout. **Cancel** removes a draft you have not used yet and returns to the Thread
-you had open. Once you have used the draft, **Discard** removes it after you confirm. The draft stays pinned above
-the conversation. Edit its title there, or choose **Show full brief** to read the
-brief and Progress and edit the other fields. In a short window it starts
-collapsed to one row.
+The chat's **⋯** menu offers **Thread details** and **Open full Thread**. From the
+full Thread page, use its Board or Ticket link to return. Files, diffs, side chats,
+and PRs open in the Thread's side panel. You can maximize the panel; in a smaller
+window it uses a sheet. On narrow screens, the chat is behind its launcher.
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/board-draft-light.png">
-  <img src="./media/workbench/board-draft.png" alt="Board chat with a ticket draft, offering Discard and Create ticket.">
-</picture>
-
-Files, diffs, side chats, and pull requests you open from the chat open in the
-Thread's side panel beside it, and you stay on the page. While the chat shows a
-Thread, pull requests you open on the page open there too. Maximize the panel to
-fill the page; the chat stays over it. In a smaller window the panel opens as a
-sheet, and the chat becomes a button that closes the sheet. The chat header's ⋯
-menu has **Thread details**, as on a Thread page, and **Open full Thread**.
-Terminal commands also open the Thread itself. The chat is not available on narrow
-screens, and a Ticket that is still being planned shows its conversation in the
-page instead.
+In Board chat, **New Thread on** starts a Thread on the open Thread's Ticket;
+**New ticket draft** starts a planning conversation. A draft stays pinned above
+the chat. **Show full brief** lets you read its brief and Progress and edit its
+other fields. Opening its Ticket keeps the chat on the same Thread.
 
 ## Follow progress and review results
 
-**Progress** is the agent-maintained checklist of planned work. Ask the agent to
-write it, change the plan, or mark completed items. It is read-only in the draft
-and Ticket; the Board shows its completed and total counts. Completing the
-checklist does not mark the Ticket Done.
-
-Ticket status and agent activity describe different states:
-
-| Ticket status            | Agent activity                    |
-| ------------------------ | --------------------------------- |
-| To Do, In Progress, Done | Working, Waiting, Approval, Input |
-
-Thread activity uses the same status as native Threads, including elapsed time
-while working. A Ticket summarizes its current linked Threads: approval requests,
-input requests, and failures take priority over work in progress. Notifications
-and **Needs attention** remain available separately for reviewing results.
-
-When a linked Thread starts a turn, a To Do Ticket moves to In Progress. **A
-completed agent turn does not mark the Ticket Done.** Review the result, then set
-the Ticket status from the Ticket or Board card menu when the work is accepted.
-
-Use **Needs attention** on the Board, or in the sidebar's filter menu, to find
-approval and input requests, failed runs, failed PR checks, PR feedback, plans
-ready for review, finished agent turns, and approved PRs. The sidebar filter
-sorts the most urgent work first. **Agent replies** narrows the Board to
-completed agent work awaiting review. PR inspection covers explicitly linked PRs; the Board shows
-incomplete or unavailable coverage and lets you refresh.
-
-Each Ticket and Thread shows its most urgent reason in the status area, with
-**+N** for other reasons. Click it to see the reasons grouped by Thread and PR.
-Thread reasons open the Thread; failed checks, requested changes, and unresolved
-discussions open the PR. **Approved** means the PR is approved, has no
-failing or pending checks, and has no merge conflicts; the host can still block
-the merge on other rules, such as a required check that was cancelled. The
-Ticket page keeps these actions in its **Needs attention** section. Opening the
-list does not clear them.
-
-Opening a Thread acknowledges its notification. A pending question or approval
-stays until you respond, and an interrupted run is not a reason. PR actions
-remain until the checks or review feedback are resolved, and **Approved** stays
-while those conditions hold and the PR is open. A review thread stops counting once you reply
-to it, and counts again when someone else comments. Resolving
-it on the host clears it for good.
+**Pull requests** collects PRs from the Ticket's Threads and branches. In this
+story, Orbit API PR #41 is Merged and Orbit Web PR #88 is Open, with failed checks
+and an unresolved review thread. Open a PR beside the Ticket to read its summary,
+checks, and review threads.
 
 <picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/notifications-light.png">
-  <img src="./media/workbench/notifications.png" alt="A Ticket's attention list showing failed checks, requested changes, and unresolved PR threads.">
+  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-requests-light.png">
+  <img src="./media/workbench/pull-requests.png" alt="Ticket with merged Orbit API PR 41 and open Orbit Web PR 88, attention, and PR 88's summary panel.">
 </picture>
 
-The Ticket's **Pull Requests** section collects PRs reported by linked Threads and
-prepared worktrees, and the Ticket's pull request
-[References](#references). PRs opened to deliver the Ticket belong in its linked
-Threads. Keep prior or example PRs as supporting References; do not add delivery
-PRs there too. To attach a delivery PR yourself, choose **Link PR** from
-the Ticket, select a Thread if prompted, then choose a listed PR or search by
-title. You can paste a full PR URL when browsing is unavailable or the PR is not
-listed. A number such as `#42` refers to the selected Thread's repository. Link PR
-needs a live assigned Thread and a project with a supported Git remote in the same
-environment. You can also use **Link pull request to thread** in the native
-Thread's command palette.
+To attach a delivery PR, choose **Link PR**, select a Thread if prompted, and
+choose a PR or search by title. You can paste a full PR URL when browsing is
+unavailable. A number such as `#42` refers to the selected Thread's repository.
+Link PR needs a live assigned Thread and a supported Git remote in the same
+environment. The native command palette also offers **Link pull request to
+thread**. Supporting PR References appear in **Pull requests** too; unlinking
+one removes only the Reference. A Thread's own PR link stays until unlinked there.
 
-<picture>
-  <source media="(prefers-color-scheme: light)" srcset="./media/workbench/pull-request-light.png">
-  <img src="./media/workbench/pull-request.png" alt="A linked PR opened beside its Ticket, with its summary and failing checks visible.">
-</picture>
+**Needs attention** includes failed checks, requested changes, unresolved review
+threads, and Threads with unread replies or requests. Use the Board or sidebar
+filter to find what needs you across Tickets. **Agent replies** narrows the Board
+to completed agent work awaiting review. PR inspection covers explicitly linked
+PRs and reports incomplete or unavailable coverage so you can refresh it.
+
+Each Ticket and Thread shows its most urgent reason and **+N** for others.
+Choose it to see reasons grouped by Thread and PR. Opening a Thread acknowledges
+its notification; a question or approval request stays until you respond.
+Opening the attention list alone clears nothing. A review thread stops counting
+once you reply, and counts again after another comment. Resolving it on the host
+clears it for good.
+
+**Approved** means the PR is approved, has no failing or pending checks, and has
+no merge conflicts. The host can still block merging under other rules. It stays
+an attention item while those conditions hold and the PR is open.
+
+## Finish a Ticket
+
+Ticket status and agent activity describe different things. A To Do Ticket moves
+to In Progress when a linked Thread starts a turn. Finishing a run or checking
+off Progress does not close it. Review the PRs, then set the Ticket to **Done**
+from the Ticket or Board card menu.
+
+Settle Threads you are finished with. They stay in the chat's Thread list if you
+need them again. Done does not remove worktrees; see
+[Manage repositories and worktrees](#manage-repositories-and-worktrees) for cleanup.
 
 ## Edit and organize Tickets
 
-Use Board search to find loaded Tickets by title or by a Reference's label or
-title, such as an issue key. Filter by any
-repository in their scope. Search, repository filtering, grouping, and the
-selected Board column are retained per Workspace when returning from a Ticket.
-Open a Ticket and choose **Edit** to change its title or description. The
-description editor formats Markdown as you type or paste it, and a URL, file path,
-or `[text](url)` link becomes a Reference chip right away. Type three backticks and
-press Enter to start a code block. Choose **Markdown** to edit the source. Tables,
-HTML, and other Markdown it can't format stay as editable source, and parts you
-don't edit are saved exactly as they were. Board previews use a separate summary generated
-from **Settings → General → Text generation model**. Regenerate it from the Ticket
-menu when needed; the summary does not replace the full description sent to the
-agent.
+Search the Board by Ticket title or a Reference's label or title, and filter by
+repository. Search, repository filters, and the selected column are retained per
+Workspace. On desktop, drag Tickets between status columns.
 
-Choose **New Epic** from the Workspace actions menu, assign related Tickets, and
-set the Board's **Group by** to **Epic** to show Epic swimlanes. On desktop, drag
-Tickets between status columns.
+Choose **Edit** to change the title or brief. The brief editor formats Markdown
+and shows URL or file links as Reference chips. Choose **Markdown** to edit the
+source; unsupported formatting stays as editable source. Parts you do not edit
+are saved as they were.
 
-Archive a Ticket to hide it from the active Board, or restore it from
-**Archived**. Deleting a Ticket removes it from Workbench but keeps its native
-Threads and repository worktrees.
+Board previews use a separate summary from **Settings → General → Text generation
+model**. Regenerate it from the Ticket menu when needed. It does not replace the
+brief sent to agents.
+
+Archive a Ticket to hide it from the active Board, or restore it from **Archived**.
+Deleting one removes it from Workbench and keeps its native Threads and worktrees.
 
 ## Manage repositories and worktrees
 
@@ -336,99 +318,46 @@ After deleting a Ticket or Workspace, open **Retained worktrees** in the Workben
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.
 
-## References
+## Archive or delete a Workspace
 
-References are current sources that a Thread should read: requirements, plans,
-specs, designs, issues, docs, and prior or example pull requests. Remove a Reference
-when its file is superseded. Ask the agent to retitle one when its status changes,
-such as from proposed to approved. Keep audit output, test results, and evidence
-logs in the artifacts folder or PR.
+Choose **Archive Workspace** to hide it from the active list and attention
+counts. Open **Archived Workspaces** to inspect its Tickets. Archived planning is
+read-only; native Threads remain available. **Restore Workspace** resumes
+planning and keeps each Ticket's archive state.
 
-Link PRs opened to deliver this Ticket through a Thread; do not duplicate them as References.
-Workbench shows these sources but does not connect to Jira or open the linked pages itself.
-
-To add one, choose **Add reference** in the Ticket's **References** section and
-paste a URL or an absolute file path, with an optional title. Drafts and the
-manual Ticket form have a paste field for References, which are saved with the
-Ticket. Use a Reference's remove button to remove it.
-
-Links in the description are References too. They show as chips in the
-description and in the **References** list marked **In description**; remove
-one by editing the description. Hover a chip or row to see its full URL or path
-and where it opens.
-
-When the floating chat shows a Thread, every file Reference, including HTML and
-PDF, opens in that Thread's file panel. On a Thread page, the breadcrumb's
-**References** menu lists the Ticket's files. Other links follow **Settings › Browser**.
-Without a Thread, files open in a file preview and links open in your browser.
-HTML relative assets outside the Thread's worktree may not load. Replacing an
-open HTML or image file may prevent its preview from reloading.
-
-Issue References show their key or repository and number, such as `PROJ-123` or
-`orbit-web#12`. Board cards show up to two, and Board and sidebar search match
-them. The first issue Reference also names the branch when the work area is
-prepared, so add it before you prepare.
-
-Pull request References and PR links in the description appear in **Pull
-Requests** instead of **References**, together with the PRs that linked Threads report. **Unlink** on such a row removes
-only the Reference; a PR that a Thread also links stays listed. **Needs
-attention** covers only PRs linked to a Thread.
-
-A file Reference is a path on the machine that runs the environment. It opens
-from any connected client, including remote ones. A file that no longer exists
-shows as unavailable.
-
-Epics keep a single Jira link. Open the Epic's details and choose **Link issue**
-under **Jira issue** to paste the issue's URL, or **Change** or **Unlink** to
-replace or remove it.
-
-Tickets that had a Jira link in an earlier version keep it, and their Epic's
-link, as References. Workspaces that synced with Jira in an earlier version keep
-their Tickets and Epics as ordinary records. Workbench no longer updates them
-from Jira; edit, move, archive, or delete them like any other record. Tickets
-whose issues had left the selected sprints are archived. If an earlier version
-could not confirm that it created a Jira issue, the Ticket or Epic stays a local
-record, linked only if its issue key was known. Check Jira and add the issue
-yourself if needed.
+Choose **Delete Workspace** and review the Ticket count before confirming.
+Deletion permanently removes the Workspace's planning data. Native Projects,
+Threads, worktrees, branches, commits, and linked issues remain. There is no undo.
+**Retained worktrees** stays available even after deleting the last Workspace.
 
 ## Agents and the Ticket
 
 Planning Threads and Threads on a Ticket can read and change their own Ticket or
-draft while they work. An agent can change the title, description, repository
-scope, and Progress. It can also add, remove, or retitle References. Its changes
-apply at once and show in the Thread. It cannot remove a repository that an active Thread works in.
+draft. Agents can change its title, brief, repository scope, and Progress, and
+add, remove, or retitle References. Changes apply at once. An agent cannot remove
+a repository an active Thread uses. Review brief edits as described in
+[Brief, Progress, and requirements](#brief-progress-and-requirements).
 
-A description an agent changed shows **Updated by** and the Thread's name until
-you edit it. A Reference an agent added shows **added by** on hover. Edit those fields as
-usual, or ask the agent to revise Progress.
+Agents record current supporting sources as References and link delivery PRs
+through their Threads. When asked, they use their own connectors to research or
+create issues. You can also ask a Ticket's agent to create another Thread for
+the next PR, choosing a repository on the Ticket.
 
-Agents record References on their own. When you paste supporting links into a planning
-conversation, or an agent finds a related issue or prior example, it adds them.
-Agents link PRs they create, take over, or push to through their Thread instead of
-also adding them as References. Agents use their
-own connectors, such as Jira or GitHub, when you ask.
-
-Agents use `workbench_ticket_read` to read the current Ticket or draft and
-`workbench_ticket_update` to revise it, including Progress. They use
-`workbench_reference_update` to retitle an existing Reference without removing it.
-When you ask a Ticket's agent to start another Thread, such as one for the next PR,
-it uses `workbench_thread_create`. The new Thread joins the Ticket like one from
-**Create Thread**, in the Ticket's worktree with the asking agent's model.
-
-Each Ticket has an artifacts folder on the machine that runs the environment,
+Each Ticket has an artifacts folder on the machine running the environment,
 under `userdata/workbench-artifacts` in the T3 data directory. Agents save plans,
-specs, mockups, and diagrams there and add current sources as References. Deleting the
-Ticket or discarding the draft keeps the folder.
+requirements, mockups, and diagrams there and add current sources as References.
+Deleting the Ticket or discarding a draft keeps the folder. Keep audit output,
+test results, and evidence logs in that folder or the PR.
 
 ## Troubleshooting
 
-| Problem                                           | What to check                                                                          |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                               |
-| A completed turn leaves the Ticket In Progress    | Review the result and set the Ticket status to Done.                                   |
-| A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                               |
-| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again.            |
-| The agent cannot find or create Jira issues       | Set up a Jira connector for that provider; Workbench does not connect to Jira itself.  |
-| Workspaces or Tickets seem to be missing          | Check the connected environment; each environment has separate records and saved data. |
+| Problem                                           | What to check                                                               |
+| ------------------------------------------------- | --------------------------------------------------------------------------- |
+| The agent has not started after creating a Thread | Send a message; creation only prepares the conversation.                    |
+| A completed turn leaves the Ticket In Progress    | Review the result and set the Ticket status to Done.                        |
+| A repository is missing from a Workspace          | Add its directory as a T3 Project first.                                    |
+| A prepared worktree is missing                    | Remove Threads that use it, reset the Ticket work area, then prepare again. |
+| A file Reference does not preview as expected     | Select a Thread in the chat; preview support depends on the file format.    |
+| Workspaces or Tickets seem to be missing          | Check the connected environment; each has separate records and saved data.  |
 
 For connecting another device, see [Remote access](./remote-access.md).

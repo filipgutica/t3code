@@ -11,31 +11,31 @@ import board from "../assets/screenshots/board.png";
 import boardLight from "../assets/screenshots/board-light.png";
 import ticket from "../assets/screenshots/ticket.png";
 import ticketLight from "../assets/screenshots/ticket-light.png";
-import workspace from "../assets/screenshots/workspace.png";
-import workspaceLight from "../assets/screenshots/workspace-light.png";
-import thread from "../assets/screenshots/thread.png";
-import threadLight from "../assets/screenshots/thread-light.png";
-import pullRequest from "../assets/screenshots/pull-request.png";
-import pullRequestLight from "../assets/screenshots/pull-request-light.png";
-import notifications from "../assets/screenshots/notifications.png";
-import notificationsLight from "../assets/screenshots/notifications-light.png";
+import workspace from "../assets/screenshots/thread-context.png";
+import workspaceLight from "../assets/screenshots/thread-context-light.png";
+import thread from "../assets/screenshots/reference.png";
+import threadLight from "../assets/screenshots/reference-light.png";
+import pullRequest from "../assets/screenshots/pull-requests.png";
+import pullRequestLight from "../assets/screenshots/pull-requests-light.png";
+import notifications from "../assets/screenshots/terminal.png";
+import notificationsLight from "../assets/screenshots/terminal-light.png";
 import planning from "../assets/screenshots/planning.png";
 import planningLight from "../assets/screenshots/planning-light.png";
-import ticketChat from "../assets/screenshots/ticket-chat.png";
-import ticketChatLight from "../assets/screenshots/ticket-chat-light.png";
-import boardChat from "../assets/screenshots/board-chat.png";
-import boardChatLight from "../assets/screenshots/board-chat-light.png";
+import ticketChat from "../assets/screenshots/recaps.png";
+import ticketChatLight from "../assets/screenshots/recaps-light.png";
+import boardChat from "../assets/screenshots/agent-edit.png";
+import boardChatLight from "../assets/screenshots/agent-edit-light.png";
 import "../styles/site.css";
 
 const repository = "https://github.com/filipgutica/t3code";
 const guide = `${repository}/blob/main/docs/user/agent-workbench.md`;
 const downloads = `${repository}/releases/latest`;
-const title = "T3 Code Workbench | Plan work across repositories";
+const title = "T3 Code Workbench | One Ticket for work across repositories";
 const description =
-  "Plan Tickets across repositories, continue in native T3 Threads and isolated worktrees, and review linked pull requests. An independent T3 Code fork.";
+  "Plan connected work in a conversation, split it into a native T3 Thread for each PR across repositories, and follow PRs, attention, and recaps from one Ticket. An independent T3 Code fork.";
 const base = import.meta.env.BASE_URL;
 const canonical = new URL(base, Astro.site);
-const shareImage = await getImage({ src: board, width: 1200, format: "jpeg", quality: 85 });
+const shareImage = await getImage({ src: ticket, width: 1200, format: "jpeg", quality: 85 });
 // Matches the content column: the frame minus its graph column, then the split and pair layouts.
 const sizes = {
   full: "(max-width: 640px) calc(100vw - 60px), (max-width: 900px) calc(100vw - 84px), 1096px",
@@ -75,59 +75,59 @@ const prepareImage = async ({
   return { ...darkSource, light: lightSource, alt, sizes, eager };
 };
 const images = {
-  board: await prepareImage({
-    src: board,
-    light: boardLight,
-    alt: "Demo Beacon Workbench Board with Tickets for Beacon CLI and Beacon Docs",
+  ticket: await prepareImage({
+    src: ticket,
+    light: ticketLight,
+    alt: "Demo Orbit Ticket with three planned PRs across Orbit API and Orbit Web, Progress, attention, and Threads",
     sizes: sizes.full,
     eager: true,
   }),
   planning: await prepareImage({
     src: planning,
     light: planningLight,
-    alt: "Demo planning Thread beside an editable Ticket draft",
+    alt: "Planning Thread in the Orbit Board chat with the draft's brief, Progress, and References",
     sizes: sizes.split,
   }),
-  boardChat: await prepareImage({
+  board: await prepareImage({
+    src: board,
+    light: boardLight,
+    alt: "Orbit Board with the invitation Ticket In Progress and one of three planned PRs complete",
+    sizes: sizes.split,
+  }),
+  agentEdit: await prepareImage({
     src: boardChat,
     light: boardChatLight,
-    alt: "Demo Board chat with its Thread menu open, showing recaps, an approval request, and New ticket draft",
+    alt: "Agent edit to the Ticket brief with the change, Undo, and Accept available for review",
     sizes: sizes.split,
   }),
-  ticket: await prepareImage({
-    src: ticket,
-    light: ticketLight,
-    alt: "Demo Ticket with its description and linked planning Thread",
-    sizes: sizes.split,
-  }),
-  workspace: await prepareImage({
-    src: workspace,
-    light: workspaceLight,
-    alt: "Demo work area with prepared worktrees for Beacon Docs and Beacon CLI",
-    sizes: sizes.full,
-  }),
-  thread: await prepareImage({
+  reference: await prepareImage({
     src: thread,
     light: threadLight,
-    alt: "Demo planning Thread continued in the Ticket's prepared work area",
+    alt: "Expired-invitation HTML mockup open beside its Thread's conversation on the Ticket",
+    sizes: sizes.split,
+  }),
+  threadContext: await prepareImage({
+    src: workspace,
+    light: workspaceLight,
+    alt: "Shared context listing the Ticket's Threads with recaps and two prepared repository worktrees",
     sizes: sizes.pair,
   }),
-  ticketChat: await prepareImage({
-    src: ticketChat,
-    light: ticketChatLight,
-    alt: "Demo ticket chat with a Thread awaiting approval, another Thread's recap, and New Thread in the menu",
-    sizes: sizes.pair,
-  }),
-  pullRequest: await prepareImage({
-    src: pullRequest,
-    light: pullRequestLight,
-    alt: "Illustrative pull request panel beside a demo Ticket, showing its summary and failed checks",
-    sizes: sizes.full,
-  }),
-  notifications: await prepareImage({
+  terminal: await prepareImage({
     src: notifications,
     light: notificationsLight,
-    alt: "Illustrative Needs attention list showing failed checks, requested changes, and unresolved review threads on linked PRs",
+    alt: "Pending invitations Thread's terminal showing git status in its separate Orbit Web checkout",
+    sizes: sizes.pair,
+  }),
+  pullRequests: await prepareImage({
+    src: pullRequest,
+    light: pullRequestLight,
+    alt: "Ticket with merged Orbit API PR 41 and open Orbit Web PR 88, attention, and PR 88's summary panel",
+    sizes: sizes.full,
+  }),
+  recaps: await prepareImage({
+    src: ticketChat,
+    light: ticketChatLight,
+    alt: "Ticket Threads menu with status and one-line recap previews, the unread Thread first",
     sizes: sizes.split,
   }),
 };
@@ -160,7 +160,7 @@ const noScriptDarkCss = `@media (prefers-color-scheme: dark) { :root:not(.dark) 
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
     <meta property="og:image" content={new URL(shareImage.src, Astro.site)} />
-    <meta property="og:image:alt" content="Demo Beacon Workbench Board with Tickets across To Do, In Progress, and Done" />
+    <meta property="og:image:alt" content="Demo Orbit Ticket with three planned PRs across Orbit API and Orbit Web" />
     <meta name="twitter:card" content="summary_large_image" />
     <noscript><style is:global set:html={noScriptDarkCss}></style></noscript>
   </head>

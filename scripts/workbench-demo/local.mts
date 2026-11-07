@@ -227,6 +227,25 @@ const SETUP_COMMAND_MARKDOWN = [
 
 const TICKETS: readonly TicketFixture[] = [
   {
+    id: "orbit-017",
+    projectId: "orbit",
+    title: "Let invitees recover an expired invitation",
+    status: "in_progress",
+    repositoryProjectIds: ["orbit-api", "orbit-web"],
+    markdown: [
+      "Goal: Let invitees recover an expired invitation without asking an administrator.",
+      "",
+      "Decisions:",
+      "- Invitation links expire after 7 days.",
+      "- Resend keeps the original team and role.",
+      "- Pending invitations stay in team settings until accepted or revoked.",
+      "",
+      "Open question: Should a resend also notify the team administrator?",
+      "",
+      "Synthetic demo story. PR outcomes and seeded history are illustrative. Scope and acceptance: requirements.md.",
+    ].join("\n"),
+  },
+  {
     id: "orbit-001",
     projectId: "orbit",
     title: "Create the welcome checklist",
@@ -345,6 +364,29 @@ const TICKETS: readonly TicketFixture[] = [
 
 const ASSIGNED_THREADS = [
   {
+    ticketId: "orbit-017",
+    projectId: "orbit-api",
+    id: "orbit-017-api",
+    title: "Expiry and resend API",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+    pr: { repository: "workbench-synthetic/orbit-api", number: 41 },
+  },
+  {
+    ticketId: "orbit-017",
+    projectId: "orbit-web",
+    id: "orbit-017-web",
+    title: "Expired-invitation page",
+    modelSelection: { instanceId: ProviderInstanceId.make("claudeAgent"), model: "sonnet" },
+    pr: { repository: "workbench-synthetic/orbit-web", number: 88 },
+  },
+  {
+    ticketId: "orbit-017",
+    projectId: "orbit-web",
+    id: "orbit-017-settings",
+    title: "Pending invitations list",
+    modelSelection: { instanceId: ProviderInstanceId.make("codex"), model: DEFAULT_MODEL },
+  },
+  {
     ticketId: "orbit-001",
     projectId: "orbit-web",
     id: "orbit-001-thread",
@@ -372,6 +414,7 @@ const ASSIGNED_THREADS = [
 
 export interface LocalDemoOptions {
   readonly home: string;
+  /** Override the model for every seeded Thread, including story fixtures. */
   readonly modelSelection?: ModelSelection;
   /** Local server WebSocket URL. Omit to prepare only local Git repositories. */
   readonly wsUrl?: string;
@@ -687,9 +730,11 @@ const seedWorkbench = async (
     readonly token?: string | undefined;
     readonly now: () => string;
     readonly prepareWorkspaces: boolean;
-    readonly modelSelection: ModelSelection;
+    readonly modelSelection: ModelSelection | undefined;
   },
 ): Promise<void> => {
+  const defaultModelSelection =
+    options.modelSelection ?? (await readDemoModelSelection(options.home));
   const existing = await runRpc(options.wsUrl, options.token, (client) =>
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
@@ -794,13 +839,36 @@ const seedWorkbench = async (
     );
   }
 
+  const storyWorkspace = options.prepareWorkspaces
+    ? await runRpc(options.wsUrl, options.token, (client) =>
+        client[WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace]({
+          ticketId: WorkbenchTicketId.make("orbit-017"),
+          requestedAt: timestamp,
+        }),
+      )
+    : undefined;
   const shellAfterProjects = await readShellSnapshot(options.wsUrl, options.token);
   for (const thread of ASSIGNED_THREADS) {
     const threadId = ThreadId.make(thread.id);
     if (shellAfterProjects.threads.some((candidate) => candidate.id === thread.id)) continue;
     const source = NodePath.join(options.home, "projects", thread.projectId);
-    const worktreePath = NodePath.join(options.home, "worktrees", "demo", thread.id);
-    const branch = `demo/${thread.id}`;
+    const prepared =
+      thread.ticketId === "orbit-017"
+        ? storyWorkspace?.repositories.find(
+            (repository) => repository.projectId === thread.projectId,
+          )
+        : undefined;
+    if (storyWorkspace && thread.ticketId === "orbit-017" && prepared?.status !== "ready")
+      throw new Error(`Story repository is not ready: ${thread.projectId}`);
+    const independent = thread.id === "orbit-017-settings";
+    const worktreePath = prepared
+      ? independent
+        ? NodePath.join(NodePath.dirname(prepared.worktreePath), "pending-invitations")
+        : prepared.worktreePath
+      : NodePath.join(options.home, "worktrees", "demo", thread.id);
+    const branch = independent
+      ? "pending-invitations"
+      : (prepared?.branchName ?? `demo/${thread.id}`);
     if (!(await pathExists(worktreePath))) {
       await NodeFSP.mkdir(NodePath.dirname(worktreePath), { recursive: true });
       const branchExists = await runGit(source, [
@@ -825,7 +893,9 @@ const seedWorkbench = async (
         threadId,
         projectId: ProjectId.make(thread.projectId),
         title: thread.title,
-        modelSelection: options.modelSelection,
+        modelSelection:
+          options.modelSelection ??
+          ("modelSelection" in thread ? thread.modelSelection : defaultModelSelection),
         runtimeMode: DEFAULT_RUNTIME_MODE,
         interactionMode: DEFAULT_PROVIDER_INTERACTION_MODE,
         branch,
@@ -839,26 +909,53 @@ const seedWorkbench = async (
   const assignmentSnapshot = await runRpc(options.wsUrl, options.token, (client) =>
     client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
   );
-  const assignedTicketIds = new Set(
-    assignmentSnapshot.assignments.map((assignment) => assignment.ticketId),
+  const assignedThreadIds = new Set(
+    assignmentSnapshot.assignments.map((assignment) => assignment.threadId),
   );
   for (const thread of ASSIGNED_THREADS) {
     const ticketId = WorkbenchTicketId.make(thread.ticketId);
-    if (assignedTicketIds.has(ticketId)) continue;
+    if (assignedThreadIds.has(ThreadId.make(thread.id))) continue;
     await waitForAssignment(options.wsUrl, options.token, {
-      id: WorkbenchAssignmentId.make(`workbench-demo-${ticketId}-assignment`),
+      id: WorkbenchAssignmentId.make(
+        `workbench-demo-${thread.ticketId === "orbit-017" ? thread.id : ticketId}-assignment`,
+      ),
       ticketId,
       threadId: ThreadId.make(thread.id),
       createdAt: timestamp,
     });
   }
 
+  for (const thread of ASSIGNED_THREADS) {
+    if (thread.ticketId === "orbit-017")
+      await runRpc(options.wsUrl, options.token, (client) =>
+        dispatch(client, {
+          type: "thread.auto-settle.set",
+          commandId: CommandId.make(`workbench-demo-${thread.id}-no-auto-settle`),
+          threadId: ThreadId.make(thread.id),
+          enabled: false,
+        }),
+      );
+    if (!("pr" in thread)) continue;
+    await runRpc(options.wsUrl, options.token, (client) =>
+      dispatch(client, {
+        type: "thread.pull-request.link",
+        commandId: CommandId.make(`workbench-demo-${thread.id}-pr`),
+        threadId: ThreadId.make(thread.id),
+        host: "github.com",
+        ...thread.pr,
+        url: `https://github.com/${thread.pr.repository}/pull/${thread.pr.number}`,
+        source: "manual",
+      }),
+    );
+  }
+
   if (options.prepareWorkspaces) {
     const ready = await runRpc(options.wsUrl, options.token, (client) =>
       client[WORKBENCH_WS_METHODS.workbenchGetSnapshot]({}),
     );
-    for (const thread of ASSIGNED_THREADS) {
-      const ticketId = WorkbenchTicketId.make(thread.ticketId);
+    for (const ticketId of new Set(
+      ASSIGNED_THREADS.map((thread) => WorkbenchTicketId.make(thread.ticketId)),
+    )) {
       const workspace = ready.ticketWorkspaces.find((candidate) => candidate.ticketId === ticketId);
       if (workspace?.status === "ready") continue;
       await runRpc(options.wsUrl, options.token, (client) =>
@@ -911,7 +1008,7 @@ export const setupLocal = async (options: LocalDemoOptions): Promise<LocalDemoMa
       token: options.token,
       now,
       prepareWorkspaces,
-      modelSelection: options.modelSelection ?? (await readDemoModelSelection(home)),
+      modelSelection: options.modelSelection,
     });
   }
   const manifest: LocalDemoManifest = {
@@ -944,8 +1041,115 @@ const decodeLocalManifest = Schema.decodeUnknownSync(
   ),
 );
 
+const verifyStoryThread = async ({
+  thread,
+  found,
+  snapshot,
+  worktreePath,
+}: {
+  thread: (typeof ASSIGNED_THREADS)[number];
+  found: OrchestrationV2ShellSnapshot["threads"][number];
+  worktreePath: string;
+  snapshot: WorkbenchSnapshot;
+}) => {
+  if (
+    found.projectId !== thread.projectId ||
+    !snapshot.assignments.some(
+      (assignment) =>
+        assignment.threadId === found.id &&
+        assignment.ticketId === "orbit-017" &&
+        assignment.supersededAt === null,
+    )
+  )
+    throw new Error(`Story Thread has the wrong repository or Ticket: ${thread.id}`);
+  if (found.branch !== (await runGit(worktreePath, ["branch", "--show-current"])))
+    throw new Error(`Story Thread branch does not match its checkout: ${thread.id}`);
+  const actualPullRequests = found.pullRequests ?? [];
+  if (
+    "pr" in thread
+      ? actualPullRequests.length !== 1 ||
+        !actualPullRequests.some(
+          (pr) => pr.repository === thread.pr.repository && pr.number === thread.pr.number,
+        )
+      : actualPullRequests.length !== 0
+  )
+    throw new Error(`Story Thread PR links have changed: ${thread.id}`);
+  const workspace = snapshot.ticketWorkspaces.find((item) => item.ticketId === "orbit-017");
+  if (workspace?.status === "ready") {
+    const prepared = workspace.repositories.find(
+      (repository) => repository.projectId === thread.projectId,
+    );
+    if (!prepared || workspace.repositories.length !== 2)
+      throw new Error("Story Ticket must have two prepared repositories.");
+    const expectedPath =
+      thread.id === "orbit-017-settings"
+        ? NodePath.join(NodePath.dirname(prepared.worktreePath), "pending-invitations")
+        : prepared.worktreePath;
+    if (worktreePath !== expectedPath)
+      throw new Error(`Story Thread has the wrong checkout: ${thread.id}`);
+  }
+};
+
+const verifyStoryThreads = async ({
+  shell,
+  snapshot,
+}: {
+  shell: OrchestrationV2ShellSnapshot;
+  snapshot: WorkbenchSnapshot;
+}) => {
+  const story = snapshot.tickets.find((ticket) => ticket.id === "orbit-017");
+  if (story?.repositoryProjectIds.join(",") !== "orbit-api,orbit-web")
+    throw new Error("Story Ticket must scope Orbit API and Orbit Web.");
+  for (const thread of ASSIGNED_THREADS.filter((fixture) => fixture.ticketId === "orbit-017")) {
+    const found = shell.threads.find((candidate) => candidate.id === thread.id);
+    if (!found?.worktreePath) throw new Error(`Missing story Thread: ${thread.id}`);
+    await verifyStoryThread({ thread, found, snapshot, worktreePath: found.worktreePath });
+  }
+};
+
+const verifyStoryOutcomes = async ({
+  home,
+  snapshot,
+}: {
+  home: string;
+  snapshot: WorkbenchSnapshot;
+}) => {
+  const story = snapshot.tickets.find((ticket) => ticket.id === "orbit-017");
+  if (
+    story?.generatedSummary?.status !== "ready" ||
+    !story.generatedSummary.text?.includes("Synthetic summary")
+  )
+    throw new Error("Missing synthetic story summary.");
+  const references = snapshot.references.filter((reference) => reference.ticketId === "orbit-017");
+  const artifactsDir = NodePath.join(home, "userdata", "workbench-artifacts", "orbit-017");
+  const files = ["requirements.md", "plan.md", "mockups/expired-invitation.html"];
+  if (
+    references.length !== files.length ||
+    files.some(
+      (file) =>
+        !references.some((reference) => reference.url === NodePath.join(artifactsDir, file)),
+    )
+  )
+    throw new Error("Missing story artifact References.");
+  for (const file of files) await NodeFSP.access(NodePath.join(artifactsDir, file));
+  const recaps = snapshot.threadRecaps.filter((recap) =>
+    ["orbit-017-api", "orbit-017-web", "orbit-017-settings"].includes(recap.threadId),
+  );
+  if (
+    recaps.length !== 2 ||
+    !["orbit-017-api", "orbit-017-web"].every((id) =>
+      recaps.some((recap) => recap.threadId === id && recap.text.includes("Synthetic recap")),
+    )
+  )
+    throw new Error("Missing story recap previews.");
+  if (story.progressDone !== 1 || story.progressTotal !== 3)
+    throw new Error("Story Progress must be 1 of 3.");
+};
+
 export const verifyLocal = async (
-  options: Pick<LocalDemoOptions, "home" | "wsUrl" | "token">,
+  options: Pick<LocalDemoOptions, "home" | "wsUrl" | "token"> & {
+    readonly storyOutcomes?: boolean;
+  },
 ): Promise<LocalDemoVerification> => {
   const home = NodePath.resolve(options.home);
   const manifest = decodeLocalManifest(await NodeFSP.readFile(manifestPath(home), "utf8"));
@@ -1012,6 +1216,8 @@ export const verifyLocal = async (
         throw new Error(`Missing native Thread worktree: ${thread.id}`);
       await runGit(found.worktreePath, ["rev-parse", "--verify", "HEAD"]);
     }
+    await verifyStoryThreads({ shell, snapshot });
+    if (options.storyOutcomes) await verifyStoryOutcomes({ home, snapshot });
     workbench = {
       projects: snapshot.projects,
       tickets: snapshot.tickets,

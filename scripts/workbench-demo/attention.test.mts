@@ -28,7 +28,7 @@ const execute = async (args: string[], input?: unknown) => {
   if (input !== undefined) execution.child.stdin?.end(JSON.stringify(input));
   return (await execution).stdout;
 };
-const read = async (number: number, query: string) =>
+const read = async (number: number, query: string, name = "attention-fixtures") =>
   execute([
     "api",
     "graphql",
@@ -37,7 +37,7 @@ const read = async (number: number, query: string) =>
     "-f",
     "owner=workbench-synthetic",
     "-f",
-    "name=attention-fixtures",
+    `name=${name}`,
     "-F",
     `number=${number}`,
     "-f",
@@ -146,4 +146,43 @@ it("refuses GitHub writes, unrelated identities and deliberately unavailable ins
     ["pr", "view", "903", "--repo", "workbench-synthetic/attention-fixtures"],
   ])
     await expect(execute(args)).rejects.toThrow(/\[Synthetic demo\].*no GitHub request was sent/);
+});
+
+it("decodes the story's merged API PR and open Web PR with failing checks and one review thread", async () => {
+  const document = await attentionSummaryDocument([
+    { repository: "workbench-synthetic/orbit-api", number: 41 },
+    { repository: "workbench-synthetic/orbit-web", number: 88 },
+  ]);
+  const raw = JSON.parse(await execute(["api", "graphql", "--input", "-"], document));
+  const summaries = [0, 1].map((index) => {
+    const decoded = decodeSummary({ repository: raw.data[`_${index}_repository`] });
+    if (!decoded.repository?.pullRequest) throw new Error("Missing story PR");
+    return toPullRequestSummary(decoded.repository.pullRequest);
+  });
+  expect(summaries[0]).toEqual(
+    expect.objectContaining({ number: 41, state: "merged", checksState: "passing" }),
+  );
+  expect(summaries[1]).toEqual(
+    expect.objectContaining({ number: 88, state: "open", checksState: "failing" }),
+  );
+  const core = toPullRequestCore(
+    decodeCore(JSON.parse(await read(88, PullRequestCore.document, "orbit-web")).data),
+  );
+  expect(core?.checks.map((check) => check.status)).toEqual(["failure"]);
+  const review = toReviewThreadPage(
+    decodeThreads(JSON.parse(await read(88, ReviewThreads.document, "orbit-web")).data),
+  );
+  expect(review?.threads).toHaveLength(1);
+  expect(review?.threads[0]?.thread.isResolved).toBe(false);
+  const mergedReview = toReviewThreadPage(
+    decodeThreads(JSON.parse(await read(41, ReviewThreads.document, "orbit-api")).data),
+  );
+  expect(mergedReview?.threads).toHaveLength(0);
+  for (const args of [
+    ["pr", "merge", "88", "--repo", "workbench-synthetic/orbit-web"],
+    ["pr", "view", "88", "--repo", "workbench-synthetic/orbit-api"],
+    ["pr", "view", "41", "--repo", "workbench-synthetic/orbit-web"],
+    ["pr", "view", "89", "--repo", "workbench-synthetic/orbit-web"],
+  ])
+    await expect(execute(args)).rejects.toThrow(/no GitHub request was sent/);
 });

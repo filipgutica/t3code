@@ -26,14 +26,32 @@ emulating the color scheme; the app follows the system theme. Check the saved di
 and text at 1:1 before replacing both the site and user-guide images; keep the
 pointer outside the page, clear focus rings, and close popovers that expose local paths.
 
-The page follows one Ticket as a commit graph: plan, Ticket, a worktree per
-repository (the fork), native Threads, pull request review (the merge), and install.
-`src/components/CommitGraph.vue` draws each section's slice. Lines draw and nodes fill
-with CSS scroll-driven animations, so they need no JavaScript and nothing runs while the
-page is idle. Under reduced motion, or in browsers without scroll timelines, the graph is
-drawn in full. Below 900px it collapses to one lane. Each screenshot opens in the lightbox.
-The planning conversation is real; it does not show completed implementation work.
-Demo PR feedback and implementation outcomes are illustrative.
+The page follows one Ticket as a commit graph: plan, brief and Progress,
+References, a Thread per PR across repositories (the fork), PRs and attention,
+recap previews, Done (the merge), and install. The two lanes represent Orbit API
+and Orbit Web. `src/components/CommitGraph.vue` draws each section's slice. Lines
+draw and nodes fill with CSS scroll-driven animations, so they need no JavaScript
+and nothing runs while the page is idle. Under reduced motion, or in browsers
+without scroll timelines, the graph is drawn in full. Below 900px it collapses
+to one lane. Each screenshot opens in the lightbox.
+
+The demo Ticket's history, PR outcomes, and recaps are synthetic. Its planning
+conversation and prepared Git worktrees are real. The site and guide disclose
+this at the first screenshot.
+
+## Capture sources
+
+The nine image pairs follow the approved Orbit story: `ticket`, `planning`,
+`board`, `agent-edit`, `reference`, `thread-context`, `terminal`, `pull-requests`,
+and `recaps`. The site and `docs/user/media/workbench` use the same original PNGs.
+Keep both themes at 2560 × 1800 with matching framing. The `ticket` image is also
+the README hero and social share image.
+
+Capture native UI using normal sidebar/chat resizing, section toggles, search,
+and scrolling. Keep seeded outcomes distinct from real planning or agent edits.
+Shared context can use the native stacked layout to make its text readable.
+The current shared header, Graphite Indigo theme, IBM Plex fonts, and T3 accent
+stay unchanged.
 
 The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
 so the page matches the screenshots. Update it when that theme changes.
