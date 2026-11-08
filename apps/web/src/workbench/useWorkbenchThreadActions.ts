@@ -305,7 +305,16 @@ export function useWorkbenchThreadActions({
       return;
     }
     setAttachThreadTicket(null);
-    await openAssignedThread(threadId);
+    if (
+      !showWorkbenchPageChatThread({
+        environmentId,
+        ticketId: attachThreadTicket.id,
+        projectId: attachThreadTicket.projectId,
+        threadId,
+      })
+    ) {
+      await openAssignedThread(threadId);
+    }
   };
 
   /** The latest Ticket, or null when its repositories changed and the user must review them. */

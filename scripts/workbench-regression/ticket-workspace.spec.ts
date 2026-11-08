@@ -149,9 +149,9 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   await expect(ticketChat(page).locator('[contenteditable="true"]')).toBeVisible();
   const initial = await snapshot(demo);
   const assignment = initial.assignments.find((candidate) => candidate.ticketId === "orbit-008")!;
-  const thread = (await demo.shellSnapshot()).threads.find(
-    (candidate) => candidate.id === assignment.threadId,
-  )!;
+  const native = await demo.shellSnapshot();
+  const thread = native.threads.find((candidate) => candidate.id === assignment.threadId)!;
+  const repository = native.projects.find((candidate) => candidate.id === thread.projectId)!;
   expect(
     initial.ticketWorkspaces
       .find((candidate) => candidate.ticketId === "orbit-008")
@@ -194,18 +194,20 @@ test("unlink preserves a native thread and its workspace, and permits relinking"
   await page.getByRole("alertdialog").getByRole("button", { name: "Cancel", exact: true }).click();
   await page.getByRole("button", { name: /Link existing Thread/i, exact: true }).click();
   const dialog = page.getByRole("dialog");
-  await dialog.getByRole("button", { name: thread.title, exact: true }).click();
-  await dialog.getByRole("button", { name: /Link Thread/i, exact: true }).click();
-  await expect(dialog).not.toBeVisible();
-  await expect(page).toHaveURL(
-    (url) => url.pathname.endsWith(`/${thread.id}`) && url.searchParams.get("workbench") === null,
-  );
-  await page
-    .getByRole("link", {
-      name: "Back to Ticket Validate invitation addresses in Board Orbit",
+  await dialog
+    .getByRole("button", {
+      name: [thread.title, repository.title, thread.branch].filter(Boolean).join(", "),
       exact: true,
     })
     .click();
+  await dialog.getByRole("button", { name: /Link Thread/i, exact: true }).click();
+  await expect(dialog).not.toBeVisible();
+  await expect(page).toHaveURL(
+    (url) => url.pathname === "/workbench" && url.searchParams.get("ticketId") === "orbit-008",
+  );
+  await expect(
+    ticketChat(page).getByRole("region", { name: thread.title, exact: true }),
+  ).toBeVisible();
   await expect(settleThread).toBeVisible();
   expect(
     (await snapshot(demo)).assignments.find((candidate) => candidate.threadId === thread.id)
