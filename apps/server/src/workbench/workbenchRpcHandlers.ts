@@ -4,7 +4,6 @@ import * as Option from "effect/Option";
 import * as RpcGroup from "effect/rpc/RpcGroup";
 
 import * as AskForChangeService from "./AskForChangeService.ts";
-import * as ThreadLinkService from "./ThreadLinkService.ts";
 import * as TicketContextService from "./TicketContextService.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import * as TicketSummaryService from "./TicketSummaryService.ts";
@@ -16,7 +15,6 @@ type WorkbenchRpcHandlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof Workbench
 
 export type WorkbenchRpcServices = {
   readonly askForChange: AskForChangeService.AskForChangeService["Service"];
-  readonly threadLinks: ThreadLinkService.ThreadLinkService["Service"];
   readonly ticketDrafts: TicketDraftService.TicketDraftService["Service"];
   readonly ticketContexts: TicketContextService.TicketContextService["Service"];
   readonly workbench: WorkbenchStore.WorkbenchStore["Service"];
@@ -27,7 +25,6 @@ export type WorkbenchRpcServices = {
 
 export const acquireWorkbenchRpcServices = Effect.gen(function* () {
   const askForChange = yield* AskForChangeService.AskForChangeService;
-  const threadLinks = yield* ThreadLinkService.ThreadLinkService;
   const ticketDrafts = yield* TicketDraftService.TicketDraftService;
   const ticketContexts = yield* TicketContextService.TicketContextService;
   const workbench = yield* WorkbenchStore.WorkbenchStore;
@@ -37,7 +34,6 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
 
   return {
     askForChange,
-    threadLinks,
     ticketDrafts,
     ticketContexts,
     workbench,
@@ -49,7 +45,6 @@ export const acquireWorkbenchRpcServices = Effect.gen(function* () {
 
 export const makeWorkbenchRpcHandlers = ({
   askForChange,
-  threadLinks,
   ticketDrafts,
   ticketContexts,
   workbench,
@@ -95,7 +90,6 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchArchiveTicket]: (input) => workbench.archiveTicket(input),
     [WORKBENCH_WS_METHODS.workbenchDeleteTicket]: (input) => workbench.deleteTicket(input),
     [WORKBENCH_WS_METHODS.workbenchCreateAssignment]: (input) => workbench.createAssignment(input),
-    [WORKBENCH_WS_METHODS.workbenchLinkThread]: (input) => threadLinks.linkThread(input),
     [WORKBENCH_WS_METHODS.workbenchUnlinkAssignment]: (input) => workbench.unlinkAssignment(input),
     [WORKBENCH_WS_METHODS.workbenchReplaceAssignment]: (input) =>
       workbench.replaceAssignment(input),

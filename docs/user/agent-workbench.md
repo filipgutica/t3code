@@ -158,10 +158,10 @@ Creating a Thread does not start an agent turn. It opens the conversation in the
 chosen repository's worktree. To prepare worktrees without opening a Thread,
 choose **Prepare work area** in **Work area**.
 
-**Link existing Thread** links an unassigned conversation directly when it already
-runs in this Ticket's worktree. Otherwise, it links a fork in the Ticket's
-checkout. The original conversation and its uncommitted changes stay where they
-are. A fork needs a completed turn with a checkpoint. No prompt is sent.
+**Link existing Thread** attaches an unassigned conversation from one of the
+Ticket’s repositories. It keeps its history, branch and working directory, which
+may be outside the Ticket’s work area. No prompt is sent. To work in the Ticket’s
+checkout, use **Create Thread** instead.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-context-light.png">

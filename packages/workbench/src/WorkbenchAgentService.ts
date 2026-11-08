@@ -24,7 +24,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { TicketWorkspaceService, prepareTicketCheckout } from "./TicketWorkspaceService.ts";
+import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
 import { WorkbenchAgentHost } from "./WorkbenchAgentHost.ts";
 import { WorkbenchNativeAccess } from "./WorkbenchNativeAccess.ts";
 import {
@@ -606,12 +606,19 @@ const make = Effect.gen(function* () {
       callerThreadId: input.threadId,
       requested: input.repositoryProjectId,
     });
-    const checkout = yield* prepareTicketCheckout({
-      workspaces,
+    const workspace = yield* workspaces.prepare({
       ticketId: ticket.id,
-      projectId,
       requestedAt: yield* currentAt,
     });
+    const checkout = workspace.repositories.find(
+      (repository) => repository.status === "ready" && repository.projectId === projectId,
+    );
+    if (checkout === undefined) {
+      return yield* new WorkbenchOperationError({
+        code: "ticket_workspace_repository_not_found",
+        message: "The chosen repository has no ready worktree for this Ticket.",
+      });
+    }
     const title = input.title ?? ticket.title;
     const threadId = yield* host.createThread({
       callerThreadId: input.threadId,

@@ -37,7 +37,6 @@ const commands = vi.hoisted(() => ({
   deleteThread: vi.fn(),
   updateTicket: vi.fn(),
   createAssignment: vi.fn(),
-  linkThread: vi.fn(),
   replaceAssignment: vi.fn(),
   unlinkAssignment: vi.fn(),
   prepareTicketWorkspace: vi.fn(),
@@ -55,7 +54,6 @@ vi.mock("./state", () => ({
   workbenchEnvironment: {
     updateTicket: "updateTicket",
     createAssignment: "createAssignment",
-    linkThread: "linkThread",
     replaceAssignment: "replaceAssignment",
     unlinkAssignment: "unlinkAssignment",
     prepareTicketWorkspace: "prepareTicketWorkspace",
@@ -338,9 +336,9 @@ describe("linked Thread failure recovery", () => {
     expect(router.state.location.pathname).toBe(`/${environmentId}/${assignment.threadId}`);
   });
 
-  it("retains a failed link for retry, then links and opens the Thread the link returns", async () => {
+  it("retains a failed attach for retry, then links and opens the selected native Thread", async () => {
     const { router, update } = await mount({ existingThreadIds: new Set([assignment.threadId]) });
-    commands.linkThread.mockResolvedValueOnce(
+    commands.createAssignment.mockResolvedValueOnce(
       AsyncResult.failure(Cause.fail(new Error("Assignment could not be saved."))),
     );
     await act(async () => actions.setAttachThreadTicket(ticket));
@@ -357,28 +355,21 @@ describe("linked Thread failure recovery", () => {
         tickets: [{ ...ticket, id: WorkbenchTicketId.make("other-selected-ticket") }, ticket],
       },
     });
-    // A Thread from another worktree comes back as its fork in the Ticket's worktree.
-    const fork = ThreadId.make("linked-thread-fork");
-    commands.linkThread.mockResolvedValueOnce(
-      AsyncResult.success({ ...assignment, threadId: fork }),
-    );
-    await act(async () => actions.attachExistingThread(assignment.threadId, projectId));
-    expect(commands.linkThread).toHaveBeenCalledTimes(2);
-    expect(commands.linkThread).toHaveBeenLastCalledWith({
+    await act(async () => actions.attachExistingThread(assignment.threadId));
+    expect(commands.createAssignment).toHaveBeenCalledTimes(2);
+    expect(commands.createAssignment).toHaveBeenLastCalledWith({
       environmentId,
       input: {
         id: expect.any(String),
         ticketId: ticket.id,
         threadId: assignment.threadId,
-        repositoryProjectId: projectId,
         createdAt: expect.any(String),
       },
     });
-    expect(commands.createAssignment).not.toHaveBeenCalled();
     expect(actions.attachThreadTicket).toBeNull();
     expect(error).toBeNull();
     expect(pending).toBeNull();
-    expect(router.state.location.pathname).toBe("/remote/linked-thread-fork");
+    expect(router.state.location.pathname).toBe("/remote/linked-thread");
     expect(router.state.location.search).toEqual({});
     expect(commands.createThread).not.toHaveBeenCalled();
   });
@@ -386,19 +377,16 @@ describe("linked Thread failure recovery", () => {
   it.each([
     { kind: "ticket" as const, ticketId: ticket.id },
     { kind: "board" as const, projectId: workspace.id },
-  ])("shows the linked fork in the mounted $kind chat", async (owner) => {
+  ])("shows the linked Thread in the mounted $kind chat", async (owner) => {
     const showThread = vi.fn();
     useWorkbenchFloatingChatStore.setState({
       pageChat: { environmentId, ...owner, showThread },
     });
     const { router } = await mount();
-    const fork = ThreadId.make("linked-thread-fork");
-    commands.linkThread.mockResolvedValueOnce(
-      AsyncResult.success({ ...assignment, threadId: fork }),
-    );
+    commands.createAssignment.mockResolvedValueOnce(AsyncResult.success(assignment));
     await act(async () => actions.setAttachThreadTicket(ticket));
     await act(async () => actions.attachExistingThread(assignment.threadId));
-    expect(showThread).toHaveBeenCalledExactlyOnceWith(fork);
+    expect(showThread).toHaveBeenCalledExactlyOnceWith(assignment.threadId);
     expect(router.state.location.pathname).toBe("/workbench");
     expect(actions.attachThreadTicket).toBeNull();
   });

@@ -151,33 +151,6 @@ export class TicketWorkspaceService extends Context.Service<
   TicketWorkspaceServiceShape
 >()("@t3tools/workbench/TicketWorkspaceService") {}
 
-/** Prepares the Ticket's worktrees and returns the ready checkout of one of its repositories. */
-export const prepareTicketCheckout = Effect.fn("TicketWorkspaceService.prepareTicketCheckout")(
-  function* ({
-    workspaces,
-    ticketId,
-    projectId,
-    requestedAt,
-  }: {
-    readonly workspaces: TicketWorkspaceServiceShape;
-    readonly ticketId: WorkbenchPrepareTicketWorkspaceInput["ticketId"];
-    readonly projectId: ProjectId;
-    readonly requestedAt: WorkbenchPrepareTicketWorkspaceInput["requestedAt"];
-  }) {
-    const workspace = yield* workspaces.prepare({ ticketId, requestedAt });
-    const checkout = workspace.repositories.find(
-      (repository) => repository.status === "ready" && repository.projectId === projectId,
-    );
-    if (checkout === undefined) {
-      return yield* new WorkbenchOperationError({
-        code: "ticket_workspace_repository_not_found",
-        message: "The chosen repository has no ready worktree for this Ticket.",
-      });
-    }
-    return checkout;
-  },
-);
-
 interface ValidatedRepository {
   readonly projectId: ProjectId;
   readonly sourcePath: string;

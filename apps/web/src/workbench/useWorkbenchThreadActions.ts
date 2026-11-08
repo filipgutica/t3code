@@ -19,7 +19,6 @@ import { workbenchEnvironment } from "./state";
 import { failureMessage, reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
-import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
 import type { StartWorkbenchTicketOptions } from "./startWorkbenchTicket";
 import { isWorkbenchThreadArchived } from "./workbench.logic";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
@@ -117,7 +116,9 @@ export function useWorkbenchThreadActions({
     archivedThreadsById,
   } = pageData;
   const unarchiveThread = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
-  const linkThread = useAtomCommand(workbenchEnvironment.linkThread, { reportFailure: false });
+  const attachAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
+    reportFailure: false,
+  });
   const unlinkAssignment = useAtomCommand(workbenchEnvironment.unlinkAssignment, {
     reportFailure: false,
   });
@@ -285,18 +286,16 @@ export function useWorkbenchThreadActions({
     });
   };
 
-  /** Links the Thread, or a fork of it when it runs outside the Ticket's worktrees, then opens it. */
-  const attachExistingThread = async (threadId: ThreadId, repositoryProjectId?: ProjectId) => {
+  const attachExistingThread = async (threadId: ThreadId) => {
     if (environmentId === null || attachThreadTicket === null || pendingAction !== null) return;
     setPendingAction(`attach-thread:${attachThreadTicket.id}`);
     setError(null);
-    const result = await linkThread({
+    const result = await attachAssignment({
       environmentId,
       input: {
         id: WorkbenchAssignmentId.make(randomUUID()),
         ticketId: attachThreadTicket.id,
         threadId,
-        ...(repositoryProjectId === undefined ? {} : { repositoryProjectId }),
         createdAt: new Date().toISOString(),
       },
     });
@@ -306,22 +305,15 @@ export function useWorkbenchThreadActions({
       return;
     }
     setAttachThreadTicket(null);
-    const linkedThreadId = result.value.threadId;
-    try {
-      await waitForWorkbenchThread(scopeThreadRef(environmentId, linkedThreadId));
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "The linked Thread could not be opened.");
-      return;
-    }
     if (
       !showWorkbenchPageChatThread({
         environmentId,
         ticketId: attachThreadTicket.id,
         projectId: attachThreadTicket.projectId,
-        threadId: linkedThreadId,
+        threadId,
       })
     ) {
-      await openAssignedThread(linkedThreadId);
+      await openAssignedThread(threadId);
     }
   };
 

@@ -35,7 +35,6 @@ export const WORKBENCH_RPC_REQUIRED_SCOPES = {
   [WORKBENCH_WS_METHODS.workbenchArchiveTicket]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchDeleteTicket]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchCreateAssignment]: AuthOrchestrationOperateScope,
-  [WORKBENCH_WS_METHODS.workbenchLinkThread]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchUnlinkAssignment]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchReplaceAssignment]: AuthOrchestrationOperateScope,
   [WORKBENCH_WS_METHODS.workbenchPrepareTicketWorkspace]: AuthOrchestrationOperateScope,

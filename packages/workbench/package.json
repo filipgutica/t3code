@@ -52,14 +52,6 @@
       "types": "./src/WorkbenchAgentService.ts",
       "import": "./src/WorkbenchAgentService.ts"
     },
-    "./ThreadLinkService": {
-      "types": "./src/ThreadLinkService.ts",
-      "import": "./src/ThreadLinkService.ts"
-    },
-    "./ThreadLinkHost": {
-      "types": "./src/ThreadLinkHost.ts",
-      "import": "./src/ThreadLinkHost.ts"
-    },
     "./WorkbenchAgentHost": {
       "types": "./src/WorkbenchAgentHost.ts",
       "import": "./src/WorkbenchAgentHost.ts"
