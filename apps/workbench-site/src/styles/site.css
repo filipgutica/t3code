@@ -139,7 +139,7 @@ p {
   }
   :focus-visible {
     outline: 2px solid var(--color-focus);
-    outline-offset: var(--space-1);
+    outline-offset: 2px;
   }
 }
 .frame {
@@ -167,25 +167,10 @@ nav.section-nav {
   display: flex;
   gap: var(--space-6);
   overflow-x: auto;
-  font-size: var(--text-sm);
   scrollbar-width: none;
 }
 nav.section-nav a {
-  display: inline-flex;
   flex: none;
-  align-items: center;
-  min-height: var(--control-lg);
-  border-bottom: 2px solid transparent;
-  color: var(--text-muted);
-}
-nav.section-nav a:hover {
-  color: var(--text);
-  text-decoration: none;
-}
-nav.section-nav a[aria-current="location"] {
-  border-bottom-color: var(--accent);
-  color: var(--text);
-  font-weight: var(--weight-medium);
 }
 
 /* Steps: every section is a commit. Its heading's first line sits on the node. */
