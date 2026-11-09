@@ -1355,8 +1355,8 @@ importers:
         specifier: 7.0.3
         version: 7.0.3(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(astro@7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0))(esbuild@0.28.2)(jiti@2.7.0)(supports-color@8.1.1)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(vue@3.5.43(typescript@6.0.3))(yaml@2.9.0)
       '@filipgutica/ui':
-        specifier: 1.27.0
-        version: 1.27.0(vue@3.5.43(typescript@6.0.3))
+        specifier: 1.28.0
+        version: 1.28.0(vue@3.5.43(typescript@6.0.3))
       astro:
         specifier: ^7.0.3
         version: 7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0)
@@ -4657,8 +4657,8 @@ packages:
     cpu: [x64, arm64]
     os: [darwin, linux, win32, android]
 
-  '@filipgutica/ui@1.27.0':
-    resolution: {integrity: sha512-Yjc74XSRS1hXsOP9Oh1fndgQAodCXX3JmqF9sq3x2hbiYkM3m3hA9ZVT4r77DBgSML4sSf8coHpTngJMd/8CAQ==}
+  '@filipgutica/ui@1.28.0':
+    resolution: {integrity: sha512-YzvDmgBWpw4v4fTgXzjfRRyGk2C/ggucqmFALYJdDOkBiT7Vu1bRkP6uM/9fLd9KuFcCrSXAHqASNe1MDbxzqA==}
     engines: {node: '>=22.12'}
     peerDependencies:
       vue: ^3.5.0
@@ -15367,7 +15367,7 @@ snapshots:
       '@ff-labs/fff-bin-win32-arm64': 0.11.0
       '@ff-labs/fff-bin-win32-x64': 0.11.0
 
-  '@filipgutica/ui@1.27.0(vue@3.5.43(typescript@6.0.3))':
+  '@filipgutica/ui@1.28.0(vue@3.5.43(typescript@6.0.3))':
     dependencies:
       '@vueuse/core': 14.4.0(vue@3.5.43(typescript@6.0.3))
       jsonc-parser: 3.3.1
