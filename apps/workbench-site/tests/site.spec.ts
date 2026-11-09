@@ -208,7 +208,7 @@ test("section anchors, active state, and history retain native scrolling", async
   await page.keyboard.press("Tab");
   await expect(guide).toBeFocused();
   await expect(guide).toHaveCSS("outline-width", "2px");
-  await expect(guide).toHaveCSS("outline-offset", "2px");
+  await expect(guide).toHaveCSS("outline-offset", "3px");
 });
 test("section and screenshot deep links land on their target", async ({ page }) => {
   await load(page, "#threads-heading");
