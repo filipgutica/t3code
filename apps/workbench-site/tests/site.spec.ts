@@ -545,3 +545,13 @@ test("actions with the button fill are library buttons", async ({ page }) => {
     expect(strays, route).toEqual([]);
   }
 });
+
+test("product headings stop at the display-sm type step on wide screens", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await load(page);
+  const sizes = await page
+    .locator("main h2")
+    .evaluateAll((elements) => elements.map((element) => getComputedStyle(element).fontSize));
+  expect(sizes.length).toBeGreaterThan(0);
+  expect(new Set(sizes)).toEqual(new Set(["34px"]));
+});
