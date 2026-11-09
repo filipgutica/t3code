@@ -845,6 +845,7 @@ function WorkbenchPageThreadDialogs(
       ) : null}
       {attachThreadTicket ? (
         <WorkbenchAttachThreadDialog
+          projects={pageData.projects}
           threads={[...threadsById.values()].filter(
             (thread) =>
               attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&

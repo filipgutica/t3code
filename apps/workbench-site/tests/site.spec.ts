@@ -168,6 +168,22 @@ test("section anchors, active state, and history retain native scrolling", async
     "aria-current",
     "location",
   );
+  const marker = await nav.getByRole("link", { name: "Plan", exact: true }).evaluate((link) => {
+    const row = getComputedStyle(link);
+    const pip = getComputedStyle(link, "::before");
+    return {
+      pipWidth: pip.width,
+      pipHeight: pip.height,
+      borderBottomWidth: row.borderBottomWidth,
+      decoration: row.textDecorationLine,
+    };
+  });
+  expect(marker).toEqual({
+    pipWidth: "3px",
+    pipHeight: "14px",
+    borderBottomWidth: "0px",
+    decoration: "none",
+  });
   await markScrollEnd(page);
   await nav.getByRole("link", { name: "Threads", exact: true }).click();
   await ended(page);
@@ -185,6 +201,14 @@ test("section anchors, active state, and history retain native scrolling", async
     "location",
   );
   await expect(page).toHaveURL(/#plan-heading$/);
+  await load(page);
+  const guide = page.locator(".hero .text-link");
+  await guide.focus();
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.press("Tab");
+  await expect(guide).toBeFocused();
+  await expect(guide).toHaveCSS("outline-width", "2px");
+  await expect(guide).toHaveCSS("outline-offset", "2px");
 });
 test("section and screenshot deep links land on their target", async ({ page }) => {
   await load(page, "#threads-heading");
@@ -392,6 +416,12 @@ test("the commit graph draws to the viewport's centre line and is only scroll-li
   const { centre, nodes } = await graphState(page);
   expect(nodes.filter((node) => node.y < centre).length).toBeGreaterThan(0);
   expect(nodes.filter((node) => node.y > centre).length).toBeGreaterThan(0);
+  // Let the shared nav's state transition finish before checking the idle graph.
+  await expect
+    .poll(() =>
+      page.locator(".section-nav").evaluate((nav) => nav.getAnimations({ subtree: true }).length),
+    )
+    .toBe(0);
   // Every animation follows scroll, so nothing runs while the page is idle.
   const animations = await page.evaluate(() =>
     document.getAnimations().map((animation) => animation.timeline instanceof ViewTimeline),

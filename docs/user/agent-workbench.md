@@ -158,6 +158,11 @@ Creating a Thread does not start an agent turn. It opens the conversation in the
 chosen repository's worktree. To prepare worktrees without opening a Thread,
 choose **Prepare work area** in **Work area**.
 
+**Link existing Thread** attaches an unassigned conversation from one of the
+Ticket’s repositories. It keeps its history, branch and working directory, which
+may be outside the Ticket’s work area. No prompt is sent. To work in the Ticket’s
+checkout, use **Create Thread** instead.
+
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/thread-context-light.png">
   <img src="./media/workbench/thread-context.png" alt="Shared context listing the Ticket's Threads with recaps and two prepared repository worktrees.">
