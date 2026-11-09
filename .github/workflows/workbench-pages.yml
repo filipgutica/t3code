@@ -36,14 +36,37 @@ jobs:
       - uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
         with:
           node-version-file: package.json
-          cache: true
-          run-install: true
+          cache: false
+          run-install: false
+      # The site has no workspace dependencies, so it installs only itself and the root tooling
+      # instead of restoring and installing the whole monorepo.
+      - name: Cache site dependencies
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/workbench-site-store
+          key: workbench-site-deps-${{ runner.os }}-${{ runner.arch }}-v1-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml', 'package.json', 'patches/**') }}
+          restore-keys: |
+            workbench-site-deps-${{ runner.os }}-${{ runner.arch }}-v1-
+      - name: Install site dependencies
+        run: >
+          pnpm install --frozen-lockfile
+          --filter @t3tools/workbench-site...
+          --include-workspace-root
+          --store-dir "$RUNNER_TEMP/workbench-site-store"
       - name: Check site
         run: vp run --filter @t3tools/workbench-site typecheck
+      # Astro reuses processed screenshots from its cache; the page itself still rebuilds.
+      - name: Cache processed site images
+        uses: actions/cache@v5
+        with:
+          path: apps/workbench-site/node_modules/.astro
+          key: workbench-site-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/workbench-site/astro.config.mjs') }}-${{ hashFiles('apps/workbench-site/src/assets/screenshots/**') }}
+          restore-keys: |
+            workbench-site-images-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('pnpm-lock.yaml', 'apps/workbench-site/astro.config.mjs') }}-
       - name: Build static site
         run: vp run --filter @t3tools/workbench-site build
       - name: Install browser
-        run: pnpm --filter @t3tools/workbench-site exec playwright install --with-deps chromium
+        run: pnpm --filter @t3tools/workbench-site exec playwright install --with-deps --only-shell chromium
       - name: Verify site interactions
         run: vp run --filter @t3tools/workbench-site test:e2e
       - name: Upload browser failures
@@ -56,6 +79,7 @@ jobs:
             apps/workbench-site/test-results
           if-no-files-found: ignore
       - uses: actions/upload-pages-artifact@v4
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         with:
           path: apps/workbench-site/dist
 
@@ -63,14 +87,25 @@ jobs:
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     needs: build
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    # Pages sometimes leaves a deployment in syncing_files; a fresh deployment of the same
+    # artifact then succeeds. Each attempt gets 5 minutes so a second one fits in the job.
+    timeout-minutes: 12
     permissions:
       pages: write
       id-token: write
     environment:
       name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+      url: ${{ steps.retry.outputs.page_url || steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+        continue-on-error: true
+        with:
+          timeout: 300000
+      - name: Retry GitHub Pages deployment
+        id: retry
+        if: ${{ !cancelled() && steps.deployment.outcome == 'failure' }}
+        uses: actions/deploy-pages@v4
+        with:
+          timeout: 300000
