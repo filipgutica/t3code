@@ -24,7 +24,8 @@
   /* Type */
   --h1: 72px;
   --h1-leading: 1.02;
-  --h2: 40px;
+  /* Product headings stop at the display-sm step; at 40px they wrapped to three lines or more. */
+  --h2: var(--text-display-sm);
   --h2-leading: 1.1;
   --lede: 19px;
 
