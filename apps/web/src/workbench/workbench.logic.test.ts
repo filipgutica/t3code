@@ -164,6 +164,13 @@ describe("Workbench ticket helpers", () => {
       offline,
     );
     expect(getWorkbenchThreadPresentation(true, false, null, true, "offline")).toEqual(offline);
+    // A Thread on another machine that never launched there is not deleted either.
+    expect(getWorkbenchThreadPresentation(true, false, null, false, "ready", true)).toEqual({
+      actionLabel: "Retry",
+      pendingActionLabel: "Retrying…",
+      stateLabel: "Not started",
+      state: "not-started",
+    });
   });
 
   it("starts a replacement only once the Thread's own environment confirms it is gone", () => {
@@ -177,8 +184,9 @@ describe("Workbench ticket helpers", () => {
     expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "checking")).toEqual({
       state: "thread-status-unavailable",
     });
+    // A ready machine without the Thread never ran its launch; Retry relaunches it there.
     expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "ready")).toEqual({
-      state: "start",
+      state: "not-started",
     });
     expect(
       resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set([threadId]), "offline"),
@@ -571,6 +579,7 @@ describe("Workbench ticket helpers", () => {
     expect(
       getVisibleWorkbenchAssignments([offlineRemote], new Set(), new Set(), true, new Map()),
     ).toEqual([offlineRemote]);
+    // So does one its ready machine lacks, which shows Not started with Retry and Remove.
     expect(
       getVisibleWorkbenchAssignments(
         [offlineRemote],
@@ -579,7 +588,7 @@ describe("Workbench ticket helpers", () => {
         true,
         new Map([[remoteEnvironmentId, "ready"]]),
       ),
-    ).toEqual([]);
+    ).toEqual([offlineRemote]);
   });
 
   it("reads assigned Threads only when the shell left them out as older settled", () => {

@@ -19,8 +19,15 @@ import { workbenchEnvironment } from "./state";
 import { failureMessage, reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
-import type { StartWorkbenchTicketOptions } from "./startWorkbenchTicket";
-import { getWorkbenchThreadLookupState, isWorkbenchThreadArchived } from "./workbench.logic";
+import type {
+  StartWorkbenchTicketOptions,
+  WorkbenchRemoteThreadStart,
+} from "./startWorkbenchTicket";
+import {
+  getWorkbenchThreadLookupState,
+  isWorkbenchThreadArchived,
+  resolveWorkbenchTicketThreadTarget,
+} from "./workbench.logic";
 import type { WorkbenchAttachableThread } from "./WorkbenchAttachThreadDialog";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { showWorkbenchPageChatThread } from "./workbenchFloatingChatState";
@@ -40,6 +47,8 @@ type WorkbenchStartThreadRequest = {
   assignment?: WorkbenchAssignment;
   mode?: "additional" | "replace";
   previousThreadId?: ThreadId;
+  /** A Thread on another machine that never started, which this request relaunches. */
+  retry?: WorkbenchAssignment;
 };
 
 const getWorkbenchThreadStartOptions = ({
@@ -47,6 +56,7 @@ const getWorkbenchThreadStartOptions = ({
   modelSelection,
   repositoryScope,
   repositoryProjectId,
+  remote,
   assignments,
   existingThreadIds,
 }: {
@@ -54,6 +64,7 @@ const getWorkbenchThreadStartOptions = ({
   modelSelection: ModelSelection;
   repositoryScope: WorkbenchRepositoryScope | undefined;
   repositoryProjectId: ProjectId | undefined;
+  remote: WorkbenchRemoteThreadStart | undefined;
   assignments: readonly WorkbenchAssignment[];
   existingThreadIds: ReadonlySet<ThreadId>;
 }): StartWorkbenchTicketOptions => {
@@ -75,16 +86,22 @@ const getWorkbenchThreadStartOptions = ({
             candidate.supersededAt === null,
         )
       : undefined);
-  return {
+  const start = {
     ...(assignment ? { assignment } : {}),
     modelSelection,
     ...(repositoryScope ? { repositoryScope } : {}),
-    ...(repositoryProjectId ? { repositoryProjectId } : {}),
     ...(request.mode === "replace"
       ? { mode: "replace" as const }
       : hasOtherThread
         ? { mode: "additional" as const }
         : {}),
+  };
+  if (remote) {
+    return { ...start, remote: request.retry ? { ...remote, retry: request.retry } : remote };
+  }
+  return {
+    ...start,
+    ...(repositoryProjectId ? { repositoryProjectId } : {}),
     ...(request.previousThreadId ? { previousThreadId: request.previousThreadId } : {}),
   };
 };
@@ -254,20 +271,30 @@ export function useWorkbenchThreadActions({
               candidate.threadId === threadId &&
               candidate.supersededAt === null,
           );
+    const target = resolveWorkbenchTicketThreadTarget(
+      assignment,
+      existingThreadIds,
+      assignment
+        ? getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates })
+        : "ready",
+    );
     // Opening checks the Thread again; only a confirmed missing one leads to a replacement.
-    if (
-      assignment &&
-      (getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }) !==
-        "ready" ||
-        existingThreadIds.has(assignment.threadId))
-    ) {
+    if (assignment && (target.state === "open" || target.state === "thread-status-unavailable")) {
       void openTicketThread(ticket, { assignment });
       return;
     }
     const review = repositoryReviewRequest(ticket);
     if (!review) return;
     setError(null);
-    setStartThreadRequest({ environmentId, ...review, ...(assignment ? { assignment } : {}) });
+    setStartThreadRequest({
+      environmentId,
+      ...review,
+      ...(assignment === undefined
+        ? {}
+        : target.state === "not-started"
+          ? { retry: assignment }
+          : { assignment }),
+    });
   };
 
   const requestNewThread = (ticket: WorkbenchTicket) => {
@@ -299,7 +326,19 @@ export function useWorkbenchThreadActions({
     const review = repositoryReviewRequest(ticket);
     if (!review) return;
     setError(null);
-    setStartThreadRequest({ environmentId, ...review, mode: "replace", previousThreadId });
+    // A Thread on another machine is relaunched where it was assigned, never replaced.
+    const remote = snapshot?.assignments.find(
+      (candidate) =>
+        candidate.ticketId === ticket.id &&
+        candidate.threadId === previousThreadId &&
+        candidate.supersededAt === null &&
+        candidate.environmentId !== undefined,
+    );
+    setStartThreadRequest(
+      remote
+        ? { environmentId, ...review, retry: remote }
+        : { environmentId, ...review, mode: "replace", previousThreadId },
+    );
   };
 
   const deleteAssignedThread = async (threadId: ThreadId) => {
@@ -348,9 +387,7 @@ export function useWorkbenchThreadActions({
       return;
     }
     setAttachThreadTicket(null);
-    // The page's chat talks to the Board host, so a Thread on another machine opens on its page.
     if (
-      remote ||
       !showWorkbenchPageChatThread({
         environmentId,
         ticketId: attachThreadTicket.id,
@@ -410,10 +447,12 @@ export function useWorkbenchThreadActions({
     modelSelection,
     repositoryScope,
     repositoryProjectId,
+    remote,
   }: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
     repositoryProjectId?: ProjectId;
+    remote?: WorkbenchRemoteThreadStart;
   }) => {
     if (
       startThreadRequest === null ||
@@ -421,6 +460,17 @@ export function useWorkbenchThreadActions({
       startThreadRequest.environmentId !== environmentId
     )
       return;
+    const { retry } = startThreadRequest;
+    // Another client may have removed or replaced the Assignment while this dialog was open.
+    if (
+      retry &&
+      !snapshot?.assignments.some(
+        (candidate) => candidate.id === retry.id && candidate.supersededAt === null,
+      )
+    ) {
+      setError("This Thread is no longer on the Ticket. Close this dialog and start a new Thread.");
+      return;
+    }
     const latestTicket = getReviewedStartThreadTicket(startThreadRequest);
     if (latestTicket === null) return;
     const request = { ...startThreadRequest, ticket: latestTicket };
@@ -431,10 +481,11 @@ export function useWorkbenchThreadActions({
         modelSelection,
         repositoryScope,
         repositoryProjectId,
+        remote,
         assignments: snapshot?.assignments ?? [],
         existingThreadIds,
       }),
-      async (threadId) => {
+      async (threadId, threadEnvironmentId) => {
         if (
           !showWorkbenchPageChatThread({
             environmentId: request.environmentId,
@@ -443,13 +494,21 @@ export function useWorkbenchThreadActions({
             threadId,
           })
         ) {
-          await openAssignedThread(threadId);
+          await openAssignedThread(threadId, threadEnvironmentId);
         }
       },
     );
-    if (result?.state === "opened" || result?.state === "navigation-failed") {
+    // A recorded rejection repeats on every relaunch, so only Remove on the Ticket is left.
+    if (
+      result?.state === "opened" ||
+      result?.state === "navigation-failed" ||
+      result?.state === "launch-rejected"
+    ) {
       setStartThreadRequest(null);
       clearRepositoryScope();
+    } else if (result?.state === "not-started") {
+      // The Assignment exists now; sending again relaunches it rather than adding another.
+      setStartThreadRequest({ ...request, retry: result.assignment });
     } else if (result && "ticket" in result && result.ticket) {
       acceptSavedRepositoryScope(result.ticket);
       setStartThreadRequest({

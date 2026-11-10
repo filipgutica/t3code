@@ -1,4 +1,3 @@
-import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   isAtomCommandInterrupted,
@@ -24,6 +23,7 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import {
   coordinateWorkbenchTicketStart,
   type WorkbenchTicketStartStage,
@@ -42,6 +42,16 @@ const commandFailureMessage = (failure: {
     ? error.message
     : "The Workbench request failed.";
 };
+
+const remoteLaunchFailureMessage = (
+  result: Extract<
+    Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>,
+    { state: "not-started" | "launch-rejected" }
+  >,
+) =>
+  result.state === "launch-rejected"
+    ? `That machine refused to start this Thread and will refuse every retry. Remove it from the Ticket and start a new Thread. ${commandFailureMessage(result.failure)}`
+    : `The Thread is assigned but did not start on its machine. Retry, or remove it from the Ticket. ${commandFailureMessage(result.failure)}`;
 
 const reportTicketStartResult = ({
   result,
@@ -65,6 +75,20 @@ const reportTicketStartResult = ({
     onRefreshThreadLookup();
     return;
   }
+  if (result.state === "host-outdated") {
+    onError(
+      "Update T3 Code on the Workbench host before starting a Thread on another machine. This host would send that Thread instructions it cannot use.",
+    );
+    return;
+  }
+  if (result.state === "ticket-unavailable") {
+    onError("This Ticket is no longer available for a new Thread.");
+    return;
+  }
+  if (result.state === "not-started" || result.state === "launch-rejected") {
+    if (!isAtomCommandInterrupted(result.failure)) onError(remoteLaunchFailureMessage(result));
+    return;
+  }
   if (result.state === "navigation-failed") {
     onError(
       result.cause instanceof Error && result.cause.message.trim().length > 0
@@ -73,8 +97,13 @@ const reportTicketStartResult = ({
     );
     return;
   }
-  if (result.state !== "failed") return;
+  if (result.state === "failed") reportTicketStartFailure(result, onError);
+};
 
+const reportTicketStartFailure = (
+  result: Extract<Awaited<ReturnType<typeof coordinateWorkbenchTicketStart>>, { state: "failed" }>,
+  onError: (message: string | null) => void,
+) => {
   if (result.cleanupFailure && !isAtomCommandInterrupted(result.cleanupFailure)) {
     console.warn(
       "Failed to clean up a Workbench Thread after Assignment creation failed.",
@@ -124,7 +153,10 @@ export function useStartWorkbenchTicket({
   readonly remoteEnvironmentStates: ReadonlyMap<EnvironmentId, WorkbenchThreadLookupState>;
   readonly boards: ReadonlyArray<WorkbenchProject>;
   readonly onRefreshThreadLookup: () => void;
-  readonly onOpenAssignedThread: (threadId: ThreadId) => Promise<void>;
+  readonly onOpenAssignedThread: (
+    threadId: ThreadId,
+    environmentId: EnvironmentId,
+  ) => Promise<void>;
   readonly onPendingChange: (action: string | null) => void;
   readonly onError: (message: string | null) => void;
 }) {
@@ -140,12 +172,22 @@ export function useStartWorkbenchTicket({
   });
   const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const readTicketContext = useAtomCommand(workbenchEnvironment.readTicketContext, {
+    reportFailure: false,
+  });
+  // The native send path's launch, checked against the Thread's own environment's grants.
+  const launchThread = useOrchestrationCommand(threadEnvironment.startTurn, {
+    reportFailure: false,
+  });
 
   /** `openThread` replaces `onOpenAssignedThread` for this start, such as to stay on the page. */
   return async (
     ticket: WorkbenchTicket,
     options?: StartWorkbenchTicketOptions,
-    openThread: (threadId: ThreadId) => Promise<void> = onOpenAssignedThread,
+    openThread: (
+      threadId: ThreadId,
+      environmentId: EnvironmentId,
+    ) => Promise<void> = onOpenAssignedThread,
   ) => {
     if (environmentId === null) return;
     onPendingChange(`start:${ticket.id}:checking-thread`);
@@ -177,13 +219,14 @@ export function useStartWorkbenchTicket({
             createAssignment,
             replaceAssignment,
             deleteThread,
-            waitForThread: (threadId) =>
-              waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
+            readTicketContext,
+            launchThread,
+            waitForThread: waitForWorkbenchThread,
             openThread,
             resolveRuntimeMode: (project) => {
               const settings =
-                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
-                DEFAULT_SERVER_SETTINGS;
+                appAtomRegistry.get(environmentServerConfigsAtom).get(project.environmentId)
+                  ?.settings ?? DEFAULT_SERVER_SETTINGS;
               return resolveProjectSettings(settings, project.id).settings.defaultRuntimeMode;
             },
             resolveModelSelection: (project) => {

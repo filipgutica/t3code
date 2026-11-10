@@ -40,6 +40,8 @@ const commands = vi.hoisted(() => ({
   replaceAssignment: vi.fn(),
   unlinkAssignment: vi.fn(),
   prepareTicketWorkspace: vi.fn(),
+  readTicketContext: vi.fn(),
+  launchThread: vi.fn(),
 }));
 const nativeDelete = vi.hoisted(() => vi.fn());
 const refresh = vi.hoisted(() => ({ workbench: vi.fn(), archived: vi.fn() }));
@@ -48,6 +50,7 @@ vi.mock("../state/threads", () => ({
     unarchive: "unarchive",
     create: "createThread",
     delete: "deleteThread",
+    startTurn: "launchThread",
   },
 }));
 vi.mock("./state", () => ({
@@ -57,10 +60,14 @@ vi.mock("./state", () => ({
     replaceAssignment: "replaceAssignment",
     unlinkAssignment: "unlinkAssignment",
     prepareTicketWorkspace: "prepareTicketWorkspace",
+    readTicketContext: "readTicketContext",
   },
 }));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: keyof typeof commands) => commands[command],
+}));
+vi.mock("../state/use-orchestration-command", () => ({
+  useOrchestrationCommand: (command: keyof typeof commands) => commands[command],
 }));
 vi.mock("../hooks/useThreadActions", () => ({
   useThreadActions: () => ({ confirmAndDeleteThread: nativeDelete }),
@@ -321,6 +328,9 @@ beforeEach(() => {
   }
   commands.updateTicket.mockResolvedValue(AsyncResult.success(ticket));
   commands.prepareTicketWorkspace.mockResolvedValue(AsyncResult.success(readyWorkspace));
+  commands.readTicketContext.mockResolvedValue(
+    AsyncResult.success({ text: "Ticket brief.", audience: "remote-thread", threads: [] }),
+  );
   nativeDelete.mockReset().mockResolvedValue(AsyncResult.success(undefined));
   refresh.workbench.mockReset();
   refresh.archived.mockReset();
@@ -403,7 +413,7 @@ describe("linked Thread failure recovery", () => {
     expect(actions.attachThreadTicket).toBeNull();
   });
 
-  it("links a Thread on another machine with its machine and opens it there", async () => {
+  it("links a Thread on another machine with its machine and shows it in the chat", async () => {
     const showThread = vi.fn();
     useWorkbenchFloatingChatStore.setState({
       pageChat: { environmentId, kind: "ticket", ticketId: ticket.id, showThread },
@@ -431,9 +441,8 @@ describe("linked Thread failure recovery", () => {
         projectId: otherProjectId,
       }),
     });
-    // The page's chat talks to the Board host, so the Thread opens on its own machine.
-    expect(showThread).not.toHaveBeenCalled();
-    expect(router.state.location.pathname).toBe("/other-machine/remote-linked");
+    expect(showThread).toHaveBeenCalledExactlyOnceWith(remoteThread.id);
+    expect(router.state.location.pathname).toBe("/workbench");
   });
 
   it("reports an unlink failure and releases pending state so another action remains usable", async () => {
@@ -539,10 +548,62 @@ describe("Thread repository review", () => {
     await act(async () =>
       actions.requestReplacementThread({ ticket, previousThreadId: remoteAssignment.threadId }),
     );
-    expect(actions.startThreadRequest?.mode).toBe("replace");
+    // A remote Thread its machine lacks never launched, so the request relaunches it there.
+    expect(actions.startThreadRequest?.retry).toEqual(remoteAssignment);
     await update({ remoteEnvironmentStates: new Map([[remote, "offline"]]) });
     await confirm();
     expectNoStartEffects();
+  });
+
+  const remoteEnvironment = EnvironmentId.make("other-machine");
+  const remoteStart = {
+    project: { id: otherProjectId, environmentId: remoteEnvironment, workspaceRoot: "/laptop/app" },
+    baseRef: "main",
+    branch: "delivery-ticket-abc123",
+    startFromOrigin: false,
+    instruction: "Fix the parser.",
+  };
+  const startRemote = () =>
+    act(async () => actions.startSelectedThread({ modelSelection, remote: remoteStart }));
+
+  // The Ticket's live Thread must not swallow a new Thread chosen on another machine.
+  it("starts an additional Thread on another machine when the Ticket already has one", async () => {
+    await mount({
+      snapshot: { ...snapshot, assignments: [assignment] },
+      existingThreadIds: new Set([assignment.threadId]),
+    });
+    await act(async () => actions.requestNewThread(ticket));
+    await startRemote();
+    expect(commands.launchThread).toHaveBeenCalledOnce();
+    expect(commands.createAssignment).toHaveBeenCalledWith({
+      environmentId,
+      input: expect.objectContaining({
+        environmentId: remoteEnvironment,
+        projectId: otherProjectId,
+      }),
+    });
+  });
+
+  // Relaunching a removed Assignment's ids would start an agent no Ticket tracks.
+  it("does not relaunch a Thread another client removed while the dialog was open", async () => {
+    const remoteAssignment = {
+      ...assignment,
+      threadId: ThreadId.make("remote-not-started"),
+      environmentId: remoteEnvironment,
+      projectId: otherProjectId,
+    };
+    const { update } = await mount({
+      snapshot: { ...snapshot, assignments: [remoteAssignment] },
+      remoteEnvironmentStates: new Map([[remoteEnvironment, "ready"]]),
+    });
+    await act(async () =>
+      actions.requestReplacementThread({ ticket, previousThreadId: remoteAssignment.threadId }),
+    );
+    expect(actions.startThreadRequest?.retry).toEqual(remoteAssignment);
+    await update({ snapshot });
+    await startRemote();
+    expect(commands.launchThread).not.toHaveBeenCalled();
+    expect(error).toContain("no longer on the Ticket");
   });
 
   it("opens a linked native Thread from an archived Workspace without creating a replacement", async () => {

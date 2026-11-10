@@ -1,11 +1,14 @@
 import type {
   EnvironmentId,
   ProjectId,
+  ServerProvider,
   ThreadId,
   WorkbenchAssignment,
   WorkbenchProject,
   WorkbenchProjectId,
 } from "@t3tools/contracts";
+
+import type { WorkbenchRemoteThreadStart } from "./startWorkbenchTicket";
 
 /** A Board's linked Project on another machine, named live when that machine is saved here. */
 export interface WorkbenchRemoteRepository {
@@ -104,6 +107,57 @@ export const getWorkbenchAssignmentMachineLabel = ({
   (assignment.environmentId && environmentLabels.get(assignment.environmentId)) ??
   (assignment.projectId && repositories.get(assignment.projectId)?.environmentLabel) ??
   WORKBENCH_UNKNOWN_MACHINE_LABEL;
+
+/** A Ticket repository on another machine, as that machine can start a Thread in it now. */
+export interface WorkbenchStartThreadRemoteRepository {
+  readonly id: ProjectId;
+  /** The repository and its machine. */
+  readonly title: string;
+  /** The native Project on its machine; null while that machine cannot start a Thread. */
+  readonly project: WorkbenchRemoteThreadStart["project"] | null;
+  /** The providers that machine runs. */
+  readonly providers: ReadonlyArray<ServerProvider>;
+  readonly unavailableReason: string | null;
+}
+
+/** The Ticket's repositories on other machines; a Thread starts only where shells are live. */
+export const getWorkbenchStartThreadRemoteRepositories = ({
+  repositoryProjectIds,
+  remoteRepositories,
+  projects,
+  liveEnvironmentIds,
+  providersByEnvironment,
+}: {
+  readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
+  readonly remoteRepositories: ReadonlyMap<ProjectId, WorkbenchRemoteRepository>;
+  /** Native Projects from every connected environment. */
+  readonly projects: ReadonlyArray<WorkbenchRemoteThreadStart["project"]>;
+  readonly liveEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly providersByEnvironment: ReadonlyMap<EnvironmentId, ReadonlyArray<ServerProvider>>;
+}): ReadonlyArray<WorkbenchStartThreadRemoteRepository> =>
+  repositoryProjectIds.flatMap((id) => {
+    const repository = remoteRepositories.get(id);
+    if (repository === undefined) return [];
+    const { environmentId, environmentLabel } = repository;
+    const project = liveEnvironmentIds.has(environmentId)
+      ? (projects.find(
+          (candidate) => candidate.id === id && candidate.environmentId === environmentId,
+        ) ?? null)
+      : null;
+    return [
+      {
+        id,
+        title: formatWorkbenchRemoteRepositoryTitle(repository),
+        project,
+        providers: providersByEnvironment.get(environmentId) ?? [],
+        unavailableReason: !liveEnvironmentIds.has(environmentId)
+          ? `${environmentLabel} is not connected`
+          : project === null
+            ? `Not found on ${environmentLabel}`
+            : null,
+      },
+    ];
+  });
 
 /** A native Project the Board dialog offers, from this machine or another connected one. */
 export interface WorkbenchBoardProjectOption {

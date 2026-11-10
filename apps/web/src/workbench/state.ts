@@ -89,6 +89,13 @@ export const workbenchEnvironment = {
     scheduler,
     concurrency: serialPerEnvironment,
   }),
+  // A remote Thread's first message carries the context read as it starts.
+  readTicketContext: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:read-ticket-context",
+    tag: WS_METHODS.workbenchGetTicketContext,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
   ticketPreparations,
   ticketWorktrees,
   // One read per host tells attention which review discussions you answered last.

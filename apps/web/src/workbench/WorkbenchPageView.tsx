@@ -78,7 +78,10 @@ import { getTicketReferences } from "./workbenchReferences.logic";
 import {
   getWorkbenchAttachableThreads,
   getWorkbenchBoardRepositoriesById,
+  getWorkbenchStartThreadRemoteRepositories,
 } from "./workbenchRemote.logic";
+import { useAtomValue } from "@effect/atom-react";
+import { environmentServerConfigsAtom } from "../state/server";
 import { useProjects, useThreadShells } from "../state/entities";
 import { getWorkbenchReachableThreads } from "./workbench.logic";
 import { useConnectedEnvironmentIds } from "../state/environments";
@@ -878,6 +881,28 @@ function WorkbenchPageAttachThreadDialog({
   );
 }
 
+/** Adds the Ticket's repositories on other machines; mounted only while the dialog is open. */
+function WorkbenchPageStartThreadDialog({
+  pageData,
+  request,
+  ...props
+}: Parameters<typeof WorkbenchStartThreadDialog>[0] & {
+  readonly pageData: WorkbenchPageViewProps["pageData"];
+}) {
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const remoteRepositories = getWorkbenchStartThreadRemoteRepositories({
+    repositoryProjectIds: request.ticket.repositoryProjectIds,
+    remoteRepositories:
+      pageData.remoteRepositoriesByBoard.get(request.ticket.projectId) ?? new Map(),
+    projects: useProjects(),
+    liveEnvironmentIds: pageData.liveEnvironmentIds,
+    providersByEnvironment: new Map(
+      [...serverConfigs].map(([environmentId, config]) => [environmentId, config.providers]),
+    ),
+  });
+  return <WorkbenchStartThreadDialog {...props} request={{ ...request, remoteRepositories }} />;
+}
+
 function WorkbenchPageThreadDialogs(
   props: Pick<
     WorkbenchPageViewProps,
@@ -900,8 +925,9 @@ function WorkbenchPageThreadDialogs(
   return (
     <>
       {startThreadRequest && environmentId && startThreadRequest.environmentId === environmentId ? (
-        <WorkbenchStartThreadDialog
+        <WorkbenchPageStartThreadDialog
           key={`${environmentId}:${startThreadRequest.ticket.id}:${startThreadRequest.reviewVersion ?? 0}`}
+          pageData={pageData}
           open
           request={{
             ticket: startThreadRequest.ticket,
@@ -916,6 +942,9 @@ function WorkbenchPageThreadDialogs(
             board: snapshot?.projects.find(
               (workspace) => workspace.id === startThreadRequest.ticket.projectId,
             ),
+            ...(startThreadRequest.retry?.projectId
+              ? { retry: { projectId: startThreadRequest.retry.projectId } }
+              : {}),
             initialRepositoryScope: startThreadRequest.repositoryScope,
             repositoryProjectId: getActiveThreadRepository(startThreadRequest.ticket.id),
             environmentId,

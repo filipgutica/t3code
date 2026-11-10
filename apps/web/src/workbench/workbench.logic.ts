@@ -100,10 +100,6 @@ export const getWorkbenchAssignmentEnvironmentId = (
   hostEnvironmentId: EnvironmentId,
 ): EnvironmentId => assignment.environmentId ?? hostEnvironmentId;
 
-/** The floating chat talks to the Board host; a Thread on another machine opens on its own page. */
-export const isWorkbenchHostAssignment = (assignment: Pick<WorkbenchAssignment, "environmentId">) =>
-  assignment.environmentId === undefined;
-
 export function getWorkbenchThreadLookupState({
   assignment,
   threadLookupReady,
@@ -178,6 +174,8 @@ export function getWorkbenchThreadPresentation(
   nativeStateLabel?: string | null,
   archived = false,
   threadLookupState: WorkbenchThreadLookupState = "ready",
+  /** The Thread lives on another machine, so its machine lacking it means it never launched. */
+  remote = false,
 ) {
   if (!hasAssignment) {
     return {
@@ -212,6 +210,14 @@ export function getWorkbenchThreadPresentation(
       state: "checking",
     } as const;
   }
+  if (!threadExists && remote) {
+    return {
+      actionLabel: "Retry",
+      pendingActionLabel: "Retrying…",
+      stateLabel: "Not started",
+      state: "not-started",
+    } as const;
+  }
   if (threadExists) {
     return {
       actionLabel: "Open Thread",
@@ -227,6 +233,28 @@ export function getWorkbenchThreadPresentation(
     state: "missing",
   } as const;
 }
+
+/** A Ticket's Thread as its row shows it, looked up on the machine its Assignment names. */
+export const getWorkbenchAssignmentThreadPresentation = ({
+  assignment,
+  threadExists,
+  nativeStateLabel,
+  archived,
+  ...lookup
+}: {
+  readonly assignment: Pick<WorkbenchAssignment, "environmentId"> | undefined;
+  readonly threadExists: boolean;
+  readonly nativeStateLabel: string | null;
+  readonly archived: boolean;
+} & Omit<Parameters<typeof getWorkbenchThreadLookupState>[0], "assignment">) =>
+  getWorkbenchThreadPresentation(
+    assignment !== undefined,
+    threadExists,
+    nativeStateLabel,
+    archived,
+    assignment === undefined ? "ready" : getWorkbenchThreadLookupState({ assignment, ...lookup }),
+    assignment?.environmentId !== undefined,
+  );
 
 /** The Ticket that assigns a Thread, from the snapshot of the Board host `hostEnvironmentId`. */
 export function getWorkbenchContextForThread(
@@ -377,7 +405,10 @@ export function getWorkbenchOmittedThreadsStatus({
   return ready ? "ready" : "pending";
 }
 
-/** Hides Assignments whose Thread is known to be gone; one that cannot be checked stays. */
+/**
+ * Hides Assignments whose Thread is known to be gone; one that cannot be checked stays, as does
+ * one on another machine, whose missing Thread never launched and waits for Retry or Remove.
+ */
 export function getVisibleWorkbenchAssignments(
   assignments: ReadonlyArray<WorkbenchAssignment>,
   liveThreadIds: ReadonlySet<ThreadId>,
@@ -387,6 +418,7 @@ export function getVisibleWorkbenchAssignments(
 ): ReadonlyArray<WorkbenchAssignment> {
   return assignments.filter(
     (assignment) =>
+      assignment.environmentId !== undefined ||
       getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }) !==
         "ready" ||
       liveThreadIds.has(assignment.threadId) ||
@@ -403,9 +435,12 @@ export function getAssignmentsForTicket(
     .toSorted((left, right) => right.createdAt.localeCompare(left.createdAt));
 }
 
-/** Start replaces an assigned Thread only once its own environment confirms it is gone. */
+/**
+ * Start replaces an assigned Thread only once its own environment confirms it is gone. A Thread on
+ * another machine is never replaced: one its machine lacks never launched, so it is relaunched.
+ */
 export function resolveWorkbenchTicketThreadTarget(
-  assignment: Pick<WorkbenchAssignment, "threadId"> | undefined,
+  assignment: Pick<WorkbenchAssignment, "threadId" | "environmentId"> | undefined,
   existingThreadIds: ReadonlySet<ThreadId>,
   threadLookupState: WorkbenchThreadLookupState = "ready",
 ) {
@@ -415,6 +450,7 @@ export function resolveWorkbenchTicketThreadTarget(
   if (assignment && threadLookupState !== "ready") {
     return { state: "thread-status-unavailable" } as const;
   }
+  if (assignment?.environmentId !== undefined) return { state: "not-started" } as const;
   return { state: "start" } as const;
 }
 

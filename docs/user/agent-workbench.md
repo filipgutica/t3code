@@ -363,17 +363,27 @@ test results, and evidence logs in that folder or the PR.
 
 A Workspace stays on the machine where you created it. If this client also has
 a saved connection to another T3 machine, you can add that machine's Projects to
-the Workspace, include them in a Ticket, and use **Link existing Thread** to
-attach a Thread that already runs there. Its row shows the Thread's live status
-and opens it on that machine.
+the Workspace and include them in a Ticket. Its row shows the Thread's live
+status, and you can chat with it in the Ticket and Board chats.
+
+To start a Thread there, choose the other machine's repository in the
+**Create Thread** dialog. Write the first instruction, then pick a base branch,
+a branch name, and a provider and model from that machine. The Thread starts in
+a new worktree on that machine, and its first message contains the Ticket's
+brief and your instruction. To attach a Thread that already runs there, use
+**Link existing Thread**.
 
 - Keep at least one Project from the Workspace's own machine. Planning and
   **Start work** run there.
-- A Thread on another machine has no Workbench tools and does not see Ticket
-  changes, so record its progress on the Ticket yourself. Its work does not move
-  the Ticket's status.
-- While that machine is not connected, its Threads show **Offline**. You can
-  still unlink them.
+- A Thread on another machine has no Workbench tools and does not get later
+  Ticket changes, so record its progress on the Ticket yourself. Its work does
+  not move the Ticket's status.
+- If the Thread does not start, its row shows **Not started**. Use **Retry** to
+  start the same Thread again, or **Remove** to take it off the Ticket. If the
+  machine says it refused the Thread, Retry cannot succeed; remove it and start a
+  new Thread.
+- While that machine is not connected, its Threads show **Offline**, and the
+  chat cannot send messages to them. You can still unlink them.
 - File References, the artifacts folder, and prepared worktrees stay on the
   Workspace's machine.
 - A repository keeps its place on a Ticket while a linked Thread on another

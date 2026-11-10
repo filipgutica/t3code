@@ -1,12 +1,23 @@
-import type { CreateThreadInput, DeleteThreadInput } from "@t3tools/client-runtime/operations";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type {
+  CreateThreadInput,
+  DeleteThreadInput,
+  StartThreadTurnInput,
+} from "@t3tools/client-runtime/operations";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
 import {
+  squashAtomCommandFailure,
+  type AtomCommandResult,
+} from "@t3tools/client-runtime/state/runtime";
+import {
+  CommandId,
+  MessageId,
   workbenchHostRepositoryProjectIds,
   type EnvironmentId,
   type ModelSelection,
   type RuntimeMode,
   type ProjectId,
+  type ScopedThreadRef,
   type ThreadId,
   type WorkbenchAssignment,
   type WorkbenchAssignmentId,
@@ -15,6 +26,7 @@ import {
   type WorkbenchReplaceAssignmentInput,
   type WorkbenchPrepareTicketWorkspaceInput,
   type WorkbenchTicket,
+  type WorkbenchTicketContext,
   type WorkbenchTicketWorkspace,
   type WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
@@ -56,6 +68,8 @@ export type WorkbenchTicketStartStage =
   | "preparing-workspace"
   | "creating-thread"
   | "linking-thread"
+  | "reading-context"
+  | "launching-thread"
   | "opening-thread";
 
 const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, string> = {
@@ -64,6 +78,8 @@ const WORKBENCH_TICKET_START_STAGE_LABELS: Record<WorkbenchTicketStartStage, str
   "preparing-workspace": "Preparing repositories…",
   "creating-thread": "Creating Thread…",
   "linking-thread": "Linking Thread to Ticket…",
+  "reading-context": "Reading the Ticket…",
+  "launching-thread": "Starting Thread on the other machine…",
   "opening-thread": "Opening Thread…",
 };
 
@@ -101,6 +117,24 @@ export interface StartWorkbenchTicketOptions {
   readonly repositoryScope?: WorkbenchRepositoryScope;
   /** The repository the new Thread works in; see `resolveWorkbenchThreadRepository`. */
   readonly repositoryProjectId?: ProjectId;
+  /** Starts the Thread in a repository on another machine instead of on the Board host. */
+  readonly remote?: WorkbenchRemoteThreadStart;
+}
+
+/**
+ * A Thread in a Board repository on another machine, which runs a stock T3 server: the host
+ * prepares nothing there, so the launch carries the worktree and the first turn's instruction.
+ */
+export interface WorkbenchRemoteThreadStart {
+  /** The repository's native Project, on the machine that runs the Thread. */
+  readonly project: Pick<EnvironmentProject, "id" | "environmentId" | "workspaceRoot">;
+  readonly baseRef: string;
+  readonly branch: string;
+  readonly startFromOrigin: boolean;
+  /** Sent after the Ticket context, since the launch starts a run immediately. */
+  readonly instruction: string;
+  /** A not-started Assignment to relaunch with its own Thread and command ids. */
+  readonly retry?: WorkbenchAssignment;
 }
 
 interface StartWorkbenchTicketDependencies {
@@ -122,10 +156,24 @@ interface StartWorkbenchTicketDependencies {
   readonly deleteThread: (
     input: EnvironmentCommandInput<DeleteThreadInput>,
   ) => Promise<CommandResult>;
-  readonly waitForThread: (threadId: ThreadId) => Promise<void>;
-  readonly openThread: (threadId: ThreadId) => Promise<void>;
+  /** The Board host's Ticket context; `audience` asks for the text a remote Thread gets. */
+  readonly readTicketContext: (
+    input: EnvironmentCommandInput<{
+      readonly ticketId: WorkbenchTicket["id"];
+      readonly audience: "remote-thread";
+    }>,
+  ) => Promise<AtomCommandResult<WorkbenchTicketContext | null, unknown>>;
+  /** Native `orchestration.launchThread` on the Thread's own environment. */
+  readonly launchThread: (
+    input: EnvironmentCommandInput<StartThreadTurnInput>,
+  ) => Promise<CommandResult>;
+  readonly waitForThread: (threadRef: ScopedThreadRef) => Promise<void>;
+  readonly openThread: (threadId: ThreadId, environmentId: EnvironmentId) => Promise<void>;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
-  readonly resolveRuntimeMode: (project: EnvironmentProject) => RuntimeMode;
+  /** From the settings of the Project's own environment. */
+  readonly resolveRuntimeMode: (
+    project: Pick<EnvironmentProject, "id" | "environmentId">,
+  ) => RuntimeMode;
   readonly makeThreadId: () => ThreadId;
   readonly makeAssignmentId: () => WorkbenchAssignmentId;
   readonly now: () => string;
@@ -139,9 +187,21 @@ export type StartWorkbenchTicketResult =
   | { readonly state: "project-unavailable"; readonly ticket: WorkbenchTicket }
   | { readonly state: "provider-unavailable"; readonly ticket: WorkbenchTicket }
   | { readonly state: "thread-status-unavailable" }
+  /** The host predates remote Thread context, so its text would name tools the remote lacks. */
+  | { readonly state: "host-outdated" }
+  | { readonly state: "ticket-unavailable" }
+  /**
+   * The Assignment was written but its remote launch failed. Retry relaunches it, unless the
+   * remote recorded the rejection, which every relaunch with the same command id repeats.
+   */
+  | {
+      readonly state: "not-started" | "launch-rejected";
+      readonly assignment: WorkbenchAssignment;
+      readonly failure: Extract<CommandResult, { readonly _tag: "Failure" }>;
+    }
   | {
       readonly state: "failed";
-      readonly stage: "repositories" | "workspace" | "thread" | "assignment";
+      readonly stage: "repositories" | "workspace" | "thread" | "assignment" | "context";
       readonly ticket?: WorkbenchTicket;
       readonly failure: Extract<CommandResult, { readonly _tag: "Failure" }>;
       readonly cleanupFailure?: Extract<CommandResult, { readonly _tag: "Failure" }>;
@@ -170,7 +230,10 @@ const openExistingWorkbenchThread = async ({
   if (target.state === "open") {
     dependencies.onStage?.("opening-thread");
     try {
-      await dependencies.openThread(target.threadId);
+      await dependencies.openThread(
+        target.threadId,
+        input.assignment?.environmentId ?? input.environmentId,
+      );
     } catch (cause) {
       return { state: "navigation-failed", cause };
     }
@@ -181,6 +244,138 @@ const openExistingWorkbenchThread = async ({
   }
 
   return null;
+};
+
+/**
+ * The remote refuses a command id whose receipt it recorded as rejected. The launch error carries
+ * the server's error chain as defects, which keep each server error's tag as their `name`.
+ */
+const isRecordedLaunchRejection = (
+  failure: Extract<CommandResult, { readonly _tag: "Failure" }>,
+) => {
+  let current = squashAtomCommandFailure(failure);
+  while (current instanceof Error) {
+    if (current.name === "OrchestratorCommandPreviouslyRejectedError") return true;
+    current = current.cause;
+  }
+  return false;
+};
+
+/** Ties a relaunch to the first attempt: the remote keeps a receipt per command id. */
+const remoteLaunchCommandId = (assignmentId: WorkbenchAssignmentId) =>
+  CommandId.make(`workbench-remote-start:${assignmentId}`);
+
+/**
+ * Writes the Assignment on the Board host, then launches the Thread on its own machine, so a
+ * failed launch or a closed tab leaves a visible Not started row instead of an untracked agent.
+ */
+const startRemoteWorkbenchThread = async ({
+  input,
+  remote,
+  modelSelection,
+  dependencies,
+}: {
+  input: StartWorkbenchTicketInput;
+  remote: WorkbenchRemoteThreadStart;
+  modelSelection: ModelSelection;
+  dependencies: StartWorkbenchTicketDependencies;
+}): Promise<StartWorkbenchTicketResult> => {
+  // A relaunch always goes out again, even when its Thread exists: the remote replays the steps it
+  // accepted and finishes the rest, such as the first message after a failure past creation.
+  const { retry, project } = remote;
+  dependencies.onStage?.("reading-context");
+  const context = await dependencies.readTicketContext({
+    environmentId: input.environmentId,
+    input: { ticketId: input.ticket.id, audience: "remote-thread" },
+  });
+  if (context._tag === "Failure") {
+    return { state: "failed", stage: "context", ticket: input.ticket, failure: context };
+  }
+  if (context.value === null) return { state: "ticket-unavailable" };
+  if (context.value.audience !== "remote-thread") return { state: "host-outdated" };
+
+  const createdAt = dependencies.now();
+  const assignment: WorkbenchAssignment = retry ?? {
+    id: dependencies.makeAssignmentId(),
+    ticketId: input.ticket.id,
+    threadId: dependencies.makeThreadId(),
+    environmentId: project.environmentId,
+    projectId: project.id,
+    createdAt,
+    supersededAt: null,
+  };
+  if (!retry) {
+    dependencies.onStage?.("linking-thread");
+    const assignmentResult = await dependencies.createAssignment({
+      environmentId: input.environmentId,
+      input: {
+        id: assignment.id,
+        ticketId: assignment.ticketId,
+        threadId: assignment.threadId,
+        environmentId: project.environmentId,
+        projectId: project.id,
+        createdAt,
+      },
+    });
+    if (assignmentResult._tag === "Failure") {
+      return {
+        state: "failed",
+        stage: "assignment",
+        ticket: input.ticket,
+        failure: assignmentResult,
+      };
+    }
+  }
+
+  dependencies.onStage?.("launching-thread");
+  const commandId = remoteLaunchCommandId(assignment.id);
+  const modes = {
+    modelSelection,
+    runtimeMode: dependencies.resolveRuntimeMode(project),
+    interactionMode: DEFAULT_INTERACTION_MODE,
+  };
+  const launchResult = await dependencies.launchThread({
+    environmentId: project.environmentId,
+    input: {
+      commandId,
+      threadId: assignment.threadId,
+      message: {
+        messageId: MessageId.make(`${commandId}:message`),
+        role: "user",
+        text: `${context.value.text}\n\n${remote.instruction}`,
+        attachments: [],
+      },
+      ...modes,
+      bootstrap: {
+        createThread: {
+          ...modes,
+          projectId: project.id,
+          title: input.ticket.title,
+          branch: remote.branch,
+          worktreePath: null,
+          createdAt,
+        },
+        prepareWorktree: {
+          projectCwd: project.workspaceRoot,
+          baseBranch: remote.baseRef,
+          branch: remote.branch,
+          ...(remote.startFromOrigin ? { startFromOrigin: true } : {}),
+        },
+      },
+      createdAt,
+    },
+  });
+  if (launchResult._tag === "Failure") {
+    return {
+      state: isRecordedLaunchRejection(launchResult) ? "launch-rejected" : "not-started",
+      assignment,
+      failure: launchResult,
+    };
+  }
+  return openStartedThread(
+    dependencies,
+    scopeThreadRef(project.environmentId, assignment.threadId),
+  );
 };
 
 const getPreparedRepository = ({
@@ -238,12 +433,15 @@ export async function coordinateWorkbenchTicketStart(
   dependencies: StartWorkbenchTicketDependencies,
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
-  const existing = await openExistingWorkbenchThread({
-    input: originalInput,
-    dependencies,
-    mode: options.mode,
-  });
-  if (existing !== null) return existing;
+  // A relaunch checks its own Thread on the remote before launching again.
+  if (options.remote?.retry === undefined) {
+    const existing = await openExistingWorkbenchThread({
+      input: originalInput,
+      dependencies,
+      mode: options.mode,
+    });
+    if (existing !== null) return existing;
+  }
 
   const saved = await saveReviewedRepositoryScope({
     input: originalInput,
@@ -252,7 +450,26 @@ export async function coordinateWorkbenchTicketStart(
   });
   if (saved.state === "failed") return saved;
   const input = { ...originalInput, ticket: saved.ticket };
+  if (!options.remote) return startHostWorkbenchThread({ input, dependencies, options });
+  // The dialog picks a provider enabled on the remote; the host's defaults do not apply there.
+  if (!options.modelSelection) return { state: "provider-unavailable", ticket: input.ticket };
+  return startRemoteWorkbenchThread({
+    input,
+    remote: options.remote,
+    modelSelection: options.modelSelection,
+    dependencies,
+  });
+}
 
+const startHostWorkbenchThread = async ({
+  input,
+  dependencies,
+  options,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+  options: StartWorkbenchTicketOptions;
+}): Promise<StartWorkbenchTicketResult> => {
   // Resolved against the saved Ticket, which may no longer link the preferred repository.
   const hostRepositoryProjectIds = workbenchHostRepositoryProjectIds(
     input.board,
@@ -302,7 +519,10 @@ export async function coordinateWorkbenchTicketStart(
     return { state: "failed", stage: "thread", failure: threadResult, ticket: input.ticket };
   }
 
-  const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
+  // A host Thread never replaces one on another machine, whose missing Thread is only not started.
+  const previousThreadId =
+    options.previousThreadId ??
+    (input.assignment?.environmentId === undefined ? input.assignment?.threadId : undefined);
   dependencies.onStage?.("linking-thread");
   const assignmentResult =
     options.mode !== "additional" && previousThreadId
@@ -339,17 +559,17 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  return openStartedThread(dependencies, threadId);
-}
+  return openStartedThread(dependencies, scopeThreadRef(input.environmentId, threadId));
+};
 
 const openStartedThread = async (
   dependencies: StartWorkbenchTicketDependencies,
-  threadId: ThreadId,
+  { environmentId, threadId }: ScopedThreadRef,
 ): Promise<StartWorkbenchTicketResult> => {
   try {
     dependencies.onStage?.("opening-thread");
-    await dependencies.waitForThread(threadId);
-    await dependencies.openThread(threadId);
+    await dependencies.waitForThread(scopeThreadRef(environmentId, threadId));
+    await dependencies.openThread(threadId, environmentId);
   } catch (cause) {
     return { state: "navigation-failed", cause };
   }

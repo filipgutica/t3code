@@ -3,6 +3,7 @@ import { EMPTY_ENVIRONMENT_THREAD_STATE } from "@t3tools/client-runtime/state/th
 import {
   DEFAULT_SERVER_SETTINGS,
   EnvironmentId,
+  OrchestrationV2ThreadLaunchError,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -18,6 +19,7 @@ import {
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 import { describe, expect, it } from "vite-plus/test";
 import * as Cause from "effect/Cause";
+import * as Schema from "effect/Schema";
 import * as AsyncResult from "effect/reactivity/AsyncResult";
 import { resolveThreadRouteRenderState } from "../threadRoutes";
 
@@ -58,6 +60,7 @@ const ticket = {
 
 const success = AsyncResult.success(undefined);
 const failure = AsyncResult.failure(Cause.fail("failed"));
+const decodeLaunchError = Schema.decodeSync(OrchestrationV2ThreadLaunchError);
 const workspaceFailure = AsyncResult.failure<WorkbenchTicketWorkspace, string>(
   Cause.fail("failed"),
 );
@@ -104,6 +107,14 @@ function makeDependencies(events: string[]) {
     },
     deleteThread: async () => {
       events.push("delete-thread");
+      return success;
+    },
+    readTicketContext: async () => {
+      events.push("read-context");
+      return AsyncResult.success(null);
+    },
+    launchThread: async () => {
+      events.push("launch-thread");
       return success;
     },
     waitForThread: async () => {},
@@ -594,5 +605,253 @@ describe("coordinateWorkbenchTicketStart", () => {
 
     expect(result).toMatchObject({ state: "failed", stage: "workspace" });
     expect(events).toEqual(["prepare-workspace"]);
+  });
+});
+
+describe("coordinateWorkbenchTicketStart on another machine", () => {
+  const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+  const remoteProjectId = ProjectId.make("repository-remote");
+  const remoteTicket = { ...ticket, repositoryProjectIds: [remoteProjectId] };
+  const remoteBoard = {
+    remoteProjects: {
+      [remoteProjectId]: {
+        environmentId: remoteEnvironmentId,
+        environmentLabel: "Laptop",
+        projectTitle: "Remote",
+      },
+    },
+  };
+  const remote = {
+    project: {
+      id: remoteProjectId,
+      environmentId: remoteEnvironmentId,
+      workspaceRoot: "/remote/repos/app",
+    },
+    baseRef: "main",
+    branch: "streamline-ticket-threads",
+    startFromOrigin: false,
+    instruction: "Start with the parser.",
+  };
+  const remoteInput = (existingThreadIds = new Set<ThreadId>()) => ({
+    ...startInput(),
+    ticket: remoteTicket,
+    existingThreadIds,
+    board: remoteBoard,
+  });
+  const remoteContext = {
+    text: "Ticket brief for a Thread on another machine.",
+    audience: "remote-thread" as const,
+    threads: [],
+  };
+  type Launch = Parameters<Parameters<typeof coordinateWorkbenchTicketStart>[1]["launchThread"]>[0];
+
+  function makeRemoteDependencies(
+    events: string[],
+    launched: Launch[],
+    launchResults: Array<typeof success | AsyncResult.Failure<unknown, unknown>> = [success],
+  ) {
+    return {
+      ...makeDependencies(events),
+      readTicketContext: async ({
+        environmentId: hostEnvironmentId,
+        input,
+      }: {
+        environmentId: EnvironmentId;
+        input: { audience: "remote-thread" };
+      }) => {
+        events.push(`read-context:${hostEnvironmentId}:${input.audience}`);
+        return AsyncResult.success(remoteContext);
+      },
+      createAssignment: async ({ input }: { input: Record<string, unknown> }) => {
+        events.push(`create-assignment:${String(input.environmentId)}:${String(input.projectId)}`);
+        return success;
+      },
+      launchThread: async (launch: Launch) => {
+        events.push(`launch-thread:${launch.environmentId}`);
+        launched.push(launch);
+        return launchResults.shift() ?? success;
+      },
+      openThread: async (openedThreadId: ThreadId, openedEnvironmentId: EnvironmentId) => {
+        events.push(`open-thread:${openedEnvironmentId}:${openedThreadId}`);
+      },
+    };
+  }
+
+  // A closed tab after the write leaves a visible Assignment to retry, never an untracked agent.
+  it("records the Assignment on the host before it launches the Thread on the remote", async () => {
+    const events: string[] = [];
+    const launched: Launch[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      makeRemoteDependencies(events, launched),
+      { modelSelection, remote },
+    );
+
+    expect(result).toEqual({ state: "opened", threadId });
+    expect(events).toEqual([
+      `read-context:${environmentId}:remote-thread`,
+      `create-assignment:${remoteEnvironmentId}:${remoteProjectId}`,
+      `launch-thread:${remoteEnvironmentId}`,
+      `open-thread:${remoteEnvironmentId}:${threadId}`,
+    ]);
+    expect(launched[0]?.input).toMatchObject({
+      threadId,
+      commandId: `workbench-remote-start:${assignmentId}`,
+      message: {
+        text: `${remoteContext.text}\n\nStart with the parser.`,
+        attachments: [],
+      },
+      bootstrap: {
+        createThread: {
+          projectId: remoteProjectId,
+          title: ticket.title,
+          modelSelection,
+          runtimeMode: "auto",
+          branch: "streamline-ticket-threads",
+          worktreePath: null,
+        },
+        prepareWorktree: {
+          projectCwd: "/remote/repos/app",
+          baseBranch: "main",
+          branch: "streamline-ticket-threads",
+        },
+      },
+    });
+  });
+
+  it("keeps a failed launch's Assignment so the row offers Retry and Remove", async () => {
+    const events: string[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      makeRemoteDependencies(events, [], [failure]),
+      { modelSelection, remote },
+    );
+
+    expect(result).toMatchObject({
+      state: "not-started",
+      assignment: {
+        id: assignmentId,
+        ticketId: ticket.id,
+        threadId,
+        environmentId: remoteEnvironmentId,
+        projectId: remoteProjectId,
+        supersededAt: null,
+      },
+    });
+    expect(events).toEqual([
+      `read-context:${environmentId}:remote-thread`,
+      `create-assignment:${remoteEnvironmentId}:${remoteProjectId}`,
+      `launch-thread:${remoteEnvironmentId}`,
+    ]);
+  });
+
+  const notStarted = {
+    id: assignmentId,
+    ticketId: ticket.id,
+    threadId,
+    environmentId: remoteEnvironmentId,
+    projectId: remoteProjectId,
+    createdAt,
+    supersededAt: null,
+  } satisfies WorkbenchAssignment;
+  const retryOptions = { modelSelection, remote: { ...remote, retry: notStarted } };
+  const retryDependencies = (
+    events: string[],
+    launched: Launch[],
+    launchResults: Array<typeof success | AsyncResult.Failure<unknown, unknown>>,
+  ) => ({
+    ...makeRemoteDependencies(events, launched, launchResults),
+    makeThreadId: () => ThreadId.make("thread-never-used"),
+    makeAssignmentId: () => WorkbenchAssignmentId.make("assignment-never-used"),
+  });
+  const launchIds = (launched: ReadonlyArray<Launch>) =>
+    launched.map(({ input }) => [input.threadId, input.commandId]);
+
+  // The remote creates the Thread before it accepts the first message, so a failure in between
+  // leaves an empty Thread; relaunching with the same ids replays creation and sends the brief.
+  it("relaunches with the Assignment's ids even when its Thread already exists", async () => {
+    const events: string[] = [];
+    const launched: Launch[] = [];
+    const dependencies = retryDependencies(events, launched, [failure, success]);
+
+    const failedRetry = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      dependencies,
+      retryOptions,
+    );
+    const retried = await coordinateWorkbenchTicketStart(
+      remoteInput(new Set([threadId])),
+      dependencies,
+      retryOptions,
+    );
+
+    expect(failedRetry).toMatchObject({ state: "not-started", assignment: notStarted });
+    expect(retried).toEqual({ state: "opened", threadId });
+    expect(events.filter((event) => event.startsWith("create-assignment"))).toEqual([]);
+    expect(launchIds(launched)).toEqual([
+      [threadId, `workbench-remote-start:${assignmentId}`],
+      [threadId, `workbench-remote-start:${assignmentId}`],
+    ]);
+  });
+
+  // The remote refuses a command id it recorded as rejected, so Retry can never succeed.
+  it("tells a recorded rejection apart from a launch that can be retried", async () => {
+    // The wire form of the remote's error chain, as `orchestration.launchThread` sends it.
+    const rejection = decodeLaunchError({
+      _tag: "OrchestrationV2ThreadLaunchError",
+      commandId: `workbench-remote-start:${assignmentId}`,
+      projectId: remoteProjectId,
+      message: "Failed to launch thread",
+      cause: {
+        name: "ThreadLaunchError",
+        message: "Thread launch failed during create-thread.",
+        cause: { name: "OrchestratorCommandPreviouslyRejectedError", message: "Rejected." },
+      },
+    });
+    const events: string[] = [];
+    const launched: Launch[] = [];
+    const dependencies = retryDependencies(events, launched, [
+      failure,
+      AsyncResult.failure(Cause.fail(rejection)),
+    ]);
+
+    const transient = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      dependencies,
+      retryOptions,
+    );
+    const rejected = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      dependencies,
+      retryOptions,
+    );
+
+    expect(transient).toMatchObject({ state: "not-started", assignment: notStarted });
+    expect(rejected).toMatchObject({ state: "launch-rejected", assignment: notStarted });
+    expect(launchIds(launched)).toEqual([
+      [threadId, `workbench-remote-start:${assignmentId}`],
+      [threadId, `workbench-remote-start:${assignmentId}`],
+    ]);
+  });
+
+  // An older host returns its host instruction, which names tools and paths the remote lacks.
+  it("stops before writing anything when the host does not echo the remote audience", async () => {
+    const events: string[] = [];
+    const launched: Launch[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      {
+        ...makeRemoteDependencies(events, launched),
+        readTicketContext: async () => {
+          events.push("read-context");
+          return AsyncResult.success({ text: "Host-only instruction.", threads: [] });
+        },
+      },
+      { modelSelection, remote },
+    );
+
+    expect(result).toEqual({ state: "host-outdated" });
+    expect(events).toEqual(["read-context"]);
+    expect(launched).toEqual([]);
   });
 });

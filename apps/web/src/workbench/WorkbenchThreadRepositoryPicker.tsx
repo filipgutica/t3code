@@ -26,6 +26,9 @@ export const getWorkbenchRepositoryTitle = (
   id: ProjectId | null,
 ) => projects.find((project) => project.id === id)?.title ?? "Repository unavailable";
 
+/** A Ticket repository on another machine, which a Thread can start in only while it is ready. */
+type RemoteRepositoryOption = RepositoryOption & { readonly unavailableReason: string | null };
+
 /**
  * Chooses the repository a new Thread works in: one of the Ticket's repositories, or a Workspace
  * repository the Ticket does not link yet, which the caller links when the Thread is created.
@@ -33,6 +36,7 @@ export const getWorkbenchRepositoryTitle = (
 export function WorkbenchThreadRepositoryPicker({
   ticketRepositoryIds,
   projects,
+  remoteRepositories = [],
   workspace,
   value,
   disabled,
@@ -41,13 +45,15 @@ export function WorkbenchThreadRepositoryPicker({
   readonly ticketRepositoryIds: readonly ProjectId[];
   /** The Workspace's linked repositories. */
   readonly projects: readonly RepositoryOption[];
+  /** The Ticket's repositories on other machines. */
+  readonly remoteRepositories?: readonly RemoteRepositoryOption[];
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly value: ProjectId | null;
   readonly disabled: boolean;
   readonly onChange: (id: ProjectId) => void;
 }) {
   const candidates = projects.filter((project) => !ticketRepositoryIds.includes(project.id));
-  const title = getWorkbenchRepositoryTitle(projects, value);
+  const title = getWorkbenchRepositoryTitle([...projects, ...remoteRepositories], value);
   return (
     <Menu>
       <MenuTrigger
@@ -83,6 +89,22 @@ export function WorkbenchThreadRepositoryPicker({
                 </MenuRadioItem>
               );
             })}
+            {remoteRepositories.map((repository) => (
+              <MenuRadioItem
+                key={repository.id}
+                value={repository.id}
+                closeOnClick
+                disabled={disabled || repository.unavailableReason !== null}
+              >
+                <span className="flex w-full min-w-0 items-center gap-2">
+                  <FolderGit2Icon aria-hidden className="text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate">{repository.title}</span>
+                  <span className="shrink-0 text-muted-foreground text-xs">
+                    {repository.unavailableReason ?? "New worktree"}
+                  </span>
+                </span>
+              </MenuRadioItem>
+            ))}
           </MenuRadioGroup>
         </MenuGroup>
         {candidates.length > 0 ? (
