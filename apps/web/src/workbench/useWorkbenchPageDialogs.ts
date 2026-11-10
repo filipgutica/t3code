@@ -97,7 +97,8 @@ export function useWorkbenchPageDialogs({
         id: selectedProject.id,
         expectedRevision: selectedProject.revision,
         title,
-        linkedProjectIds,
+        // Updates only add links; resending the saved ones keeps a rename valid when none is pickable.
+        linkedProjectIds: [...new Set([...selectedProject.linkedProjectIds, ...linkedProjectIds])],
         ...remoteProjectsField(remoteProjects),
         updatedAt: new Date().toISOString(),
       },

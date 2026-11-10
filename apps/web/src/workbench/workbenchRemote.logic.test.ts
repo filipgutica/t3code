@@ -58,6 +58,8 @@ describe("Workbench refs on other machines", () => {
     expect(getWorkbenchBoardSelectionGap(getWorkbenchBoardProjectSelection([]), true)).toBe(
       "empty",
     );
+    // Saved links stay when none of them is available to pick, so an edit is never empty.
+    expect(getWorkbenchBoardSelectionGap(getWorkbenchBoardProjectSelection([]), false)).toBeNull();
 
     // Reopening the Board selects each linked id only on the machine it was linked from.
     expect(

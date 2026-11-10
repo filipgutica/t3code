@@ -173,6 +173,31 @@ describe("ticket planning conversation navigation", () => {
     }
   });
 
+  it("renames a Board whose saved Projects are not available to pick", async () => {
+    const { settle, unmount } = await mount(workspaceEntry);
+    try {
+      await settle();
+      command.mockResolvedValueOnce({ _tag: "Success" });
+      await act(async () => {
+        await latestDialogs.saveWorkspace("Renamed", {
+          linkedProjectIds: [],
+          remoteProjects: {},
+          hasHostProject: false,
+        });
+      });
+      expect(command).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            title: "Renamed",
+            linkedProjectIds: [ProjectId.make("repo")],
+          }),
+        }),
+      );
+    } finally {
+      await unmount();
+    }
+  });
+
   it("keeps create=ticket in the URL so reload and history resume the conversation", async () => {
     const { router, mounted, settle, unmount } = await mount(`${workspaceEntry}&create=ticket`);
     try {

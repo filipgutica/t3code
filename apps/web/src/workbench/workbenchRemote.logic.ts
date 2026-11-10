@@ -189,14 +189,16 @@ export function getWorkbenchBoardProjectSelection(
   };
 }
 
-/** What the Board's selection lacks: any Project, or for a new Board, one on the host. */
+/** What a new Board's selection lacks: any Project, or one on the host. */
 export const getWorkbenchBoardSelectionGap = (
   selection: ReturnType<typeof getWorkbenchBoardProjectSelection>,
   creating: boolean,
 ): "empty" | "host-project" | null => {
+  // An edit only adds links; saved ones stay even when none can be picked right now.
+  if (!creating) return null;
   if (selection.linkedProjectIds.length === 0) return "empty";
   // Planning runs on the Board host, so a new Board starts with a Project there.
-  return creating && !selection.hasHostProject ? "host-project" : null;
+  return selection.hasHostProject ? null : "host-project";
 };
 
 /**
