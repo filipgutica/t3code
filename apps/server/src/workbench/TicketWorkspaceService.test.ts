@@ -1667,6 +1667,10 @@ describe("TicketWorkspaceService", () => {
         primaryProjectId,
       ]);
       expect(fetchRemoteTrackingBranchCalls.map((call) => call.cwd)).toEqual(["/repos/primary"]);
+      // A host copy of the remote Project's ID must not stand in for it when listing worktrees.
+      events.length = 0;
+      yield* service.listWorktrees({ ticketId });
+      expect(events).not.toContain(`project:${remote}`);
     }).pipe(Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls })));
   });
 

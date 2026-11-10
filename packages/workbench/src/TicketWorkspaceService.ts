@@ -1342,7 +1342,13 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         ),
       );
       const worktrees: Array<WorkbenchTicketWorktree> = [];
-      for (const projectId of ticket.repositoryProjectIds) {
+      // A remote Project's ID can also exist here (copied data); never resolve it on this host.
+      const board = yield* store.getProject(ticket.projectId);
+      const hostProjectIds = workbenchHostRepositoryProjectIds(
+        Option.getOrUndefined(board),
+        ticket.repositoryProjectIds,
+      );
+      for (const projectId of hostProjectIds) {
         const project = yield* projections.getProjectShellById(projectId);
         if (Option.isNone(project)) continue;
         const sourceRoot = yield* canonicalizePath(project.value.workspaceRoot);
