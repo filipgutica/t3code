@@ -14,8 +14,6 @@ import {
 import { useEnvironmentQuery } from "../state/query";
 import { useAtomCommand } from "../state/use-atom-command";
 import { workbenchEnvironment } from "./state";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
-import { descriptionUsesJiraMarkup } from "./workbenchDescriptionEditor.logic";
 import { useMarkdownAskForChange, type MarkdownAskRequest } from "./useMarkdownAskForChange";
 import { useMarkdownReview, type MarkdownReviewOutcome } from "./useMarkdownReview";
 import { failureCode, failureMessage } from "./workbenchPageCommands";
@@ -63,11 +61,11 @@ const useAcceptedToggle = (revision: number) => {
 export function useWorkbenchBriefReview({
   title,
   markdown,
+  contentUpdatedAt,
+  reviewPending,
   reviewBase,
   accepted,
   reviewable,
-  askable,
-  jira,
   permitted,
   accept,
   undo,
@@ -75,13 +73,14 @@ export function useWorkbenchBriefReview({
 }: {
   readonly title: string;
   readonly markdown: string;
+  /** When the title or brief last changed, if known. */
+  readonly contentUpdatedAt: string | null | undefined;
+  /** Whether a review awaits; the Ticket's snapshot knows before its base loads. */
+  readonly reviewPending: boolean | undefined;
   readonly reviewBase: WorkbenchReviewBase | null | undefined;
   readonly accepted: AcceptedChange;
   /** False while a local edit is shown, which the base and revision do not describe. */
   readonly reviewable: boolean;
-  /** False where rendered offsets would not match the saved text, such as Jira wiki markup. */
-  readonly askable: boolean;
-  readonly jira: boolean;
   readonly permitted: BriefReviewPermissions;
   readonly accept: () => Promise<Result>;
   readonly undo: () => Promise<Result>;
@@ -89,21 +88,19 @@ export function useWorkbenchBriefReview({
 }) {
   const pending = reviewable ? (reviewBase ?? null) : null;
   const acceptedShown = pending === null && reviewable && accepted.available && accepted.shown;
-  // Wiki markup spans blocks, as a {code} block with blank lines does, so both texts are
-  // converted whole before the diff splits them.
-  const shown = (text: string) => workbenchDescriptionMarkdown(text, jira);
   const base = pending ?? (acceptedShown ? accepted.base : null);
   const review = useMarkdownReview({
-    base: base && { title: base.title, markdown: shown(base.markdown) },
+    base,
+    pending: reviewPending === true,
     title,
-    markdown: shown(markdown),
+    markdown,
     onAccept: async () => reviewOutcome(await accept(), "accept"),
     onUndo: async () => reviewOutcome(await undo(), "undo"),
     onHideAccepted: pending === null ? accepted.toggle : undefined,
   });
   const askForChange = useMarkdownAskForChange({
     markdown,
-    enabled: reviewable && askable && permitted.ask,
+    enabled: reviewable && permitted.ask,
     onAsk: async (request) => {
       const result = await ask(request);
       return result._tag === "Success" || isAtomCommandInterrupted(result)
@@ -120,25 +117,24 @@ export function useWorkbenchBriefReview({
     toggleDiff: review.review?.toggleDiff ?? (toggleAccepted ? accepted.toggle : undefined),
     askForChange,
     permitted,
+    contentUpdatedAt: contentUpdatedAt ?? null,
   };
 }
 
 /**
  * A Ticket page's brief review. A local edit, even one saved but not yet in the snapshot, is not
- * the text the review describes, so `localEdit` hides it; Jira wiki markup renders as other text.
+ * the text the review describes, so `localEdit` hides it.
  */
 export function useWorkbenchTicketBriefReview({
   environmentId,
   ticket,
   localEdit,
   archived,
-  jira,
 }: {
   readonly environmentId: EnvironmentId;
   readonly ticket: WorkbenchTicket;
   readonly localEdit: boolean;
   readonly archived: boolean;
-  readonly jira: boolean;
 }) {
   const options = { reportFailure: false };
   const accept = useAtomCommand(workbenchEnvironment.acceptTicketReview, options);
@@ -164,6 +160,8 @@ export function useWorkbenchTicketBriefReview({
   const briefReview = useWorkbenchBriefReview({
     title: ticket.title,
     markdown: ticket.markdown,
+    contentUpdatedAt: ticket.contentUpdatedAt,
+    reviewPending: ticket.reviewPending,
     reviewBase: ticket.reviewBase,
     accepted: {
       available: ticket.acceptedChange === true,
@@ -174,8 +172,6 @@ export function useWorkbenchTicketBriefReview({
           : null,
     },
     reviewable,
-    askable: !descriptionUsesJiraMarkup(ticket.markdown, jira),
-    jira,
     permitted,
     accept: () => accept({ environmentId, input: target }),
     undo: () => undo({ environmentId, input: target }),
@@ -223,6 +219,8 @@ export function useWorkbenchDraftBriefReview({
   return useWorkbenchBriefReview({
     title: draft.fields.title,
     markdown: draft.fields.markdown,
+    contentUpdatedAt: draft.contentUpdatedAt,
+    reviewPending: draft.reviewBase != null,
     reviewBase: draft.reviewBase,
     accepted: {
       available: draft.acceptedBase != null,
@@ -230,9 +228,6 @@ export function useWorkbenchDraftBriefReview({
       base: draft.acceptedBase ?? null,
     },
     reviewable,
-    // The draft card renders its brief without Jira markup.
-    askable: true,
-    jira: false,
     permitted,
     accept: async () => settle(await accept({ environmentId, input: target() })),
     undo: async () => settle(await undo({ environmentId, input: target() })),

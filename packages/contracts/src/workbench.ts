@@ -237,6 +237,8 @@ export const WorkbenchTicket = Schema.Struct({
   progressDone: Schema.optionalKey(NonNegativeInt),
   progressTotal: Schema.optionalKey(NonNegativeInt),
   progressUpdatedByThreadId: Schema.optionalKey(Schema.NullOr(ThreadId)),
+  // When the title or description last changed; null for Tickets last changed before it was kept.
+  contentUpdatedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -323,6 +325,7 @@ export const WorkbenchTicketDraft = Schema.Struct({
   updatedByAskForChange: Schema.optionalKey(Schema.Boolean),
   reviewBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
   acceptedBase: Schema.optionalKey(Schema.NullOr(WorkbenchReviewBase)),
+  contentUpdatedAt: Schema.optionalKey(Schema.NullOr(IsoDateTime)),
   // Outside `fields`, which clients write; only the planning agent writes Progress.
   progress: Schema.optionalKey(WorkbenchProgress),
   createdAt: IsoDateTime,

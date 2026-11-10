@@ -26,7 +26,6 @@ import {
   ComposerStrikeExtension,
 } from "~/composer-rich-text-doc";
 
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 import { parseDescriptionHref } from "./workbenchReferences.logic";
 
 /** Markdown the editor can't show as rich text without losing it, kept as editable source. */
@@ -262,7 +261,7 @@ export interface ParsedDescription {
 
 /**
  * Tables, HTML, reference definitions, and anything else rich text would lose stay
- * editable Markdown source. With `jira`, so does every block in Jira wiki markup.
+ * editable Markdown source.
  */
 function blockOrSource(node: RootContent, source: string): JSONContent {
   try {
@@ -273,7 +272,7 @@ function blockOrSource(node: RootContent, source: string): JSONContent {
   }
 }
 
-export function parseDescription(source: string, jira: boolean): ParsedDescription {
+export function parseDescription(source: string): ParsedDescription {
   const tree = parser.parse(source);
   const blocks: Array<{ source: string; gapBefore: string }> = [];
   const content: JSONContent[] = [];
@@ -285,24 +284,17 @@ export function parseDescription(source: string, jira: boolean): ParsedDescripti
     const sourceIndex = blocks.length;
     blocks.push({ source: block, gapBefore: source.slice(offset, start) });
     offset = end;
-    const json =
-      jira && workbenchDescriptionMarkdown(block, true) !== block
-        ? sourceBlock(block)
-        : blockOrSource(node, block);
+    const json = blockOrSource(node, block);
     content.push({ ...json, attrs: { ...json.attrs, sourceIndex } });
   }
   return { source, doc: { type: "doc", content }, blocks, trailing: source.slice(offset) };
 }
 
-/** Whether the description uses Jira wiki markup, which reads best as source. */
-export const descriptionUsesJiraMarkup = (source: string, jira: boolean) =>
-  jira && workbenchDescriptionMarkdown(source, true) !== source;
-
 /** Pasted Markdown as editor blocks: links become chips and unsupported syntax stays source. */
 export const descriptionPasteContent = (text: string): JSONContent => ({
   type: "doc",
   // Pasted blocks are new, not the loaded blocks at those indexes.
-  content: (parseDescription(text, false).doc.content ?? []).map(({ attrs, ...block }) => {
+  content: (parseDescription(text).doc.content ?? []).map(({ attrs, ...block }) => {
     const { sourceIndex: _, ...rest } = attrs ?? {};
     return { ...block, attrs: rest };
   }),

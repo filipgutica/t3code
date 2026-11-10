@@ -54,23 +54,6 @@ describe("Workbench Board Ticket preview", () => {
     });
   });
 
-  it("adapts a linked Ticket's Jira wiki text into a bounded plain-text excerpt", () => {
-    const preview = getWorkbenchBoardTicketPreview({
-      ticket: {
-        markdown:
-          "h2. Goal\n\n* Show {{POST /v4}} and [API docs|https://example.com]. " +
-          "Explain the next action. ".repeat(20),
-      },
-      jira: true,
-    });
-    expect(preview.source).toBe("description");
-    expect(preview.text.startsWith("Show POST /v4 and API docs. Explain the next action.")).toBe(
-      true,
-    );
-    expect(preview.text.length).toBeLessThanOrEqual(181);
-    expect(preview.text.endsWith("…")).toBe(true);
-  });
-
   it("distinguishes an unexcerptable description from an empty one", () => {
     expect(
       getWorkbenchBoardTicketPreview({

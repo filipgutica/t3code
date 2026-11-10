@@ -103,7 +103,6 @@ import { WorkbenchReferenceBadge } from "./WorkbenchReferences";
 import {
   getTicketReferences,
   getWorkbenchReferenceSearchTerms,
-  hasJiraReference,
   type WorkbenchReferencesByTicket,
 } from "./workbenchReferences.logic";
 import {
@@ -690,7 +689,7 @@ function getWorkbenchBoardTicketPresentation({
     title: repositoriesById.get(id)?.title ?? "Repository unavailable",
   }));
   const references = getTicketReferences(referencesByTicket, ticket.id);
-  const summary = getWorkbenchBoardTicketPreview({ ticket, jira: hasJiraReference(references) });
+  const summary = getWorkbenchBoardTicketPreview({ ticket });
   const issues = workbenchTicketIssueReferences(references);
 
   return {

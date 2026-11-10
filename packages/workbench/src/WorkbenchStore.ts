@@ -129,6 +129,7 @@ const WorkbenchTicketRow = Schema.Struct({
   acceptedBaseMarkdown: Schema.NullOr(Schema.String),
   progress: Schema.String,
   progressUpdatedByThreadId: Schema.NullOr(ThreadId),
+  contentUpdatedAt: Schema.NullOr(IsoDateTime),
   createdAt: WorkbenchTicket.fields.createdAt,
   updatedAt: WorkbenchTicket.fields.updatedAt,
 });
@@ -265,6 +266,7 @@ const ticketFromRow = (
       updatedByAskForChange: row.updatedByAskForChange === 1,
     }),
     ...progressFields(row),
+    contentUpdatedAt: row.contentUpdatedAt,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -833,6 +835,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
+        content_updated_at AS "contentUpdatedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -1512,6 +1515,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         accepted_base_markdown AS "acceptedBaseMarkdown",
         progress,
         progress_updated_by_thread_id AS "progressUpdatedByThreadId",
+        content_updated_at AS "contentUpdatedAt",
         created_at AS "createdAt",
         updated_at AS "updatedAt"
       FROM workbench_tickets
@@ -2820,6 +2824,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               updated_by_ask_for_change,
               progress,
               progress_updated_by_thread_id,
+              content_updated_at,
               created_at,
               updated_at
             ) VALUES (
@@ -2841,6 +2846,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ${updatedByAskForChange ? 1 : 0},
               ${progress},
               ${progressUpdatedByThreadId},
+              ${input.createdAt},
               ${input.createdAt},
               ${input.createdAt}
             )
@@ -2873,6 +2879,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       updatedByThreadId,
       ...reviewFields({ reviewBase: null, acceptedBase: null, updatedByAskForChange }),
       ...progressFields({ progress, progressUpdatedByThreadId }),
+      contentUpdatedAt: input.createdAt,
       status: "todo",
       blocked: false,
       revision: 0,
@@ -3057,6 +3064,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           const review = reviewColumns(reviewState);
           const { progress, progressUpdatedByThreadId } = progressUpdate({ input, current });
           const summary = summaryUpdate({ row: current, contentChanged });
+          const contentUpdatedAt = contentChanged ? input.updatedAt : current.contentUpdatedAt;
           yield* sql`
             UPDATE workbench_tickets
             SET
@@ -3073,6 +3081,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               accepted_base_markdown = ${review.acceptedBaseMarkdown},
               progress = ${progress},
               progress_updated_by_thread_id = ${progressUpdatedByThreadId},
+              content_updated_at = ${contentUpdatedAt},
               generated_summary_status = ${summary.generatedSummaryStatus},
               generated_summary_stale = ${summary.generatedSummaryStale},
               generated_summary_error = ${summary.generatedSummaryError},
@@ -3116,6 +3125,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               updatedByThreadId,
               ...reviewFields(reviewState),
               ...progressFields({ progress, progressUpdatedByThreadId }),
+              contentUpdatedAt,
               createdAt: current.createdAt,
               updatedAt: input.updatedAt,
             }),
@@ -3175,6 +3185,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
                 accepted_base_markdown = NULL,
                 updated_by_thread_id = NULL,
                 updated_by_ask_for_change = 0,
+                content_updated_at = ${updatedAt},
                 generated_summary_status = ${summary.generatedSummaryStatus},
                 generated_summary_stale = ${summary.generatedSummaryStale},
                 generated_summary_error = ${summary.generatedSummaryError},

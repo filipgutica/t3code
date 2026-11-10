@@ -89,6 +89,8 @@ function DraftBriefView({
       {review ? (
         <WorkbenchReviewBar
           review={review}
+          source={updatedBy}
+          editedAt={briefReview.contentUpdatedAt}
           permitted={briefReview.permitted}
           className="rounded-lg px-3 py-2"
         />
@@ -96,7 +98,6 @@ function DraftBriefView({
       <WorkbenchBriefBody
         briefReview={briefReview}
         markdown={markdown}
-        jira={false}
         empty="No brief yet. Ask the agent to write one."
       />
     </section>

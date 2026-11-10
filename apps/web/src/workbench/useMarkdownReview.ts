@@ -11,12 +11,38 @@ export type MarkdownReviewOutcome =
 type ReviewBase = { readonly title: string; readonly markdown: string };
 
 /**
- * The review of a titled Markdown document against the text before its unreviewed edits.
- * `base` is null when nothing awaits review. Undo and Accept act on every change since then.
- * With `onHideAccepted`, `base` is an accepted change being shown: read-only, hidden by it.
+ * The base whose diff is hidden. A review already `pending` when the document opened starts
+ * hidden, since nobody saw it arrive; one that arrives while it is open shows its diff.
+ */
+function useHiddenReviewBase({
+  base,
+  pending,
+  accepted,
+}: {
+  readonly base: ReviewBase | null;
+  readonly pending: boolean;
+  readonly accepted: boolean;
+}) {
+  const [hiddenFor, setHiddenFor] = useState<ReviewBase | null>(null);
+  const [hideOnLoad, setHideOnLoad] = useState(pending);
+  if (hideOnLoad && !pending) setHideOnLoad(false);
+  else if (hideOnLoad && base !== null && !accepted) {
+    setHideOnLoad(false);
+    setHiddenFor(base);
+  }
+  // However a review ends, here or on another client, the next one starts with its diff shown.
+  // A pending review whose base is reloading has not ended.
+  if (hiddenFor !== null && !pending && (base === null || accepted)) setHiddenFor(null);
+  return [hiddenFor, setHiddenFor] as const;
+}
+
+/**
+ * The review of a document against the text before its unreviewed edits; `base` is null until one
+ * loads. With `onHideAccepted`, `base` is an accepted change shown read-only.
  */
 export function useMarkdownReview({
   base,
+  pending: reviewPending,
   title,
   markdown,
   onAccept,
@@ -24,14 +50,21 @@ export function useMarkdownReview({
   onHideAccepted,
 }: {
   readonly base: ReviewBase | null;
+  /** Whether a review awaits, which a document knows before its base loads. */
+  readonly pending: boolean;
   readonly title: string;
   readonly markdown: string;
   readonly onAccept: () => Promise<MarkdownReviewOutcome>;
   readonly onUndo: () => Promise<MarkdownReviewOutcome>;
   readonly onHideAccepted?: (() => void) | undefined;
 }) {
+  const accepted = onHideAccepted !== undefined;
   // Hidden only for the base it was hidden on, so a later review starts with its diff shown.
-  const [hiddenFor, setHiddenFor] = useState<ReviewBase | null>(null);
+  const [hiddenFor, setHiddenFor] = useHiddenReviewBase({
+    base,
+    pending: reviewPending,
+    accepted,
+  });
   const [pending, setPending] = useState<"accept" | "undo" | null>(null);
   // Kept with the base it met, so a later review of other edits does not repeat it.
   const [conflict, setConflict] = useState<{
@@ -54,9 +87,6 @@ export function useMarkdownReview({
     } else if (outcome.kind === "failed") setError(outcome.message);
   };
 
-  const accepted = onHideAccepted !== undefined;
-  // However a review ends, here or on another client, the next one starts with its diff shown.
-  if (hiddenFor !== null && (base === null || accepted)) setHiddenFor(null);
   if (base === null) return { review: null, diffShown: false };
   const titleChanged = base.title !== title;
   const blocks = diffMarkdownBlocks(base.markdown, markdown);

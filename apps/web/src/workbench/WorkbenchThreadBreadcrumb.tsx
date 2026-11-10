@@ -10,8 +10,7 @@ import { Badge } from "../components/ui/badge";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import { getWorkbenchContextForThread, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
-import { hasJiraReference, workbenchDescriptionLinks } from "./workbenchReferences.logic";
+import { workbenchDescriptionLinks } from "./workbenchReferences.logic";
 import { WorkbenchThreadReferencesMenu } from "./WorkbenchThreadReferencesMenu";
 
 export function WorkbenchThreadBreadcrumb({
@@ -26,9 +25,7 @@ export function WorkbenchThreadBreadcrumb({
   if (!context) return null;
   const { ticket, workspace: project } = context;
   const references = data?.references.filter((reference) => reference.ticketId === ticket.id) ?? [];
-  const descriptionLinks = workbenchDescriptionLinks(
-    workbenchDescriptionMarkdown(ticket.markdown, hasJiraReference(references)),
-  );
+  const descriptionLinks = workbenchDescriptionLinks(ticket.markdown);
 
   return (
     <>

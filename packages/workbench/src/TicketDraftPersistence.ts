@@ -341,7 +341,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         const draft = yield* lockEditableDraft(input);
-        const { contentChanged: _contentChanged, ...write } = documentWrite({
+        const { contentChanged, ...write } = documentWrite({
           writer: input.writer,
           before: {
             ...draft.fields,
@@ -352,13 +352,15 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           },
           after: input.fields,
         });
+        const updatedAt = yield* now;
         const next = {
           ...draft,
           fields: input.fields,
           ...(input.progress === undefined ? {} : { progress: input.progress }),
           ...write,
+          ...(contentChanged ? { contentUpdatedAt: updatedAt } : {}),
           revision: draft.revision + 1,
-          updatedAt: yield* now,
+          updatedAt,
         };
         yield* validateFields(next, validatedRoots);
         return yield* save(draft, next);
@@ -382,17 +384,19 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
               message: "No changes to this draft await review.",
             });
           }
+          const updatedAt = yield* now;
           return yield* save(draft, {
             ...draft,
             ...(input.resolution === "undo"
               ? {
                   fields: { ...draft.fields, title: base.title, markdown: base.markdown },
                   ...documentProvenance({ kind: "user" }),
+                  contentUpdatedAt: updatedAt,
                 }
               : {}),
             ...resolvedReview(input.resolution, base),
             revision: draft.revision + 1,
-            updatedAt: yield* now,
+            updatedAt,
           });
         }),
       );

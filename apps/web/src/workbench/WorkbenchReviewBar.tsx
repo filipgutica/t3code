@@ -1,28 +1,65 @@
+import type { ThreadId } from "@t3tools/contracts";
 import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 
-import { Button } from "../components/ui/button";
+import { RelativeTime } from "../components/RelativeTime";
+import { Button, InlineButton } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { useMarkdownReview } from "./useMarkdownReview";
+import type { WorkbenchProvenanceSource } from "./WorkbenchReferences";
+import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 
 type MarkdownReviewState = NonNullable<ReturnType<typeof useMarkdownReview>["review"]>;
 
+/** Who made the edit under review: the Thread with its hover card, or Ask for change. */
+function ReviewSource({
+  source,
+  onOpenThread,
+}: {
+  readonly source: WorkbenchProvenanceSource;
+  readonly onOpenThread: ((threadId: ThreadId) => void) | undefined;
+}) {
+  if (source.kind === "askForChange") return "Ask for change";
+  return (
+    <WorkbenchThreadHoverPreview
+      environmentId={source.environmentId}
+      threadId={source.threadId}
+      title={source.title}
+      shell={source.shell}
+    >
+      {onOpenThread === undefined ? (
+        <span className="font-medium text-foreground">{source.title}</span>
+      ) : (
+        <InlineButton onClick={() => onOpenThread(source.threadId)}>{source.title}</InlineButton>
+      )}
+    </WorkbenchThreadHoverPreview>
+  );
+}
+
 /**
- * Undo and Accept for every change since the last review, with what changed and, after an
- * Undo that met a newer edit, why nothing was undone. `className` places the bar.
+ * Undo and Accept for every change since the last review, with who made it, when, what changed
+ * and, after an Undo that met a newer edit, why nothing was undone. `className` places the bar.
  */
 export function WorkbenchReviewBar({
   review,
+  source,
+  editedAt,
   permitted,
+  onOpenThread,
   disabled = false,
   className,
 }: {
   readonly review: MarkdownReviewState;
+  readonly source: WorkbenchProvenanceSource | null;
+  /** Opens the editing Thread, so the person can talk about its change. */
+  readonly onOpenThread?: ((threadId: ThreadId) => void) | undefined;
+  /** When the title or brief last changed; omitted when unknown. */
+  readonly editedAt: string | null;
   /** A connection that may not run Undo or Accept sees the review without them. */
   readonly permitted: { readonly accept: boolean; readonly undo: boolean };
   readonly disabled?: boolean;
   readonly className?: string;
 }) {
-  const { summary, diffShown, conflict, error } = review;
+  const { summary, conflict, error } = review;
   return (
     <div
       role="region"
@@ -36,7 +73,10 @@ export function WorkbenchReviewBar({
       {conflict ? (
         <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-warning-foreground" />
       ) : null}
-      <p role="status" className="min-w-0 flex-1 text-muted-foreground">
+      <p
+        role="status"
+        className="min-w-0 flex-1 text-muted-foreground [--inline-button-text-align:start] [--inline-button-white-space:normal]"
+      >
         {conflict ? (
           <>
             <span className="font-semibold text-foreground">Nothing was undone.</span> {conflict}
@@ -44,11 +84,21 @@ export function WorkbenchReviewBar({
         ) : (
           <>
             <span className="font-semibold text-foreground">{summary.heading}</span>
-            {diffShown
-              ? summary.detail === null
-                ? null
-                : ` · ${summary.detail}`
-              : " · diff hidden. Click the badge to show it again."}
+            {source === null ? null : (
+              <>
+                {" from "}
+                <ReviewSource source={source} onOpenThread={onOpenThread} />
+              </>
+            )}
+            {editedAt === null ? null : (
+              <>
+                {" · "}
+                <time dateTime={editedAt}>
+                  <RelativeTime timestamp={editedAt} />
+                </time>
+              </>
+            )}
+            {summary.detail === null ? null : ` · ${summary.detail}`}
           </>
         )}
         {error ? (

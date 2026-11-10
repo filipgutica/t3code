@@ -21,7 +21,6 @@ function Harness({
     <WorkbenchTicketDescriptionEditor
       autoFocus={autoFocus ?? false}
       markdown={markdown}
-      jira={false}
       onChange={(next) => {
         setMarkdown(next);
         onChange(next);
@@ -68,22 +67,10 @@ it("saves typing into one block and keeps the others' source", async () => {
   );
 });
 
-it("opens Jira wiki markup as Markdown source", async () => {
-  await using _screen = await render(
-    <WorkbenchTicketDescriptionEditor markdown={"h2. Goal\n"} jira onChange={() => {}} />,
-  );
-  await expect.element(page.getByRole("textbox", { name: "Brief" })).toHaveValue("h2. Goal\n");
-});
-
 it("ignores typing while disabled", async () => {
   const onChange = vi.fn();
   await using _screen = await render(
-    <WorkbenchTicketDescriptionEditor
-      markdown="Draft brief"
-      jira={false}
-      disabled
-      onChange={onChange}
-    />,
+    <WorkbenchTicketDescriptionEditor markdown="Draft brief" disabled onChange={onChange} />,
   );
   await page.getByText("Draft brief").click();
   await userEvent.keyboard(" more");
