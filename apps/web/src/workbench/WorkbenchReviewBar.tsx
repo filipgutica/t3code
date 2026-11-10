@@ -2,7 +2,7 @@ import type { ThreadId } from "@t3tools/contracts";
 import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 
 import { RelativeTime } from "../components/RelativeTime";
-import { Button } from "../components/ui/button";
+import { Button, InlineButton } from "../components/ui/button";
 import { cn } from "../lib/utils";
 import type { useMarkdownReview } from "./useMarkdownReview";
 import type { WorkbenchProvenanceSource } from "./WorkbenchReferences";
@@ -29,13 +29,7 @@ function ReviewSource({
       {onOpenThread === undefined ? (
         <span className="font-medium text-foreground">{source.title}</span>
       ) : (
-        <button
-          type="button"
-          className="font-medium text-foreground underline-offset-4 hover:underline"
-          onClick={() => onOpenThread(source.threadId)}
-        >
-          {source.title}
-        </button>
+        <InlineButton onClick={() => onOpenThread(source.threadId)}>{source.title}</InlineButton>
       )}
     </WorkbenchThreadHoverPreview>
   );
@@ -79,7 +73,10 @@ export function WorkbenchReviewBar({
       {conflict ? (
         <TriangleAlertIcon aria-hidden className="size-4 shrink-0 text-warning-foreground" />
       ) : null}
-      <p role="status" className="min-w-0 flex-1 text-muted-foreground">
+      <p
+        role="status"
+        className="min-w-0 flex-1 text-muted-foreground [--inline-button-text-align:start] [--inline-button-white-space:normal]"
+      >
         {conflict ? (
           <>
             <span className="font-semibold text-foreground">Nothing was undone.</span> {conflict}
