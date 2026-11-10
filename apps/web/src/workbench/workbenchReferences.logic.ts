@@ -202,10 +202,6 @@ export const getTicketIssue = (
   references: ReadonlyArray<WorkbenchReference>,
 ): WorkbenchParsedReferenceUrl | null => workbenchTicketIssueReferences(references)[0] ?? null;
 
-/** Jira-imported descriptions use wiki markup; a Jira Reference keeps their preview readable. */
-export const hasJiraReference = (references: ReadonlyArray<WorkbenchReference>) =>
-  workbenchTicketIssueReferences(references).some((issue) => issue.kind === "jira_issue");
-
 /** Every Reference label and title, which Board and sidebar search match. */
 export const getWorkbenchReferenceSearchTerms = (
   references: ReadonlyArray<WorkbenchReference>,

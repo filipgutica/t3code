@@ -1952,20 +1952,26 @@ describe("Ticket review of agent edits", () => {
         reviewBase: original,
         updatedByThreadId: agent,
         updatedByAskForChange: false,
+        contentUpdatedAt: at,
       });
       expect(Option.getOrThrow(yield* store.getTicket(ticketId)).reviewBase).toEqual(original);
       const [snapshotTicket] = (yield* store.getSnapshot).tickets;
-      expect(snapshotTicket).toMatchObject({ reviewPending: true });
+      expect(snapshotTicket).toMatchObject({ reviewPending: true, contentUpdatedAt: at });
       expect(snapshotTicket).not.toHaveProperty("reviewBase");
-      // A board drag changes no content, so the review stays.
+      // A board drag changes no content, so the review and when its edit happened stay.
       const moved = yield* store.updateTicket({
         id: ticketId,
         expectedRevision: edited.revision,
         status: "in_progress",
-        updatedAt: at,
+        updatedAt: "2026-10-21T10:00:00.000Z",
         writer: { kind: "user" },
       });
-      expect(moved).toMatchObject({ reviewBase: original, updatedByThreadId: agent });
+      expect(moved).toMatchObject({
+        reviewBase: original,
+        updatedByThreadId: agent,
+        contentUpdatedAt: at,
+      });
+      expect(Option.getOrThrow(yield* store.getTicket(ticketId)).contentUpdatedAt).toBe(at);
     }).pipe(Effect.provide(layer())),
   );
 
@@ -2086,6 +2092,8 @@ describe("Ticket review of agent edits", () => {
         updatedByThreadId: null,
         updatedByAskForChange: false,
       });
+      // Undo changes the content, so it is the latest content change.
+      expect(undone.contentUpdatedAt).not.toBe(edited.contentUpdatedAt);
       expect(undone.generatedSummary?.status).toBe("pending");
       expect(Option.getOrThrow(yield* store.getTicket(ticketId))).toEqual(undone);
     }).pipe(Effect.provide(layer())),

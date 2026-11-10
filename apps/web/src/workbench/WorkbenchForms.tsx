@@ -146,8 +146,6 @@ import {
   type WorkbenchTicketSavedVersion,
   type WorkbenchTicketDraft,
 } from "./workbenchDraftStore";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
-import { descriptionUsesJiraMarkup } from "./workbenchDescriptionEditor.logic";
 import { WorkbenchTicketDescriptionEditor } from "./WorkbenchTicketDescriptionEditor";
 import { WorkbenchBriefAskButton, WorkbenchBriefBody } from "./WorkbenchBriefReview";
 import { WorkbenchWordDiff } from "./WorkbenchMarkdownReview";
@@ -175,7 +173,6 @@ import {
 import {
   getReferenceFileCwd,
   getTicketIssue,
-  hasJiraReference,
   listWorkbenchTicketReferences,
   splitWorkbenchReferences,
   workbenchDescriptionLinks,
@@ -769,17 +766,13 @@ function WorkbenchTicketDetailController({
     ],
   });
   const floatingChatInset = getWorkbenchFloatingChatInset(floatingChat);
-  const jira = hasJiraReference(references);
   const briefReview = useWorkbenchTicketBriefReview({
     environmentId,
     ticket,
     localEdit: draft !== undefined,
     archived: isArchived,
-    jira,
   });
-  const descriptionLinks = workbenchDescriptionLinks(
-    workbenchDescriptionMarkdown(displayedMarkdown, jira),
-  );
+  const descriptionLinks = workbenchDescriptionLinks(displayedMarkdown);
   // Thread links on the Ticket show the Thread in its floating chat, which offers the full page.
   const showThreadInChat = (threadId: ThreadId) => {
     const { pageChat } = useWorkbenchFloatingChatStore.getState();
@@ -942,7 +935,6 @@ function WorkbenchTicketDetailController({
                   context={{ environmentId: environmentId }}
                   records={{
                     ticket: ticket,
-                    jira,
                     updatedBy: workbenchProvenanceSource({
                       environmentId,
                       threadId: ticket.updatedByThreadId,
@@ -1829,8 +1821,6 @@ type WorkbenchTicketDescriptionPanelProps = {
   ) => void;
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
-  /** Whether the Ticket has a Jira Reference, so its description may use Jira markup. */
-  jira: boolean;
   cancelEditing: () => void;
   dirty: boolean;
   displayedMarkdown: string;
@@ -1854,7 +1844,7 @@ function WorkbenchTicketDescriptionPanel({
   >;
   actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft">;
   context: Pick<WorkbenchTicketDescriptionPanelProps, "environmentId">;
-  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket" | "jira"> & {
+  records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket"> & {
     readonly updatedBy: WorkbenchProvenanceSource | null;
     readonly briefReview: ReturnType<typeof useWorkbenchTicketBriefReview>;
   };
@@ -1871,7 +1861,7 @@ function WorkbenchTicketDescriptionPanel({
   } = presentation;
   const { setDraft } = actions;
   const { environmentId } = context;
-  const { ticket, jira, updatedBy, briefReview } = records;
+  const { ticket, updatedBy, briefReview } = records;
   const { review } = briefReview;
   return (
     <section className="flex min-w-0 flex-col rounded-xl border border-border/60 bg-card/40">
@@ -1894,15 +1884,7 @@ function WorkbenchTicketDescriptionPanel({
         {!editing && !isArchived ? (
           <div className="flex shrink-0 items-center gap-2">
             {ticket.markdown.trim() ? (
-              <WorkbenchBriefAskButton
-                briefReview={briefReview}
-                variant="outline"
-                unavailableReason={
-                  descriptionUsesJiraMarkup(ticket.markdown, jira)
-                    ? "Ask for change cannot rewrite Jira wiki markup. Edit the brief instead."
-                    : null
-                }
-              />
+              <WorkbenchBriefAskButton briefReview={briefReview} variant="outline" />
             ) : null}
             <Button
               disabled={pending}
@@ -1919,6 +1901,8 @@ function WorkbenchTicketDescriptionPanel({
       {review && !editing ? (
         <WorkbenchReviewBar
           review={review}
+          source={updatedBy}
+          editedAt={briefReview.contentUpdatedAt}
           permitted={briefReview.permitted}
           disabled={pending}
           className="border-b border-border/50 px-4 py-2"
@@ -1944,7 +1928,6 @@ function WorkbenchTicketDescriptionPanel({
               key={`${environmentId}:${ticket.id}`}
               autoFocus
               markdown={draft.markdown}
-              jira={jira}
               onChange={(markdown) => {
                 setDraft(environmentId, ticket.id, {
                   ...draft,
@@ -1964,7 +1947,7 @@ function WorkbenchTicketDescriptionPanel({
         </>
       ) : (
         <div className="min-h-40 min-w-0 p-4 @min-[40rem]/ticket:p-5">
-          <WorkbenchBriefBody briefReview={briefReview} markdown={displayedMarkdown} jira={jira} />
+          <WorkbenchBriefBody briefReview={briefReview} markdown={displayedMarkdown} />
         </div>
       )}
     </section>

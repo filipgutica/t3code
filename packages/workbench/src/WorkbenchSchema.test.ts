@@ -579,6 +579,76 @@ describe("ensureWorkbenchSchema", () => {
     ),
   );
 
+  it.effect("stores v26 Jira wiki briefs as the Markdown they rendered as, once", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 27`;
+        yield* sql`ALTER TABLE workbench_tickets DROP COLUMN content_updated_at`;
+        yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+          VALUES ('board', 'Board', ${now}, ${now})`;
+        const wiki =
+          "h2. Observed behaviour\n\n# Sends {{POST /v4}}.\n# See [request|https://example.com].";
+        // A code block spans a blank line, so the whole document converts at once.
+        const code = "{code:json}\n# raw {{value}}\n\n{code}";
+        const markdownWithBraces = "## Goal\n\nThe template uses {{name}} literally.";
+        yield* sql`INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown,
+            primary_t3_project_id, status, blocked, revision, created_at, updated_at,
+            review_base_title, review_base_markdown, accepted_base_title, accepted_base_markdown)
+          VALUES
+            ('jira-wiki', 'board', 'Wiki', ${wiki}, 'repo', 'todo', 0, 3, ${now}, ${now},
+              'Before', ${code}, NULL, NULL),
+            ('jira-accepted', 'board', 'Accepted', 'Plain', 'repo', 'todo', 0, 1, ${now}, ${now},
+              NULL, NULL, 'Before', 'h3. Old'),
+            ('jira-markdown', 'board', 'Markdown', '## Already', 'repo', 'todo', 0, 2, ${now},
+              ${now}, NULL, NULL, NULL, NULL),
+            ('local', 'board', 'Local', ${markdownWithBraces}, 'repo', 'todo', 0, 5, ${now}, ${now},
+              NULL, NULL, NULL, NULL)`;
+        yield* sql`INSERT INTO workbench_references (ticket_id, url, title, added_by_thread_id,
+            position, created_at)
+          VALUES ('jira-wiki', ${browse("ORBIT-1")}, NULL, NULL, 0, ${now}),
+            ('jira-accepted', ${browse("ORBIT-2")}, NULL, NULL, 0, ${now}),
+            ('jira-markdown', ${browse("ORBIT-3")}, NULL, NULL, 0, ${now}),
+            ('local', 'https://github.com/acme/app/issues/4', NULL, NULL, 0, ${now})`;
+        const readTickets = sql`SELECT ticket_id AS id, markdown, revision,
+            review_base_markdown AS "reviewBase", accepted_base_markdown AS "acceptedBase",
+            content_updated_at AS "contentUpdatedAt", updated_at AS "updatedAt"
+          FROM workbench_tickets ORDER BY ticket_id`;
+        const ticket = (
+          id: string,
+          revision: number,
+          fields: { markdown: string; reviewBase?: string; acceptedBase?: string },
+        ) => ({
+          id,
+          markdown: fields.markdown,
+          revision,
+          reviewBase: fields.reviewBase ?? null,
+          acceptedBase: fields.acceptedBase ?? null,
+          contentUpdatedAt: null,
+          updatedAt: now,
+        });
+
+        yield* ensureWorkbenchSchema;
+
+        const migrated = yield* readTickets;
+        expect(migrated).toEqual([
+          ticket("jira-accepted", 2, { markdown: "Plain", acceptedBase: "### Old" }),
+          ticket("jira-markdown", 2, { markdown: "## Already" }),
+          ticket("jira-wiki", 4, {
+            markdown:
+              "## Observed behaviour\n\n1. Sends `POST /v4`.\n1. See [request](https://example.com).",
+            reviewBase: "```json\n# raw {{value}}\n\n```",
+          }),
+          ticket("local", 5, { markdown: markdownWithBraces }),
+        ]);
+        // The converter is not idempotent (the code block's {{value}} would convert again).
+        yield* ensureWorkbenchSchema;
+        expect(yield* readTickets).toEqual(migrated);
+      }),
+    ),
+  );
+
   it.effect("preserves v23 Ticket and draft Epic links and drops draft type fields once", () =>
     withForeignKeys(
       Effect.gen(function* () {

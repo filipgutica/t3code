@@ -4,7 +4,7 @@ import { ContextChip, ContextChipAction, ContextChipLabel } from "../components/
 import { Popover, PopoverPopup, PopoverTitle, PopoverTrigger } from "../components/ui/popover";
 import type { ReviewCommentContext } from "../reviewCommentContext";
 import { cn } from "../lib/utils";
-import { WorkbenchTicketContextPreview } from "./WorkbenchTicketContextPreview";
+import { WorkbenchDescription } from "./WorkbenchDescription";
 import { isWorkbenchTicketReviewComment } from "./workbenchTicketContext";
 
 function WorkbenchTicketReviewComment({
@@ -43,7 +43,7 @@ function WorkbenchTicketReviewComment({
             ) : null}
             {comment.diff ? (
               comment.fenceLanguage === "markdown" ? (
-                <WorkbenchTicketContextPreview markdown={comment.diff} />
+                <WorkbenchDescription markdown={comment.diff} />
               ) : (
                 <pre className="whitespace-pre-wrap break-words rounded-md bg-muted/40 p-3 font-mono text-xs">
                   {comment.diff}

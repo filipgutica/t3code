@@ -2,27 +2,50 @@ import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lu
 
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
+import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { useMarkdownReview } from "./useMarkdownReview";
+import type { WorkbenchProvenanceSource } from "./WorkbenchReferences";
+import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 
 type MarkdownReviewState = NonNullable<ReturnType<typeof useMarkdownReview>["review"]>;
 
+/** Who made the edit under review: the Thread with its hover card, or Ask for change. */
+function ReviewSource({ source }: { readonly source: WorkbenchProvenanceSource }) {
+  if (source.kind === "askForChange") return "Ask for change";
+  return (
+    <WorkbenchThreadHoverPreview
+      environmentId={source.environmentId}
+      threadId={source.threadId}
+      title={source.title}
+      shell={source.shell}
+    >
+      <span className="font-medium text-foreground">{source.title}</span>
+    </WorkbenchThreadHoverPreview>
+  );
+}
+
 /**
- * Undo and Accept for every change since the last review, with what changed and, after an
- * Undo that met a newer edit, why nothing was undone. `className` places the bar.
+ * Undo and Accept for every change since the last review, with who made it, when, what changed
+ * and, after an Undo that met a newer edit, why nothing was undone. `className` places the bar.
  */
 export function WorkbenchReviewBar({
   review,
+  source,
+  editedAt,
   permitted,
   disabled = false,
   className,
 }: {
   readonly review: MarkdownReviewState;
+  readonly source: WorkbenchProvenanceSource | null;
+  /** When the title or brief last changed; omitted when unknown. */
+  readonly editedAt: string | null;
   /** A connection that may not run Undo or Accept sees the review without them. */
   readonly permitted: { readonly accept: boolean; readonly undo: boolean };
   readonly disabled?: boolean;
   readonly className?: string;
 }) {
-  const { summary, diffShown, conflict, error } = review;
+  const { summary, conflict, error } = review;
   return (
     <div
       role="region"
@@ -44,11 +67,19 @@ export function WorkbenchReviewBar({
         ) : (
           <>
             <span className="font-semibold text-foreground">{summary.heading}</span>
-            {diffShown
-              ? summary.detail === null
-                ? null
-                : ` · ${summary.detail}`
-              : " · diff hidden. Click the badge to show it again."}
+            {source === null ? null : (
+              <>
+                {" from "}
+                <ReviewSource source={source} />
+              </>
+            )}
+            {editedAt === null ? null : (
+              <>
+                {" · "}
+                <time dateTime={editedAt}>{formatRelativeTimeLabel(editedAt)}</time>
+              </>
+            )}
+            {summary.detail === null ? null : ` · ${summary.detail}`}
           </>
         )}
         {error ? (

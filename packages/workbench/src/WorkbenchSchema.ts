@@ -446,6 +446,88 @@ const migrateEpicLinksToReferences = Effect.gen(function* () {
 });
 
 /**
+ * The web preview's Jira wiki conversion as of v26, frozen for v27. It must keep producing the
+ * text those briefs rendered as, so do not fix or extend it.
+ */
+const jiraWikiAsRenderedMarkdown = (source: string): string => {
+  if (!/(^h[1-6]\. |\{\{|\{code|\{noformat\}|\[[^\]\n]+\|https?:)/m.test(source)) return source;
+  let fenced = false;
+  return source
+    .split("\n")
+    .map((line) => {
+      const code = /^\{(code(?::([^}]+))?|noformat)\}\s*$/.exec(line);
+      if (code) {
+        const language = fenced ? "" : (code[2] ?? "");
+        fenced = !fenced;
+        return `\`\`\`${language}`;
+      }
+      if (fenced) return line;
+      let rendered = line
+        .replace(/^h([1-6])\. /, (_, level: string) => `${"#".repeat(Number(level))} `)
+        .replace(/^(#+)\s+/, (match, marks: string) =>
+          line.startsWith("h") ? match : `${"  ".repeat(marks.length - 1)}1. `,
+        )
+        .replace(/^(\*+)\s+/, (_, marks: string) => `${"  ".repeat(marks.length - 1)}- `)
+        .replace(/\[([^\]\n|]+)\|([^\]\n]+)\]/g, "[$1]($2)")
+        .replace(/\{\{([^}\n]+)\}\}/g, "`$1`")
+        .replace(/(?<!\*)\*([^*\n]+)\*(?!\*)/g, "**$1**");
+      if (rendered.startsWith("||") && rendered.endsWith("||")) {
+        const cells = rendered.slice(2, -2).split("||");
+        rendered = `|${cells.join("|")}|\n|${cells.map(() => "---").join("|")}|`;
+      }
+      return rendered;
+    })
+    .join("\n");
+};
+
+/**
+ * v27 stores Jira wiki briefs, and their bases, as the Markdown clients rendered them as: only on
+ * Tickets with a Jira issue Reference. The revision bump makes an editor open on the wiki text
+ * conflict. It also adds `content_updated_at`, NULL until the next content change.
+ */
+const migrateJiraMarkupBriefs = Effect.gen(function* () {
+  const sql = yield* SqlClient.SqlClient;
+  yield* sql`ALTER TABLE workbench_tickets ADD COLUMN content_updated_at TEXT`;
+  const references = yield* sql<{ readonly ticketId: string; readonly url: string }>`
+    SELECT ticket_id AS "ticketId", url FROM workbench_references
+  `;
+  const jiraTicketIds = new Set(
+    references
+      .filter((reference) => parseWorkbenchReferenceUrl(reference.url)?.kind === "jira_issue")
+      .map((reference) => reference.ticketId),
+  );
+  const tickets = yield* sql<{
+    readonly ticketId: string;
+    readonly markdown: string;
+    readonly reviewBase: string | null;
+    readonly acceptedBase: string | null;
+  }>`
+    SELECT ticket_id AS "ticketId", markdown, review_base_markdown AS "reviewBase",
+      accepted_base_markdown AS "acceptedBase"
+    FROM workbench_tickets
+  `;
+  const convert = (text: string | null) =>
+    text === null ? null : jiraWikiAsRenderedMarkdown(text);
+  for (const ticket of tickets) {
+    if (!jiraTicketIds.has(ticket.ticketId)) continue;
+    const markdown = jiraWikiAsRenderedMarkdown(ticket.markdown);
+    const reviewBase = convert(ticket.reviewBase);
+    const acceptedBase = convert(ticket.acceptedBase);
+    if (
+      markdown === ticket.markdown &&
+      reviewBase === ticket.reviewBase &&
+      acceptedBase === ticket.acceptedBase
+    ) {
+      continue;
+    }
+    yield* sql`UPDATE workbench_tickets
+      SET markdown = ${markdown}, review_base_markdown = ${reviewBase},
+        accepted_base_markdown = ${acceptedBase}, revision = revision + 1
+      WHERE ticket_id = ${ticket.ticketId}`;
+  }
+});
+
+/**
  * Fork-owned schema initialization deliberately stays outside T3's numbered
  * migration ledger. Upstream can keep appending migrations without colliding
  * with Workbench-only identifiers.
@@ -1231,6 +1313,7 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       yield* sql`ALTER TABLE workbench_tickets ADD COLUMN accepted_base_markdown TEXT`;
     }),
   );
+  yield* applyMigration(27, migrateJiraMarkupBriefs);
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

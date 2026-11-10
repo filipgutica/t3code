@@ -709,7 +709,7 @@ it("edits a draft's title in its card and shows the full brief above the convers
   await expect.element(card.getByText("Export refunds")).toBeVisible();
 });
 
-it("shows a read-only connection a draft's unreviewed edit and lets it toggle the diff, without Undo or Accept", async () => {
+it("shows a read-only connection a draft's waiting edit collapsed and lets it toggle the diff, without Undo or Accept", async () => {
   const { onSnapshot } = await setup({ readOnly: true });
   const planned = draft("draft", "draft-thread", "Plan exports");
   const brief = "## Work\n- [ ] Export refunds weekly\n- [ ] Export payouts\n- [ ] Email the CSV";
@@ -723,15 +723,16 @@ it("shows a read-only connection a draft's unreviewed edit and lets it toggle th
   await pickThread(screen, /Plan exports/);
   const card = screen.getByRole("group", { name: "Ticket draft" });
   await userEvent.click(card.getByRole("button", { name: /Show full brief/ }));
+  // The edit was waiting when the draft opened, so its diff starts hidden.
   await expect.element(card.getByRole("region", { name: "Review changes" })).toBeVisible();
-  await expect.element(card.getByText("daily")).toBeVisible();
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
   await expect.element(card.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   await expect.element(card.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
-  // Hiding and showing the diff changes nothing, so the disabled form must not block it.
-  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
-  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
+  // Showing and hiding the diff changes nothing, so the disabled form must not block it.
   await userEvent.click(card.getByRole("button", { name: "Show diff" }));
   await expect.element(card.getByText("daily")).toBeVisible();
+  await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
+  await expect.element(card.getByText("daily")).not.toBeInTheDocument();
 });
 
 it("shows a read-only connection a draft's accepted change from the badge", async () => {
@@ -753,7 +754,7 @@ it("shows a read-only connection a draft's accepted change from the badge", asyn
 
   await userEvent.click(card.getByRole("button", { name: /Updated by Ask for change/ }));
   const bar = card.getByRole("region", { name: "Review changes" });
-  await expect.element(bar).toMatchTextContent(/Accepted change · 1 list/);
+  await expect.element(bar).toMatchTextContent(/Accepted change from Ask for change · 1 list/);
   await expect.element(card.getByText("daily")).toBeVisible();
   await expect.element(bar.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   await userEvent.click(bar.getByRole("button", { name: "Hide" }));

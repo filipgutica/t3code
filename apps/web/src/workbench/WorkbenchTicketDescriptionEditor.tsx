@@ -35,7 +35,6 @@ import {
   descriptionEditorContent,
   descriptionEditorExtensions,
   descriptionPasteContent,
-  descriptionUsesJiraMarkup,
   DescriptionCodeBlock,
   parseDescription,
   ReferenceChip,
@@ -146,7 +145,6 @@ export function WorkbenchTicketDescriptionEditor({
   id = "edit-workbench-ticket-context",
   autoFocus = false,
   markdown,
-  jira,
   disabled = false,
   onChange,
 }: {
@@ -154,15 +152,11 @@ export function WorkbenchTicketDescriptionEditor({
   /** Puts the caret at the start of the description when the editor opens. */
   autoFocus?: boolean;
   markdown: string;
-  jira: boolean;
   /** A contenteditable ignores a disabled `<fieldset>`, so callers pass it. */
   disabled?: boolean;
   onChange: (markdown: string) => void;
 }) {
-  // Jira wiki markup has no rich-text form, so it opens as source.
-  const [mode, setMode] = useState<Mode>(() =>
-    descriptionUsesJiraMarkup(markdown, jira) ? "markdown" : "rich",
-  );
+  const [mode, setMode] = useState<Mode>("rich");
   const labelId = `${id}-label`;
   return (
     <div className="min-w-0 space-y-2">
@@ -203,7 +197,6 @@ export function WorkbenchTicketDescriptionEditor({
           labelId={labelId}
           autoFocus={autoFocus}
           markdown={markdown}
-          jira={jira}
           disabled={disabled}
           onChange={onChange}
         />
@@ -216,19 +209,17 @@ function DescriptionRichTextEditor({
   labelId,
   autoFocus,
   markdown,
-  jira,
   disabled,
   onChange,
 }: {
   labelId: string;
   autoFocus: boolean;
   markdown: string;
-  jira: boolean;
   disabled: boolean;
   onChange: (markdown: string) => void;
 }) {
   const [loaded, setLoaded] = useState(() => ({
-    parsed: parseDescription(markdown, jira),
+    parsed: parseDescription(markdown),
     emitted: markdown,
     disabled,
     generation: 0,
@@ -237,7 +228,7 @@ function DescriptionRichTextEditor({
   // so does a change to `disabled`, which Tiptap reads only on creation.
   if (markdown !== loaded.emitted || disabled !== loaded.disabled) {
     setLoaded({
-      parsed: parseDescription(markdown, jira),
+      parsed: parseDescription(markdown),
       emitted: markdown,
       disabled,
       generation: loaded.generation + 1,

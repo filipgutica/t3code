@@ -88,10 +88,8 @@ function setup({ readOnly = false } = {}) {
 function TicketBrief({
   record,
   askButton = false,
-  jira = false,
 }: {
   readonly record: WorkbenchTicket;
-  readonly jira?: boolean;
   /** The header's whole-brief Ask for change, which shares the pill's name. */
   readonly askButton?: boolean;
 }) {
@@ -100,7 +98,6 @@ function TicketBrief({
     ticket: record,
     localEdit: false,
     archived: false,
-    jira,
   });
   return (
     <>
@@ -111,9 +108,14 @@ function TicketBrief({
       />
       {askButton ? <WorkbenchBriefAskButton briefReview={briefReview} variant="outline" /> : null}
       {briefReview.review ? (
-        <WorkbenchReviewBar review={briefReview.review} permitted={briefReview.permitted} />
+        <WorkbenchReviewBar
+          review={briefReview.review}
+          source={{ kind: "askForChange" }}
+          editedAt={briefReview.contentUpdatedAt}
+          permitted={briefReview.permitted}
+        />
       ) : null}
-      <WorkbenchBriefBody briefReview={briefReview} markdown={record.markdown} jira={jira} />
+      <WorkbenchBriefBody briefReview={briefReview} markdown={record.markdown} />
     </>
   );
 }
@@ -130,7 +132,9 @@ it("undoes and accepts with the reviewed revision, and explains an Undo that met
   mocks.accept.mockResolvedValue(succeeded);
   await using screen = await render(<TicketBrief record={{ ...ticket, reviewBase }} />);
   const bar = screen.getByRole("region", { name: "Review changes" });
-  await expect.element(bar).toMatchTextContent(/Unreviewed changes · title and 1 paragraph/);
+  await expect
+    .element(bar)
+    .toMatchTextContent(/Unreviewed changes from Ask for change · title and 1 paragraph/);
 
   await userEvent.click(bar.getByRole("button", { name: "Undo" }));
   expect(mocks.undo).toHaveBeenCalledExactlyOnceWith({
@@ -157,9 +161,6 @@ it("hides and shows the diff from the badge, which does nothing without a review
   await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
   await expect.element(removed).not.toBeInTheDocument();
   await expect.element(screen.getByText(why)).toBeVisible();
-  await expect
-    .element(screen.getByRole("region", { name: "Review changes" }))
-    .toMatchTextContent(/diff hidden/);
 
   await userEvent.click(screen.getByRole("button", { name: "Show diff" }));
   await expect.element(screen.getByText("Someone who comes back has to start over.")).toBeVisible();
@@ -270,7 +271,9 @@ it("shows an accepted change read-only from the badge, reading its base only whe
 
   await userEvent.click(screen.getByRole("button", { name: /Updated by Ask for change/ }));
   const bar = screen.getByRole("region", { name: "Review changes" });
-  await expect.element(bar).toMatchTextContent(/Accepted changes · title and 1 paragraph/);
+  await expect
+    .element(bar)
+    .toMatchTextContent(/Accepted changes from Ask for change · title and 1 paragraph/);
   await expect.element(removed).toBeVisible();
   await expect.element(bar.getByRole("button", { name: "Undo" })).not.toBeInTheDocument();
   await expect.element(bar.getByRole("button", { name: "Accept" })).not.toBeInTheDocument();
@@ -308,43 +311,34 @@ it("shows the next review's diff after a hidden one ended elsewhere", async () =
   await expect.element(removed).toBeVisible();
   await screen.rerender(<TicketBrief record={{ ...ticket, revision: 9, reviewBase }} />);
   await expect.element(removed).toBeVisible();
-  await expect
-    .element(screen.getByRole("region", { name: "Review changes" }))
-    .not.toMatchTextContent(/diff hidden/);
+  await expect.element(screen.getByRole("button", { name: "Show diff" })).not.toBeInTheDocument();
 });
 
-it("renders a Jira brief's unchanged diff blocks in the brief's own markup", async () => {
+it("collapses a review that awaited when the brief opened, naming who made it and when", async () => {
   setup();
-  const steps = "# First step\n# Second step";
-  const record = { ...ticket, markdown: `h1. Goal\n\nNew paragraph.\n\n${steps}` };
-  const base = { title: ticket.title, markdown: `h1. Goal\n\nOld paragraph.\n\n${steps}` };
-  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
-  await expect.element(screen.getByRole("region", { name: "Review changes" })).toBeVisible();
-  // The list alone has no wiki marker, so it must take the mode the whole brief uses.
+  const editedAt = "2026-11-06T17:26:09.000Z";
+  const pending = { ...ticket, reviewPending: true, contentUpdatedAt: editedAt };
+  // The snapshot flags the review before the Ticket read supplies its base.
+  await using screen = await render(<TicketBrief record={pending} />);
+  await screen.rerender(<TicketBrief record={{ ...pending, reviewBase }} />);
+  const bar = screen.getByRole("region", { name: "Review changes" });
   await expect
-    .element(screen.getByRole("listitem").filter({ hasText: "First step" }))
-    .toBeVisible();
-  await expect.element(screen.getByRole("heading", { name: "First step" })).not.toBeInTheDocument();
+    .element(bar)
+    .toMatchTextContent(/Unreviewed changes from Ask for change · .+ · title and 1 paragraph/);
+  expect(bar.element().querySelector("time")?.getAttribute("datetime")).toBe(editedAt);
+  await expect.element(screen.getByText(why)).toBeVisible();
+  const removed = screen.getByText("Someone who comes back has to start over.");
+  await expect.element(removed).not.toBeInTheDocument();
+
+  await userEvent.click(bar.getByRole("button", { name: "Show diff" }));
+  await expect.element(removed).toBeVisible();
 });
 
-it("keeps a Jira code block whole when an edit changes one of its paragraphs", async () => {
+it("shows the diff of a review that arrives while the brief is open", async () => {
   setup();
-  const code = (first: string) => `{code}\n${first}\n\nsecond line\n{code}\n\nAfter the code.`;
-  const record = { ...ticket, markdown: code("first changed") };
-  const base = { title: ticket.title, markdown: code("first line") };
-  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
-  await expect.element(screen.getByText("After the code.")).toBeVisible();
-  // Split apart, the closing {code} would reopen a fence around the prose after it.
-  expect(screen.container.querySelector("pre, code")?.textContent ?? "").not.toContain(
-    "After the code.",
+  await using screen = await render(<TicketBrief record={ticket} />);
+  await screen.rerender(
+    <TicketBrief record={{ ...ticket, revision: 8, reviewPending: true, reviewBase }} />,
   );
-});
-
-it("renders a removed Jira block in the markup of the brief it came from", async () => {
-  setup();
-  const record = { ...ticket, markdown: "Keep this paragraph." };
-  const base = { title: ticket.title, markdown: "h1. Goal\n\nKeep this paragraph." };
-  await using screen = await render(<TicketBrief record={{ ...record, reviewBase: base }} jira />);
-  await expect.element(screen.getByRole("heading", { name: "Goal" })).toBeVisible();
-  await expect.element(screen.getByText("h1. Goal")).not.toBeInTheDocument();
+  await expect.element(screen.getByText("Someone who comes back has to start over.")).toBeVisible();
 });

@@ -1,7 +1,6 @@
 import { SparklesIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
-import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import { cn } from "../lib/utils";
 import { askForChangeTargetClassName, WorkbenchAskForChange } from "./WorkbenchAskForChange";
 import { WorkbenchDescription } from "./WorkbenchDescription";
@@ -14,32 +13,22 @@ type BriefReview = ReturnType<typeof useWorkbenchBriefReview>;
 export function WorkbenchBriefAskButton({
   briefReview,
   variant,
-  unavailableReason = null,
 }: {
   readonly briefReview: BriefReview;
   readonly variant: "outline" | "ghost";
-  /** Why Ask for change cannot run here; the button is then disabled and says so on hover. */
-  readonly unavailableReason?: string | null;
 }) {
   const ask = briefReview.askForChange;
   if (!briefReview.permitted.ask) return null;
-  const button = (
+  return (
     <Button
       size="xs"
       type="button"
       variant={variant}
-      disabled={unavailableReason !== null || !ask.available || ask.running}
+      disabled={!ask.available || ask.running}
       onClick={ask.askWhole}
     >
       <SparklesIcon /> Ask for change
     </Button>
-  );
-  if (unavailableReason === null) return button;
-  return (
-    <Tooltip>
-      <TooltipTrigger render={<span className="inline-flex" />}>{button}</TooltipTrigger>
-      <TooltipPopup>{unavailableReason}</TooltipPopup>
-    </Tooltip>
   );
 }
 
@@ -50,12 +39,10 @@ export function WorkbenchBriefAskButton({
 export function WorkbenchBriefBody({
   briefReview,
   markdown,
-  jira,
   empty,
 }: {
   readonly briefReview: BriefReview;
   readonly markdown: string;
-  readonly jira: boolean;
   /** Shown for an empty brief instead of the description's own placeholder. */
   readonly empty?: string;
 }) {
@@ -74,7 +61,7 @@ export function WorkbenchBriefBody({
         ) : empty !== undefined && !markdown.trim() ? (
           <p className="text-sm text-muted-foreground">{empty}</p>
         ) : (
-          <WorkbenchDescription markdown={markdown} jira={jira} />
+          <WorkbenchDescription markdown={markdown} />
         )}
       </div>
       <WorkbenchAskForChange ask={ask} />

@@ -1,7 +1,6 @@
 import type { WorkbenchTicket } from "@t3tools/contracts";
 
 import { getWorkbenchTicketSummaryPresentation } from "./workbench.logic";
-import { workbenchDescriptionMarkdown } from "./workbenchDescription.logic";
 
 const MAX_EXCERPT_LENGTH = 180;
 const MAX_DESCRIPTION_SCAN_LENGTH = 4_000;
@@ -47,19 +46,14 @@ function descriptionExcerpt(markdown: string): string {
 
 export function getWorkbenchBoardTicketPreview({
   ticket,
-  jira = false,
 }: {
   ticket: Pick<WorkbenchTicket, "markdown" | "generatedSummary">;
-  /** Whether the Ticket has a Jira Reference, so its description may use Jira markup. */
-  jira?: boolean;
 }) {
   const summary = getWorkbenchTicketSummaryPresentation(ticket.generatedSummary);
   if (summary.hasText) {
     return { text: summary.text, source: "summary" as const, statusLabel: summary.statusLabel };
   }
-  const excerpt = descriptionExcerpt(
-    workbenchDescriptionMarkdown(ticket.markdown.slice(0, MAX_DESCRIPTION_SCAN_LENGTH), jira),
-  );
+  const excerpt = descriptionExcerpt(ticket.markdown.slice(0, MAX_DESCRIPTION_SCAN_LENGTH));
   if (excerpt) {
     return {
       text: excerpt,

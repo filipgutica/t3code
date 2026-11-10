@@ -88,9 +88,11 @@ other Threads with their recaps on its first turn. Later turns receive updates.
 Expand **Shared context** to read what a new Thread would receive. Saved changes
 reach other Threads on their next turn.
 
-When an agent edits the brief, review the change. Select its **Updated by** badge
-to see the diff, then **Accept** it or **Undo** it. To request another revision,
-use **Ask for change** for the whole brief or a selected passage.
+When an agent edits the brief, review the change. The review bar names the
+Thread that made it and when. An edit already waiting when you open the Ticket
+starts hidden; select **Show diff** or the **Updated by** badge to see it, then
+**Accept** it or **Undo** it. To request another revision, use **Ask for change**
+for the whole brief or a selected passage.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/agent-edit-light.png">

@@ -11,16 +11,16 @@ import {
 const schema = getSchema(descriptionEditorExtensions);
 
 /** Saves `source` after `edit` changes the editor document it loads as. */
-function save(source: string, edit?: (content: JSONContent[]) => JSONContent[], jira = false) {
-  const parsed = parseDescription(source, jira);
+function save(source: string, edit?: (content: JSONContent[]) => JSONContent[]) {
+  const parsed = parseDescription(source);
   const content = edit ? edit(structuredClone(parsed.doc.content ?? [])) : parsed.doc.content;
   return serializeDescription(ProseMirrorNode.fromJSON(schema, { type: "doc", content }), parsed);
 }
 
 const doc = (json: JSONContent) => ProseMirrorNode.fromJSON(schema, json);
 
-const blockTypes = (source: string, jira = false) =>
-  parseDescription(source, jira).doc.content?.map((block) => block.type);
+const blockTypes = (source: string) =>
+  parseDescription(source).doc.content?.map((block) => block.type);
 
 const chip = (href: string, title: string | null = null): JSONContent => ({
   type: "referenceChip",
@@ -43,10 +43,6 @@ describe("description editor Markdown", () => {
     ["whitespace only", "  \n\n"],
     ["GFM table", "| a | b |\n|:--|--:|\n| 1 | 2 |\n"],
     ["task list", "- [x] Done\n- [ ] Next\n  - [ ] Nested\n"],
-    [
-      "Jira wiki markup",
-      'h2. Observed\n\n# Sends {{POST /v4}}.\n# See [request|https://example.com].\n\n||a||b||\n|1|2|\n\n{code:json}\n{ "a": 1 }\n{code}\n\n*bold* and _em_\n',
-    ],
     ["mixed bullet markers", "* one\n* two\n\n+ three\n\n- four"],
     ["setext heading", "Title\n=====\n\nBody"],
     ["HTML block", "<details>\n<summary>More</summary>\n\nHidden\n</details>\n"],
@@ -59,13 +55,10 @@ describe("description editor Markdown", () => {
     ["bare URLs and links", "Docs at https://example.com and [plan](/tmp/plan.md).\n"],
   ])("saves an unchanged %s byte for byte", (_name, source) => {
     expect(save(source)).toBe(source);
-    expect(save(source, undefined, true)).toBe(source);
   });
 
-  it("keeps a table and Jira markup as Markdown source", () => {
+  it("keeps a table as Markdown source", () => {
     expect(blockTypes("Intro\n\n| a |\n|---|\n| 1 |\n")).toEqual(["paragraph", "markdownSource"]);
-    expect(blockTypes("h2. Observed\n\n- item\n", true)).toEqual(["markdownSource", "bulletList"]);
-    expect(blockTypes("h2. Observed\n", false)).toEqual(["paragraph"]);
   });
 
   it("re-serializes only the block you edit", () => {
@@ -122,10 +115,7 @@ describe("description editor Markdown", () => {
     ["titled chip", chip("https://example.com/a", "the spec")],
   ])("keeps a %s when its paragraph changes", (_name, inline) => {
     const edited = { type: "paragraph", content: [{ type: "text", text: "See " }, inline] };
-    const reloaded = parseDescription(
-      save("Old\n", () => [edited]),
-      false,
-    ).doc;
+    const reloaded = parseDescription(save("Old\n", () => [edited])).doc;
     const [paragraph] = doc(reloaded).children;
     expect(paragraph!.content.eq(doc({ type: "doc", content: [edited] }).child(0).content)).toBe(
       true,
@@ -219,7 +209,6 @@ describe("description editor Markdown", () => {
   it("shows Reference links as chips and keeps other links as link text", () => {
     const [paragraph] = parseDescription(
       "See [plan](/Users/me/plan.md), https://example.com and [mail](mailto:a@example.com).",
-      false,
     ).doc.content!;
     expect(paragraph!.content!.filter((node) => node.type === "referenceChip")).toEqual([
       chip("/Users/me/plan.md", "plan"),
