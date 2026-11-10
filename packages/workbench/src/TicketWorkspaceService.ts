@@ -631,7 +631,7 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
             ...(Option.isSome(observedBranch) ? { branchName: observedBranch.value } : {}),
           });
         }
-      }).pipe(Effect.catch((error) => restoreFailed.pipe(Effect.andThen(Effect.fail(error)))));
+      }).pipe(Effect.tapError(() => restoreFailed));
       yield* restoreFailed;
     },
   );

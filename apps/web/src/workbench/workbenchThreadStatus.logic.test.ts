@@ -50,6 +50,12 @@ describe("Workbench native execution indicators", () => {
     expect(
       getWorkbenchThreadExecutionStatus({
         ...working,
+        runtime: { ...runtime, status: "preparing" },
+      }),
+    ).toMatchObject({ kind: "working", presentation: { label: "Working", icon: "working" } });
+    expect(
+      getWorkbenchThreadExecutionStatus({
+        ...working,
         goal: { status: "active", objective: "Complete this task" },
       }),
     ).toMatchObject({ presentation: { label: "Goal" }, startedAt: runtime.activityStartedAt });

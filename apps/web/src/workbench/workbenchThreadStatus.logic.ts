@@ -21,7 +21,8 @@ type ExecutionThread = Pick<
 
 /** Native execution state stays independent of Workbench planning and notifications. */
 export function getWorkbenchThreadExecutionStatus(thread: ExecutionThread) {
-  const kind = resolveSidebarThreadStatus(thread);
+  const nativeKind = resolveSidebarThreadStatus(thread);
+  const kind = nativeKind === "preparing" ? "working" : nativeKind;
   if (kind === "ready") return null;
   const presentation = resolveWorkbenchThreadExecutionStatusPresentation({
     kind,
