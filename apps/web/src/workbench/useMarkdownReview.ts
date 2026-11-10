@@ -31,7 +31,8 @@ function useHiddenReviewBase({
     setHiddenFor(base);
   }
   // However a review ends, here or on another client, the next one starts with its diff shown.
-  if (hiddenFor !== null && (base === null || accepted)) setHiddenFor(null);
+  // A pending review whose base is reloading has not ended.
+  if (hiddenFor !== null && !pending && (base === null || accepted)) setHiddenFor(null);
   return [hiddenFor, setHiddenFor] as const;
 }
 

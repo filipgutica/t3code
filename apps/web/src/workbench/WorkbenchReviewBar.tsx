@@ -1,8 +1,8 @@
 import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 
+import { RelativeTime } from "../components/RelativeTime";
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
-import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { useMarkdownReview } from "./useMarkdownReview";
 import type { WorkbenchProvenanceSource } from "./WorkbenchReferences";
 import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
@@ -76,7 +76,9 @@ export function WorkbenchReviewBar({
             {editedAt === null ? null : (
               <>
                 {" · "}
-                <time dateTime={editedAt}>{formatRelativeTimeLabel(editedAt)}</time>
+                <time dateTime={editedAt}>
+                  <RelativeTime timestamp={editedAt} />
+                </time>
               </>
             )}
             {summary.detail === null ? null : ` · ${summary.detail}`}

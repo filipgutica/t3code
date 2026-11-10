@@ -329,6 +329,11 @@ it("collapses a review that awaited when the brief opened, naming who made it an
   await expect.element(screen.getByText(why)).toBeVisible();
   const removed = screen.getByText("Someone who comes back has to start over.");
   await expect.element(removed).not.toBeInTheDocument();
+  // A status move bumps the revision, so the same review's base reloads.
+  await screen.rerender(<TicketBrief record={{ ...pending, revision: 8 }} />);
+  await screen.rerender(<TicketBrief record={{ ...pending, revision: 8, reviewBase }} />);
+  await expect.element(bar.getByRole("button", { name: "Show diff" })).toBeVisible();
+  await expect.element(removed).not.toBeInTheDocument();
 
   await userEvent.click(bar.getByRole("button", { name: "Show diff" }));
   await expect.element(removed).toBeVisible();
