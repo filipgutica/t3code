@@ -164,6 +164,10 @@ describe("ClaudeAdapterV2 query options decorator", () => {
               setPermissionMode: () => Effect.void,
               backgroundTasks: () => Effect.succeed(false),
               stopTask: () => Effect.void,
+              mcpServerStatus: Effect.succeed([]),
+              readMcpResource: () => Effect.die("unexpected MCP resource read"),
+              callMcpTool: () => Effect.die("unexpected MCP tool call"),
+              listPermissionRules: Effect.die("unexpected permission rules read"),
               interrupt: Effect.void,
               close: Effect.void,
             };
@@ -312,6 +316,10 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                 setPermissionMode: () => Effect.void,
                 backgroundTasks: () => Effect.succeed(false),
                 stopTask: () => Effect.void,
+                mcpServerStatus: Effect.succeed([]),
+                readMcpResource: () => Effect.die("unexpected MCP resource read"),
+                callMcpTool: () => Effect.die("unexpected MCP tool call"),
+                listPermissionRules: Effect.die("unexpected permission rules read"),
                 interrupt: Effect.void,
                 close:
                   processMessages === sdkMessages ? Effect.void : Queue.shutdown(processMessages),
