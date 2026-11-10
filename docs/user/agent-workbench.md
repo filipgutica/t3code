@@ -91,8 +91,10 @@ reach other Threads on their next turn.
 When an agent edits the brief, review the change. The review bar names the
 Thread that made it and when. An edit already waiting when you open the Ticket
 starts hidden; select **Show diff** or the **Updated by** badge to see it, then
-**Accept** it or **Undo** it. To request another revision, use **Ask for change**
-for the whole brief or a selected passage.
+**Accept** it or **Undo** it. To talk about the edit with the agent that made it,
+select the Thread's name in the review bar to open that Thread in the chat. To
+request another revision, use **Ask for change** for the whole brief or a
+selected passage.
 
 <picture>
   <source media="(prefers-color-scheme: light)" srcset="./media/workbench/agent-edit-light.png">

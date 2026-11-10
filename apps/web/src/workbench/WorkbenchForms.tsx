@@ -931,7 +931,7 @@ function WorkbenchTicketDetailController({
                     dirty: dirty,
                     displayedMarkdown: displayedMarkdown,
                   }}
-                  actions={{ setDraft: setDraft }}
+                  actions={{ setDraft: setDraft, onOpenThread: openAssignedThread }}
                   context={{ environmentId: environmentId }}
                   records={{
                     ticket: ticket,
@@ -1842,7 +1842,9 @@ function WorkbenchTicketDescriptionPanel({
     | "dirty"
     | "displayedMarkdown"
   >;
-  actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft">;
+  actions: Pick<WorkbenchTicketDescriptionPanelProps, "setDraft"> & {
+    readonly onOpenThread: (threadId: ThreadId) => void;
+  };
   context: Pick<WorkbenchTicketDescriptionPanelProps, "environmentId">;
   records: Pick<WorkbenchTicketDescriptionPanelProps, "ticket"> & {
     readonly updatedBy: WorkbenchProvenanceSource | null;
@@ -1859,7 +1861,7 @@ function WorkbenchTicketDescriptionPanel({
     dirty,
     displayedMarkdown,
   } = presentation;
-  const { setDraft } = actions;
+  const { setDraft, onOpenThread } = actions;
   const { environmentId } = context;
   const { ticket, updatedBy, briefReview } = records;
   const { review } = briefReview;
@@ -1904,6 +1906,7 @@ function WorkbenchTicketDescriptionPanel({
           source={updatedBy}
           editedAt={briefReview.contentUpdatedAt}
           permitted={briefReview.permitted}
+          onOpenThread={onOpenThread}
           disabled={pending}
           className="border-b border-border/50 px-4 py-2"
         />

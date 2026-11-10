@@ -1,3 +1,4 @@
+import type { ThreadId } from "@t3tools/contracts";
 import { CheckIcon, EyeIcon, EyeOffIcon, TriangleAlertIcon, Undo2Icon } from "lucide-react";
 
 import { RelativeTime } from "../components/RelativeTime";
@@ -10,7 +11,13 @@ import { WorkbenchThreadHoverPreview } from "./WorkbenchThreadHoverPreview";
 type MarkdownReviewState = NonNullable<ReturnType<typeof useMarkdownReview>["review"]>;
 
 /** Who made the edit under review: the Thread with its hover card, or Ask for change. */
-function ReviewSource({ source }: { readonly source: WorkbenchProvenanceSource }) {
+function ReviewSource({
+  source,
+  onOpenThread,
+}: {
+  readonly source: WorkbenchProvenanceSource;
+  readonly onOpenThread: ((threadId: ThreadId) => void) | undefined;
+}) {
   if (source.kind === "askForChange") return "Ask for change";
   return (
     <WorkbenchThreadHoverPreview
@@ -19,7 +26,17 @@ function ReviewSource({ source }: { readonly source: WorkbenchProvenanceSource }
       title={source.title}
       shell={source.shell}
     >
-      <span className="font-medium text-foreground">{source.title}</span>
+      {onOpenThread === undefined ? (
+        <span className="font-medium text-foreground">{source.title}</span>
+      ) : (
+        <button
+          type="button"
+          className="font-medium text-foreground underline-offset-4 hover:underline"
+          onClick={() => onOpenThread(source.threadId)}
+        >
+          {source.title}
+        </button>
+      )}
     </WorkbenchThreadHoverPreview>
   );
 }
@@ -33,11 +50,14 @@ export function WorkbenchReviewBar({
   source,
   editedAt,
   permitted,
+  onOpenThread,
   disabled = false,
   className,
 }: {
   readonly review: MarkdownReviewState;
   readonly source: WorkbenchProvenanceSource | null;
+  /** Opens the editing Thread, so the person can talk about its change. */
+  readonly onOpenThread?: ((threadId: ThreadId) => void) | undefined;
   /** When the title or brief last changed; omitted when unknown. */
   readonly editedAt: string | null;
   /** A connection that may not run Undo or Accept sees the review without them. */
@@ -70,7 +90,7 @@ export function WorkbenchReviewBar({
             {source === null ? null : (
               <>
                 {" from "}
-                <ReviewSource source={source} />
+                <ReviewSource source={source} onOpenThread={onOpenThread} />
               </>
             )}
             {editedAt === null ? null : (
