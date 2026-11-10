@@ -4,6 +4,7 @@ import {
   type ProjectId,
   type WorkbenchAskForChangeInput,
   type WorkbenchTicketDraft,
+  workbenchHostRepositoryProjectIds,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
@@ -115,12 +116,16 @@ const make = Effect.gen(function* () {
         message: "Archived Workbench Tickets cannot be modified.",
       });
     }
-    // As for the generated summary, the first repository's settings and checkout run it.
-    const projectId = ticket.value.repositoryProjectIds[0];
+    // As for the generated summary, the first host repository's settings and checkout run it.
+    const board = Option.getOrUndefined(yield* store.getProject(ticket.value.projectId));
+    const projectId = workbenchHostRepositoryProjectIds(
+      board,
+      ticket.value.repositoryProjectIds,
+    )[0];
     if (projectId === undefined) {
       return yield* new WorkbenchOperationError({
         code: "ask_for_change_failed",
-        message: "This Ticket has no repository to run Ask for change in.",
+        message: "This Ticket has no repository on this machine to run Ask for change in.",
       });
     }
     const markdown = yield* rewrite(input, { ...ticket.value, projectId });
@@ -151,8 +156,11 @@ const make = Effect.gen(function* () {
         message: "Ticket preparation is changing. Finish or retry that operation first.",
       });
     }
-    // As Start work does, the first selected repository runs it; the anchor until one is chosen.
-    const projectId = draft.fields.repositoryProjectIds[0] ?? draft.anchorProjectId;
+    // As Start work does, the first selected host repository runs it; else the host anchor.
+    const board = Option.getOrUndefined(yield* store.getProject(draft.projectId));
+    const projectId =
+      workbenchHostRepositoryProjectIds(board, draft.fields.repositoryProjectIds)[0] ??
+      draft.anchorProjectId;
     const markdown = yield* rewrite(input, { ...draft.fields, projectId });
     return yield* store
       .updateTicketDraft({

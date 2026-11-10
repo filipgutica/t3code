@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import {
+  EnvironmentId,
   IsoDateTime,
   ProjectId,
   ThreadId,
@@ -167,16 +168,40 @@ export const workbenchTicketIssueLabel = (
   references: ReadonlyArray<{ readonly url: string }>,
 ): string | null => workbenchTicketIssueReferences(references)[0]?.label ?? null;
 
+/**
+ * A Board's linked Project that lives on another T3 Code environment. The Board's host cannot
+ * read it, so the labels are kept for display while that environment is offline.
+ */
+export const WorkbenchRemoteProject = Schema.Struct({
+  environmentId: EnvironmentId,
+  environmentLabel: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+  projectTitle: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+});
+export type WorkbenchRemoteProject = typeof WorkbenchRemoteProject.Type;
+
+/** Remote links keyed by their ProjectId, which stays in `linkedProjectIds` for order. */
+export const WorkbenchRemoteProjects = Schema.Record(ProjectId, WorkbenchRemoteProject);
+export type WorkbenchRemoteProjects = typeof WorkbenchRemoteProjects.Type;
+
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   linkedProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
+  // Omitted when every linked Project is on this host.
+  remoteProjects: Schema.optionalKey(WorkbenchRemoteProjects),
   archivedAt: Schema.NullOr(IsoDateTime),
   revision: NonNegativeInt,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
 export type WorkbenchProject = typeof WorkbenchProject.Type;
+
+/** The given repositories that live on the Board's host, in order. */
+export const workbenchHostRepositoryProjectIds = (
+  board: Pick<WorkbenchProject, "remoteProjects"> | undefined,
+  repositoryProjectIds: ReadonlyArray<ProjectId>,
+): ReadonlyArray<ProjectId> =>
+  repositoryProjectIds.filter((projectId) => board?.remoteProjects?.[projectId] === undefined);
 
 /** A Ticket's checklist, one `- [ ]` task-list item per task or PR. */
 export const WorkbenchProgress = TrimmedString.check(Schema.isMaxLength(20_000));
@@ -259,10 +284,22 @@ export const WorkbenchReference = Schema.Struct({
 });
 export type WorkbenchReference = typeof WorkbenchReference.Type;
 
+// Set together, and only for a Thread on another environment, which the host cannot read.
+const WorkbenchRemoteAssignmentFields = {
+  environmentId: Schema.optionalKey(EnvironmentId),
+  projectId: Schema.optionalKey(ProjectId),
+};
+const remoteAssignmentFieldsTogether = Schema.makeFilter(
+  (input: { readonly environmentId?: EnvironmentId; readonly projectId?: ProjectId }) =>
+    (input.environmentId === undefined) === (input.projectId === undefined) ||
+    "Set environmentId and projectId together.",
+);
+
 export const WorkbenchAssignment = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
+  ...WorkbenchRemoteAssignmentFields,
   createdAt: IsoDateTime,
   supersededAt: Schema.NullOr(IsoDateTime),
 });
@@ -399,6 +436,8 @@ export type WorkbenchThreadContextState = typeof WorkbenchThreadContextState.Typ
 export const WorkbenchTicketContext = Schema.Struct({
   /** What a new Thread's first turn gets. */
   text: Schema.String,
+  /** Echoes a remote-thread request; a host that predates it omits it and returns host text. */
+  audience: Schema.optionalKey(Schema.Literal("remote-thread")),
   threads: Schema.Array(
     Schema.Struct({
       threadId: ThreadId,
@@ -428,6 +467,8 @@ export const WorkbenchCreateProjectInput = Schema.Struct({
   id: WorkbenchProjectId,
   title: WorkbenchProject.fields.title,
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
+  // Entries for linked Projects on other environments; the host stores them unverified.
+  remoteProjects: WorkbenchProject.fields.remoteProjects,
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Type;
@@ -439,6 +480,8 @@ export const WorkbenchUpdateProjectInput = Schema.Struct({
   // The server treats this as an additive set. Existing links remain intact;
   // callers may send either the new IDs or the full selected list.
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
+  // Read only for new links, as in WorkbenchCreateProjectInput.
+  remoteProjects: WorkbenchProject.fields.remoteProjects,
   updatedAt: IsoDateTime,
 });
 export type WorkbenchUpdateProjectInput = typeof WorkbenchUpdateProjectInput.Type;
@@ -526,8 +569,10 @@ export const WorkbenchCreateAssignmentInput = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
+  // A remote Thread's environment and Project; the host stores them unverified.
+  ...WorkbenchRemoteAssignmentFields,
   createdAt: IsoDateTime,
-});
+}).check(remoteAssignmentFieldsTogether);
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
 
 export const WorkbenchUnlinkAssignmentInput = Schema.Struct({

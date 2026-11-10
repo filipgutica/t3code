@@ -71,7 +71,7 @@ export const makeWorkbenchRpcHandlers = ({
     [WORKBENCH_WS_METHODS.workbenchGetTicket]: (input) =>
       workbench.getTicket(input.ticketId).pipe(Effect.map(Option.getOrNull)),
     [WORKBENCH_WS_METHODS.workbenchGetTicketContext]: (input) =>
-      ticketContexts.forTicket(input.ticketId),
+      ticketContexts.forTicket(input.ticketId, input.audience),
     [WORKBENCH_WS_METHODS.workbenchCreateProject]: (input) => workbench.createProject(input),
     [WORKBENCH_WS_METHODS.workbenchUpdateProject]: (input) => workbench.updateProject(input),
     [WORKBENCH_WS_METHODS.workbenchArchiveProject]: (input) => workspaceLifecycle.archive(input),

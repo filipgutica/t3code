@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ProviderInstanceId,
   ModelSelection,
   ProjectId,
@@ -57,6 +58,7 @@ const fixture = (options?: {
   const native = Layer.succeed(
     WorkbenchNativeAccess,
     WorkbenchNativeAccess.of({
+      hostEnvironmentId: EnvironmentId.make("environment-host"),
       executionSequence: Effect.sync(() => sequence),
       startedExecutionRunIds: Effect.succeed([]),
       hasPendingThreadWork: () => Effect.sync(() => busy),
@@ -720,6 +722,68 @@ describe("TicketDraftService", () => {
       const working = yield* service.startWork({ id: saved.id, expectedRevision: saved.revision });
       expect(working.phase).toBe("working");
       expect(f.paths.get(threadId)).toBe("/work-area/first-repo");
+    }).pipe(Effect.provide(f.layer));
+  });
+  it.effect("plans and starts work only in a repository on this machine", () => {
+    const f = fixture();
+    const remote = ProjectId.make("remote-repo");
+    return Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const service = yield* TicketDraftService;
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Tools",
+        linkedProjectIds: [remote, first],
+        remoteProjects: {
+          [remote]: {
+            environmentId: EnvironmentId.make("laptop"),
+            environmentLabel: "Laptop",
+            projectTitle: "Remote repo",
+          },
+        },
+        createdAt: timestamp,
+      });
+      let draft = yield* service.begin({
+        id: ticketId,
+        projectId: workspaceId,
+        threadId,
+        modelSelection: model,
+      });
+      expect(draft.anchorProjectId).toBe(first);
+      const scope = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
+        service.update({
+          id: draft.id,
+          expectedRevision: draft.revision,
+          fields: { title: "Remote work", markdown: "", repositoryProjectIds },
+        });
+
+      draft = yield* scope([remote]);
+      const remoteOnly = yield* Effect.flip(
+        service.promote({ id: draft.id, expectedRevision: draft.revision }),
+      );
+      expect(remoteOnly.code).toBe("ticket_draft_invalid");
+
+      draft = yield* scope([remote, first]);
+      const saved = yield* service.promote({ id: draft.id, expectedRevision: draft.revision });
+      expect(f.threads.get(threadId)).toBe(first);
+
+      const ticket = (yield* store.getSnapshot).tickets[0]!;
+      yield* store.updateTicket({
+        id: ticket.id,
+        expectedRevision: ticket.revision,
+        repositoryProjectIds: [remote],
+        updatedAt: timestamp,
+        writer: { kind: "user" },
+      });
+      const refused = yield* Effect.flip(
+        service.startWork({ id: saved.id, expectedRevision: saved.revision }),
+      );
+      expect(refused).toMatchObject({
+        code: "repository_not_linked",
+        message: expect.stringContaining("Start a Thread on the other machine"),
+      });
+      expect((yield* store.getTicketDraft(saved.id)).phase).toBe("planning");
+      expect(f.counts().prepares).toBe(0);
     }).pipe(Effect.provide(f.layer));
   });
   it.effect(

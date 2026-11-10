@@ -1,5 +1,6 @@
 import { assert, describe, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -128,60 +129,65 @@ describe("Done Ticket settlement", () => {
       }
     }),
   );
-  it.effect("preserves active pins, pending work, archived and superseded assignments", () =>
-    Effect.gen(function* () {
-      const threads = [
-        makeThread("pin", { settledOverride: "active" }),
-        makeThread("pinned", { pinnedAt: at("2026-08-20T00:00:00.000Z") }),
-        makeThread("background", {
-          pendingBackgroundTasks: [{ kind: "subagent", taskId: "review", description: "Review" }],
-        }),
-        makeThread("settled", { settledOverride: "settled" }),
-        makeThread("auto-settle-disabled", {
-          autoSettleDisabledAt: at("2026-08-20T00:00:00.000Z"),
-        }),
-        makeThread("pending", {
-          pendingRuntimeRequest: {
-            id: RuntimeRequestId.make("input"),
-            kind: "user_input",
-            createdAt: at("2026-08-20T00:00:00.000Z"),
-          },
-        }),
-        makeThread("approval", {
-          pendingRuntimeRequest: {
-            id: RuntimeRequestId.make("approval"),
-            kind: "permission",
-            createdAt: at("2026-08-20T00:00:00.000Z"),
-          },
-        }),
-        makeThread("archived", { archivedAt: at("2026-08-21T00:00:00.000Z") }),
-        makeThread("unfinished", { latestRunCompletedAt: null }),
-        makeThread("plan", { hasActionableProposedPlan: true }),
-        makeThread("failed", { status: "failed" }),
-        makeThread("superseded"),
-      ];
-      const commands: Array<OrchestrationV2ServerCommand> = [];
-      yield* settleSnapshot({
-        tickets: [{ id: ticketId, status: "done", archivedAt: null }],
-        assignments: threads.map((thread) => ({
-          ticketId,
-          threadId: thread.id,
-          supersededAt: thread.id === "superseded" ? "2026-08-21T00:00:00.000Z" : null,
-        })),
-        snapshot: {
-          snapshotSequence: 7,
-          schemaVersion: 1,
-          archivedThreads: [],
-          threads,
-        },
-        dispatch: (command) =>
-          Effect.sync(() => {
-            commands.push(command);
-            return { sequence: 8, storedEvents: [] };
+  it.effect(
+    "preserves active pins, pending work, archived, superseded and remote assignments",
+    () =>
+      Effect.gen(function* () {
+        const threads = [
+          makeThread("pin", { settledOverride: "active" }),
+          makeThread("pinned", { pinnedAt: at("2026-08-20T00:00:00.000Z") }),
+          makeThread("background", {
+            pendingBackgroundTasks: [{ kind: "subagent", taskId: "review", description: "Review" }],
           }),
-      });
-      assert.deepEqual(commands, []);
-    }),
+          makeThread("settled", { settledOverride: "settled" }),
+          makeThread("auto-settle-disabled", {
+            autoSettleDisabledAt: at("2026-08-20T00:00:00.000Z"),
+          }),
+          makeThread("pending", {
+            pendingRuntimeRequest: {
+              id: RuntimeRequestId.make("input"),
+              kind: "user_input",
+              createdAt: at("2026-08-20T00:00:00.000Z"),
+            },
+          }),
+          makeThread("approval", {
+            pendingRuntimeRequest: {
+              id: RuntimeRequestId.make("approval"),
+              kind: "permission",
+              createdAt: at("2026-08-20T00:00:00.000Z"),
+            },
+          }),
+          makeThread("archived", { archivedAt: at("2026-08-21T00:00:00.000Z") }),
+          makeThread("unfinished", { latestRunCompletedAt: null }),
+          makeThread("plan", { hasActionableProposedPlan: true }),
+          makeThread("failed", { status: "failed" }),
+          makeThread("superseded"),
+          // A remote Assignment that names this host's Thread ID still belongs to another machine.
+          makeThread("remote"),
+        ];
+        const commands: Array<OrchestrationV2ServerCommand> = [];
+        yield* settleSnapshot({
+          tickets: [{ id: ticketId, status: "done", archivedAt: null }],
+          assignments: threads.map((thread) => ({
+            ticketId,
+            threadId: thread.id,
+            supersededAt: thread.id === "superseded" ? "2026-08-21T00:00:00.000Z" : null,
+            ...(thread.id === "remote" ? { environmentId: EnvironmentId.make("laptop") } : {}),
+          })),
+          snapshot: {
+            snapshotSequence: 7,
+            schemaVersion: 1,
+            archivedThreads: [],
+            threads,
+          },
+          dispatch: (command) =>
+            Effect.sync(() => {
+              commands.push(command);
+              return { sequence: 8, storedEvents: [] };
+            }),
+        });
+        assert.deepEqual(commands, []);
+      }),
   );
   it.effect(
     "reconciles a newly Done projection but leaves reopened and archived Tickets alone",

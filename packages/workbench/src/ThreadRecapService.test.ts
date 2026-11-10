@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ProjectId,
   RunId,
   ThreadId,
@@ -35,6 +36,7 @@ const run = (ordinal: number) => ({
 const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provide(
     Layer.succeed(WorkbenchNativeAccess, {
+      hostEnvironmentId: EnvironmentId.make("environment-host"),
       findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: (id) => Effect.succeedSome({ id, projectId }),

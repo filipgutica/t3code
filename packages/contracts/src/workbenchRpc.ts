@@ -96,7 +96,11 @@ const WsWorkbenchGetTicketRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetTicket
 });
 
 const WsWorkbenchGetTicketContextRpc = Rpc.make(WORKBENCH_WS_METHODS.workbenchGetTicketContext, {
-  payload: Schema.Struct({ ticketId: WorkbenchTicketId }),
+  payload: Schema.Struct({
+    ticketId: WorkbenchTicketId,
+    // "remote-thread": the text for a Thread on another environment, sent as its first message.
+    audience: Schema.optionalKey(Schema.Literal("remote-thread")),
+  }),
   success: Schema.NullOr(WorkbenchTicketContext),
   error: WorkbenchRpcError,
 });

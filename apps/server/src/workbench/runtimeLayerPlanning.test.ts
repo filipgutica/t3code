@@ -69,6 +69,7 @@ import * as TicketPlanningRuntime from "./TicketPlanningRuntime.ts";
 import * as TicketDraftService from "./TicketDraftService.ts";
 import { TicketWorkspaceService } from "@t3tools/workbench/TicketWorkspaceService";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { hostEnvironmentLayer } from "./testing/hostEnvironment.ts";
 
 const projectId = ProjectId.make("repo:composed-policy");
 const planningThreadId = ThreadId.make("thread:composed-planning");
@@ -134,6 +135,7 @@ const draft = {
     repositoryProjectIds: [projectId],
   },
   planningRepositoryProjectIds: [projectId],
+  planningRemoteRepositories: [],
   workArea: null,
   createdAt: "2026-10-11T00:00:00Z",
   updatedAt: "2026-10-11T00:00:00Z",
@@ -223,7 +225,7 @@ const seedProject = Effect.gen(function* () {
 const layerPersistedPlanningTest = makeLayerTest(
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provide(TicketContextService.layer),
-    Layer.provideMerge(WorkbenchStoreLive),
+    Layer.provideMerge(WorkbenchStoreLive.pipe(Layer.provide(hostEnvironmentLayer))),
     Layer.provide(ProjectStore.layer),
     Layer.provide(ProjectionStore.layer),
   ),

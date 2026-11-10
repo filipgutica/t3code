@@ -31,6 +31,7 @@ import {
 import { OrchestratorV2 } from "../../orchestration-v2/Orchestrator.ts";
 import { ServerActivation } from "../../serverActivation.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "../WorkbenchStore.ts";
+import { hostEnvironmentLayer } from "./hostEnvironment.ts";
 import { TicketExecutionReactor, layer as reactorLayer } from "../TicketExecutionReactor.ts";
 import { ThreadRecapService } from "../ThreadRecapService.ts";
 import { seedNativeThread } from "./nativeThreads.ts";
@@ -100,6 +101,7 @@ export const persistenceLayer = (filename: string) =>
 export const servicesLayer = Layer.mergeAll(
   projectionLayer,
   WorkbenchStoreLive.pipe(
+    Layer.provide(hostEnvironmentLayer),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
         isRepository: () => Effect.succeed(true),

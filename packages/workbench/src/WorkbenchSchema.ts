@@ -1314,6 +1314,18 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     }),
   );
   yield* applyMigration(27, migrateJiraMarkupBriefs);
+  yield* applyMigration(
+    28,
+    Effect.gen(function* () {
+      // Links and Assignments on another environment; NULL environment_id means this host.
+      // Columns are added in place: rebuilding these tables cascade-deletes their children.
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN environment_id TEXT`;
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN environment_label TEXT`;
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN project_title TEXT`;
+      yield* sql`ALTER TABLE workbench_assignments ADD COLUMN environment_id TEXT`;
+      yield* sql`ALTER TABLE workbench_assignments ADD COLUMN project_id TEXT`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

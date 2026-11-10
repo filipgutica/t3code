@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -47,6 +48,7 @@ const withStore = <A, E>({
       Effect.gen(function* () {
         const sql = yield* SqlClient.SqlClient;
         return WorkbenchNativeAccess.of({
+          hostEnvironmentId: EnvironmentId.make("environment-host"),
           findProject: (id) =>
             sql<{ readonly id: ProjectId; readonly title: string; readonly workspaceRoot: string }>`
             SELECT id, id AS title, workspace_root AS "workspaceRoot" FROM contention_native_projects WHERE id = ${id}

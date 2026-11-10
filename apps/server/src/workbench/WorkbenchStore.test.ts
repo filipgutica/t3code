@@ -18,8 +18,10 @@ import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { hostEnvironmentLayer } from "./testing/hostEnvironment.ts";
 
 const TestLayer = WorkbenchStoreLive.pipe(
+  Layer.provide(hostEnvironmentLayer),
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
@@ -139,6 +141,7 @@ describe("WorkbenchStore", () => {
     const workspaceId = WorkbenchProjectId.make("workspace-native-non-repository");
     const createdAt = "2026-09-17T10:00:00.000Z";
     const layer = WorkbenchStoreLive.pipe(
+      Layer.provide(hostEnvironmentLayer),
       Layer.provideMerge(SqlitePersistence.layerMemory),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
@@ -1301,6 +1304,7 @@ describe("WorkbenchStore", () => {
       Layer.provide(NodeServices.layer),
     );
     const layer = WorkbenchStoreLive.pipe(
+      Layer.provide(hostEnvironmentLayer),
       Layer.provideMerge(persistence),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
@@ -1839,6 +1843,7 @@ describe("WorkbenchStore", () => {
       Layer.provide(NodeServices.layer),
     );
     const workbench = WorkbenchStoreLive.pipe(
+      Layer.provide(hostEnvironmentLayer),
       Layer.provideMerge(persistence),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
