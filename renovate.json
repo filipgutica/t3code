@@ -1,0 +1,11 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "This fork follows upstream T3 Code for its own dependencies; Renovate updates only filipgutica packages here.",
+  "extends": ["github>filipgutica/renovate-config"],
+  "forkProcessing": "enabled",
+  "lockFileMaintenance": { "enabled": false },
+  "packageRules": [
+    { "matchPackageNames": ["*"], "enabled": false },
+    { "matchPackageNames": ["@filipgutica/**"], "enabled": true }
+  ]
+}
