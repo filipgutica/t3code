@@ -14,7 +14,10 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { describe, expect, it } from "vite-plus/test";
-import { getWorkbenchCommandPaletteTargets } from "./workbenchCommandPalette.logic";
+import {
+  getWorkbenchCommandPaletteEnvironmentId,
+  getWorkbenchCommandPaletteTargets,
+} from "./workbenchCommandPalette.logic";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 const environmentId = EnvironmentId.make("remote");
 const workspaceId = WorkbenchProjectId.make("workspace");
@@ -62,6 +65,38 @@ const snapshot: WorkbenchSnapshot = {
   ticketWorkspaces: [],
 };
 describe("Workbench command navigation", () => {
+  it("asks only a resolved Workbench host about a Thread page", () => {
+    const stockServer = EnvironmentId.make("stock-server");
+    const primary = EnvironmentId.make("primary");
+    const fallbacks = {
+      searchEnvironmentId: undefined,
+      threadEnvironmentId: stockServer,
+      draftEnvironmentId: undefined,
+      primaryEnvironmentId: primary,
+    };
+    const threadRef = { environmentId: stockServer, threadId };
+    // Unassigned on a stock server, or owner discovery still loading: no Workbench to ask.
+    expect(
+      getWorkbenchCommandPaletteEnvironmentId({ ...fallbacks, threadRef, threadOwnerId: null }),
+    ).toBeNull();
+    expect(
+      getWorkbenchCommandPaletteEnvironmentId({
+        ...fallbacks,
+        threadRef,
+        threadOwnerId: environmentId,
+      }),
+    ).toBe(environmentId);
+    // Off a Thread page, the usual fallbacks apply.
+    expect(
+      getWorkbenchCommandPaletteEnvironmentId({
+        ...fallbacks,
+        threadEnvironmentId: undefined,
+        threadRef: null,
+        threadOwnerId: null,
+      }),
+    ).toBe(primary);
+  });
+
   it("keeps archived Workspace and Ticket navigation while omitting creation", () => {
     const targets = getWorkbenchCommandPaletteTargets({
       environmentId,
@@ -70,7 +105,7 @@ describe("Workbench command navigation", () => {
         projects: snapshot.projects.map((project) => ({ ...project, archivedAt: time })),
       },
       workspaceId,
-      threadId,
+      threadRef: { environmentId, threadId },
     });
     expect(targets.board).toEqual({ environmentId, workbenchProjectId: workspaceId });
     expect(targets.ticket).toEqual({ environmentId, workbenchProjectId: workspaceId, ticketId });
@@ -92,7 +127,7 @@ describe("Workbench command navigation", () => {
       environmentId,
       snapshot,
       workspaceId: undefined,
-      threadId,
+      threadRef: { environmentId, threadId },
     });
     if (!targets.ticket || !targets.createTicket)
       throw new Error("Expected assigned Ticket targets");
@@ -115,14 +150,14 @@ describe("Workbench command navigation", () => {
       environmentId,
       snapshot,
       workspaceId: undefined,
-      threadId: ThreadId.make("unassigned"),
+      threadRef: { environmentId, threadId: ThreadId.make("unassigned") },
     });
     expect(unassigned).toEqual({ board: { environmentId }, createTicket: null, ticket: null });
     const explicit = getWorkbenchCommandPaletteTargets({
       environmentId,
       snapshot,
       workspaceId,
-      threadId: undefined,
+      threadRef: null,
     });
     expect(explicit.createTicket).toEqual({
       environmentId,
@@ -133,7 +168,7 @@ describe("Workbench command navigation", () => {
       environmentId,
       snapshot,
       workspaceId: WorkbenchProjectId.make("removed"),
-      threadId: undefined,
+      threadRef: null,
     });
     expect(removed.createTicket).toBeNull();
   });

@@ -85,8 +85,9 @@ import {
 } from "../components/ui/sidebar";
 import { Skeleton } from "../components/ui/skeleton";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { usePrimaryEnvironmentId } from "../state/environments";
+import { useEnvironmentIdentities, usePrimaryEnvironmentId } from "../state/environments";
 import { useProjects, useThreadShells } from "../state/entities";
+import { useWorkbenchThreadShells } from "./useWorkbenchThreadShells";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
 import {
@@ -1595,8 +1596,11 @@ function useWorkbenchSidebarData({
   const snapshot = query.data;
   const tickets = snapshot?.tickets ?? [];
   const assignments = snapshot?.assignments ?? [];
-  const threads = threadShells;
+  const threads = useWorkbenchThreadShells(environmentId);
   const nativeProjects = useProjects();
+  const environmentLabels = new Map(
+    useEnvironmentIdentities().map(({ environmentId: id, label }) => [id, label]),
+  );
   const referencesByTicket = groupWorkbenchReferences(snapshot?.references ?? []);
   const ticketDetailsById = (() =>
     snapshot
@@ -1607,6 +1611,7 @@ function useWorkbenchSidebarData({
           threads,
           projects: nativeProjects,
           workbenchProjects: snapshot.projects,
+          environmentLabels,
           referencesByTicket,
         })
       : new Map<WorkbenchTicketId, WorkbenchSidebarTicketDetails>())();

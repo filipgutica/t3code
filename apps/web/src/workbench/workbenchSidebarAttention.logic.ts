@@ -6,6 +6,7 @@ import type {
   WorkbenchProjectId,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { getWorkbenchThreadsById } from "./workbench.logic";
 import {
   activeWorkbenchAttentionAssignments,
   compareWorkbenchAttentionSignals,
@@ -43,11 +44,11 @@ export const getWorkbenchSidebarActionableThreadIds = ({
 }): ReadonlyMap<WorkbenchTicketId, ReadonlyMap<ThreadId, WorkbenchAttentionSignal>> => {
   const result = new Map<WorkbenchTicketId, Map<ThreadId, WorkbenchAttentionSignal>>();
   if (environmentId === null) return result;
-  const threadsById = new Map(
-    threads
-      .filter((thread) => thread.environmentId === environmentId)
-      .map((thread) => [thread.id, thread]),
-  );
+  const threadsById = getWorkbenchThreadsById({
+    hostEnvironmentId: environmentId,
+    assignments,
+    threads,
+  });
   for (const assignment of activeWorkbenchAttentionAssignments({
     assignments,
     threadsById,

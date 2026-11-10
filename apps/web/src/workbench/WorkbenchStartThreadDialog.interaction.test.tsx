@@ -9,6 +9,7 @@ import {
   WorkbenchTicketId,
   WorkbenchTicketWorkspaceAttemptId,
   type ServerProvider,
+  type WorkbenchProject,
   type WorkbenchTicket,
   type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -131,6 +132,7 @@ const render = async ({
   preparedWorkspace = workspace,
   unprepared = false,
   repositoryProjectId,
+  board,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
@@ -139,6 +141,7 @@ const render = async ({
   preparedWorkspace?: WorkbenchTicketWorkspace;
   unprepared?: boolean;
   repositoryProjectId?: ProjectId;
+  board?: Pick<WorkbenchProject, "remoteProjects">;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -153,6 +156,7 @@ const render = async ({
           workspace: unprepared ? undefined : preparedWorkspace,
           initialRepositoryScope: repositoryScope,
           repositoryProjectId,
+          board,
           additional: true,
         }}
         pending={pending}
@@ -332,6 +336,26 @@ it("blocks starting while a Ticket repository is no longer linked to the Workspa
   expect(alert).toContain("Link it again");
   expect(alert).not.toContain("Remove");
   expect(button("Create worktrees and Thread").disabled).toBe(true);
+});
+
+it("starts a host Thread when the Ticket also scopes a repository on another machine", async () => {
+  const remoteId = ProjectId.make("remote-repository");
+  await render({
+    savedTicket: { ...ticket, repositoryProjectIds: [remoteId, projects[0]!.id] },
+    board: {
+      remoteProjects: {
+        [remoteId]: {
+          environmentId: EnvironmentId.make("laptop"),
+          environmentLabel: "Laptop",
+          projectTitle: "Remote",
+        },
+      },
+    },
+  });
+  await openRepositoryMenu();
+  expect(radioLabels()).toEqual(["PrimaryPrepared"]);
+  await act(async () => button("Create Thread").click());
+  expect(onStart).toHaveBeenCalledWith({ modelSelection, repositoryProjectId: projects[0]!.id });
 });
 
 it("shows why a Ticket repository failed to prepare", async () => {

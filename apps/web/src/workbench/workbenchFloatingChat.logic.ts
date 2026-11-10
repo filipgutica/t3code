@@ -8,7 +8,7 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { getAssignmentsForTicket } from "./workbench.logic";
+import { getAssignmentsForTicket, isWorkbenchHostAssignment } from "./workbench.logic";
 import {
   getTicketIssue,
   getTicketReferences,
@@ -121,8 +121,9 @@ export const getWorkbenchBoardChatThreads = ({
       ticket ? undefined : (thread) => getConversationDraftTitle(draft, thread.title),
     );
   }
+  const hostAssignments = assignments.filter(isWorkbenchHostAssignment);
   for (const ticket of boardTickets) {
-    for (const assignment of getAssignmentsForTicket(assignments, ticket.id)) {
+    for (const assignment of getAssignmentsForTicket(hostAssignments, ticket.id)) {
       const thread =
         threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
       if (assignment.supersededAt !== null && thread?.settledOverride !== "settled") continue;

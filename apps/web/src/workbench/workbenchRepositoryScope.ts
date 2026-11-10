@@ -1,8 +1,10 @@
-import type {
-  EnvironmentId,
-  ProjectId,
-  WorkbenchTicket,
-  WorkbenchTicketWorkspace,
+import {
+  workbenchHostRepositoryProjectIds,
+  type EnvironmentId,
+  type ProjectId,
+  type WorkbenchProject,
+  type WorkbenchTicket,
+  type WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
 
 export type WorkbenchRepositoryScope = Pick<WorkbenchTicket, "repositoryProjectIds">;
@@ -51,15 +53,18 @@ export const resolveWorkbenchThreadRepository = ({
     ? preferred
     : ticket.repositoryProjectIds[0];
 
+/** Whether every host repository in scope has a prepared worktree; other machines get none. */
 export const isWorkbenchTicketWorkspaceReady = ({
   ticket,
   workspace,
+  board,
 }: {
   readonly ticket: WorkbenchRepositoryScope;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
+  readonly board: Pick<WorkbenchProject, "remoteProjects"> | undefined;
 }) =>
   workspace?.status === "ready" &&
-  ticket.repositoryProjectIds.every((id) =>
+  workbenchHostRepositoryProjectIds(board, ticket.repositoryProjectIds).every((id) =>
     workspace.repositories.some(
       (repository) => repository.projectId === id && repository.status === "ready",
     ),

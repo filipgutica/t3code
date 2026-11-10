@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   WorkbenchTicketId,
@@ -248,6 +249,26 @@ describe("Workbench Ticket pull request references", () => {
 
     expect(pullRequests).toEqual([
       { threadId: liveThread.id, threadTitle: "same-thread", pullRequest: livePullRequest },
+    ]);
+  });
+
+  it("names the machine of a remote Thread's PR, whose Project id only it can read", () => {
+    const remotePullRequest = pullRequest(12);
+    const remoteThread = thread({ id: "remote-thread", linkedPullRequest: remotePullRequest });
+    const environmentId = EnvironmentId.make("build-box");
+
+    expect(
+      getWorkbenchTicketPullRequests({
+        assignments: [{ threadId: remoteThread.id, environmentId }],
+        threadsById: new Map([[remoteThread.id, remoteThread]]),
+        archivedThreadsById: new Map(),
+      }),
+    ).toEqual([
+      {
+        threadId: remoteThread.id,
+        threadTitle: "remote-thread",
+        pullRequest: { ...remotePullRequest, environmentId },
+      },
     ]);
   });
 

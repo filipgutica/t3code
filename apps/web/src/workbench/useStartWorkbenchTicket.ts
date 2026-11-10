@@ -11,6 +11,7 @@ import {
   type ServerProvider,
   type ThreadId,
   type WorkbenchAssignment,
+  type WorkbenchProject,
   type WorkbenchTicket,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
@@ -29,6 +30,7 @@ import {
   type StartWorkbenchTicketOptions,
 } from "./startWorkbenchTicket";
 import { workbenchEnvironment } from "./state";
+import { getWorkbenchThreadLookupState, type WorkbenchThreadLookupState } from "./workbench.logic";
 import { waitForWorkbenchThread } from "./waitForWorkbenchThread";
 import { resolveWorkbenchDefaultModelSelection } from "./workbenchTicketDraft.logic";
 
@@ -106,6 +108,8 @@ export function useStartWorkbenchTicket({
   assignmentsByTicket,
   existingThreadIds,
   threadLookupReady,
+  remoteEnvironmentStates,
+  boards,
   onRefreshThreadLookup,
   onOpenAssignedThread,
   onPendingChange,
@@ -117,6 +121,8 @@ export function useStartWorkbenchTicket({
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
+  readonly remoteEnvironmentStates: ReadonlyMap<EnvironmentId, WorkbenchThreadLookupState>;
+  readonly boards: ReadonlyArray<WorkbenchProject>;
   readonly onRefreshThreadLookup: () => void;
   readonly onOpenAssignedThread: (threadId: ThreadId) => Promise<void>;
   readonly onPendingChange: (action: string | null) => void;
@@ -144,6 +150,7 @@ export function useStartWorkbenchTicket({
     if (environmentId === null) return;
     onPendingChange(`start:${ticket.id}:checking-thread`);
     onError(null);
+    const assignment = options?.assignment ?? assignmentsByTicket.get(ticket.id);
     const result = await (async () => {
       try {
         return await coordinateWorkbenchTicketStart(
@@ -151,9 +158,17 @@ export function useStartWorkbenchTicket({
             environmentId,
             ticket,
             projects,
-            assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
+            assignment,
             existingThreadIds,
-            threadLookupReady,
+            threadLookupState:
+              assignment === undefined
+                ? "ready"
+                : getWorkbenchThreadLookupState({
+                    assignment,
+                    threadLookupReady,
+                    remoteEnvironmentStates,
+                  }),
+            board: boards.find((board) => board.id === ticket.projectId),
           },
           {
             updateTicket,

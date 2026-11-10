@@ -154,10 +154,13 @@ describe("ticket planning conversation navigation", () => {
     try {
       await settle();
       await act(async () => {
-        expect(await latestDialogs.saveWorkspace("Edited", [ProjectId.make("repo")])).toBe(false);
-        expect(await latestDialogs.submitProject("Workspace", [ProjectId.make("repo")])).toBe(
-          false,
-        );
+        const selection = {
+          linkedProjectIds: [ProjectId.make("repo")],
+          remoteProjects: {},
+          hasHostProject: true,
+        };
+        expect(await latestDialogs.saveWorkspace("Edited", selection)).toBe(false);
+        expect(await latestDialogs.submitProject("Workspace", selection)).toBe(false);
         latestDialogs.openTicketDialog();
         latestDialogs.openTicketConversation();
       });

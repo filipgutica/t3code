@@ -134,6 +134,32 @@ it("retains every eligible Thread sharing an actionable PR, plus its independent
   ).toBe(0);
 });
 
+it("finds a waiting Thread on another machine through its Assignment", () => {
+  const remote = EnvironmentId.make("remote-machine");
+  const remoteWaiting = { ...waiting, id: ThreadId.make("remote-waiting"), environmentId: remote };
+  const remoteSignal: WorkbenchAttentionSignal = {
+    kind: "question",
+    source: { type: "thread", threadId: remoteWaiting.id, threadTitle: remoteWaiting.title },
+  };
+  const ticketThreads = getWorkbenchSidebarActionableThreadIds({
+    environmentId,
+    assignments: [
+      {
+        id: WorkbenchAssignmentId.make("remote-waiting"),
+        ticketId,
+        threadId: remoteWaiting.id,
+        environmentId: remote,
+        projectId: ProjectId.make("remote-repo"),
+        createdAt: "2026-09-30T00:00:00.000Z",
+        supersededAt: null,
+      },
+    ],
+    threads: [remoteWaiting],
+    attentionSignalsByTicket: new Map([[ticketId, [remoteSignal]]]),
+  }).get(ticketId);
+  expect(ticketThreads?.get(remoteWaiting.id)).toBe(remoteSignal);
+});
+
 const ticket = (
   id: string,
   status: WorkbenchSidebarTicket["status"] = "in_progress",

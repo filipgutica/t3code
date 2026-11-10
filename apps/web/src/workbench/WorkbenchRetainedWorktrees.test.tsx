@@ -47,6 +47,7 @@ vi.mock("./state", () => ({
 }));
 vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => EnvironmentId.make(sidebarHost.environmentId),
+  useEnvironmentIdentities: () => [],
 }));
 vi.mock("../state/entities", () => ({
   useThreadShells: () => [],

@@ -1,4 +1,4 @@
-import { WorkbenchProjectId, type ProjectId, type EnvironmentId } from "@t3tools/contracts";
+import { WorkbenchProjectId, type EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
@@ -10,6 +10,13 @@ import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
 import type { WorkbenchCreateTicketDraft } from "./WorkbenchForms";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
+import type { getWorkbenchBoardProjectSelection } from "./workbenchRemote.logic";
+
+type WorkbenchBoardProjectSelection = ReturnType<typeof getWorkbenchBoardProjectSelection>;
+
+// Older hosts reject an unknown key, so a host-only Board sends none.
+const remoteProjectsField = (remoteProjects: WorkbenchBoardProjectSelection["remoteProjects"]) =>
+  Object.keys(remoteProjects).length === 0 ? {} : { remoteProjects };
 
 export function useWorkbenchPageDialogs({
   environmentId,
@@ -44,7 +51,10 @@ export function useWorkbenchPageDialogs({
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const submitProject = async (
+    title: string,
+    { linkedProjectIds, remoteProjects }: WorkbenchBoardProjectSelection,
+  ) => {
     if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
     setError(null);
@@ -55,6 +65,7 @@ export function useWorkbenchPageDialogs({
         id,
         title,
         linkedProjectIds,
+        ...remoteProjectsField(remoteProjects),
         createdAt: new Date().toISOString(),
       },
     });
@@ -67,7 +78,10 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
-  const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const saveWorkspace = async (
+    title: string,
+    { linkedProjectIds, remoteProjects }: WorkbenchBoardProjectSelection,
+  ) => {
     if (
       !canOperate ||
       environmentId === null ||
@@ -84,6 +98,7 @@ export function useWorkbenchPageDialogs({
         expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
+        ...remoteProjectsField(remoteProjects),
         updatedAt: new Date().toISOString(),
       },
     });

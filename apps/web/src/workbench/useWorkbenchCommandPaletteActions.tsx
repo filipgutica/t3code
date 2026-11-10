@@ -1,14 +1,28 @@
 import { useLocation, useNavigate } from "@tanstack/react-router";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentId, ScopedThreadRef, ThreadId } from "@t3tools/contracts";
 import { ArrowLeftIcon, LayoutDashboardIcon, MessageCircleIcon, PlusIcon } from "lucide-react";
 import type { CommandPaletteActionItem } from "../components/CommandPalette.logic";
 import { useEnvironments, usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { workbenchEnvironment } from "./state";
+import { useWorkbenchThreadOwner } from "./useWorkbenchThreadOwner";
 import { parseWorkbenchSearch } from "./workbenchSearch";
-import { getWorkbenchCommandPaletteTargets } from "./workbenchCommandPalette.logic";
+import {
+  getWorkbenchCommandPaletteEnvironmentId,
+  getWorkbenchCommandPaletteTargets,
+} from "./workbenchCommandPalette.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import { useNavigateToLastWorkbench } from "./workbenchLastLocation";
+
+type PaletteThread = { readonly environmentId: EnvironmentId; readonly id: ThreadId };
+
+/** The current page's Thread, which Workbench actions target only off the Workbench page. */
+const getPaletteThreadRef = (
+  thread: PaletteThread | null | undefined,
+  onWorkbench: boolean,
+): ScopedThreadRef | null =>
+  thread && !onWorkbench ? scopeThreadRef(thread.environmentId, thread.id) : null;
 
 const selectPageChatAvailable = (
   state: ReturnType<typeof useWorkbenchFloatingChatStore.getState>,
@@ -62,10 +76,7 @@ export const useWorkbenchCommandPaletteActions = ({
   thread,
   draftEnvironmentId,
 }: {
-  readonly thread:
-    | { readonly environmentId: EnvironmentId; readonly id: ThreadId }
-    | null
-    | undefined;
+  readonly thread: PaletteThread | null | undefined;
   readonly draftEnvironmentId: EnvironmentId | undefined;
 }): CommandPaletteActionItem[] => {
   const location = useLocation();
@@ -76,8 +87,17 @@ export const useWorkbenchCommandPaletteActions = ({
   const pageChatAvailable = useWorkbenchFloatingChatStore(selectPageChatAvailable);
   const onWorkbench = location.pathname === "/workbench";
   const search = onWorkbench ? parseWorkbenchSearch(location.search) : {};
-  const environmentId =
-    search.environmentId ?? thread?.environmentId ?? draftEnvironmentId ?? primaryEnvironmentId;
+  const threadRef = getPaletteThreadRef(thread, onWorkbench);
+  // A Thread on another machine belongs to the Board host that assigns it.
+  const threadOwnerId = useWorkbenchThreadOwner(threadRef);
+  const environmentId = getWorkbenchCommandPaletteEnvironmentId({
+    threadRef,
+    threadOwnerId,
+    searchEnvironmentId: search.environmentId,
+    threadEnvironmentId: thread?.environmentId,
+    draftEnvironmentId,
+    primaryEnvironmentId,
+  });
   const connected = environments.some(
     (environment) =>
       environment.environmentId === environmentId && environment.connection.phase === "connected",
@@ -91,7 +111,7 @@ export const useWorkbenchCommandPaletteActions = ({
     environmentId,
     snapshot: query.data,
     workspaceId: search.workbenchProjectId,
-    threadId: !onWorkbench && thread?.environmentId === environmentId ? thread.id : undefined,
+    threadRef,
   });
   const items: CommandPaletteActionItem[] = [
     {

@@ -310,7 +310,6 @@ function HeaderDraftPage() {
     canOperate: true,
     referencesByTicket: new Map(),
     projects: [headerRepository],
-    repositoriesById: new Map([[repositoryId, headerRepository]]),
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
@@ -347,6 +346,10 @@ function HeaderDraftPage() {
     threadLookupError: null,
     refreshArchivedThreads: noop,
     refreshThreadLookup: noop,
+    remoteEnvironmentStates: new Map(),
+    remoteRepositoriesByBoard: new Map(),
+    liveEnvironmentIds: new Set(),
+    environmentLabels: new Map(),
   };
   const dialogs = useWorkbenchPageDialogs({
     environmentId,

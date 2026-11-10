@@ -85,6 +85,7 @@ import { MenuItem, MenuSeparator } from "../components/ui/menu";
 import { WorkbenchTicketStatusMenu } from "./WorkbenchTicketStatusMenu";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
 import type { Project } from "../types";
+import { useWorkbenchRemoteRefs } from "./WorkbenchRemoteRefs";
 import {
   getWorkbenchTicketStartProgressLabel,
   isWorkbenchTicketStartPending,
@@ -93,6 +94,8 @@ import {
   getWorkbenchBoardColumns,
   getWorkbenchThreadPresentation,
   getVisibleWorkbenchAssignments,
+  getWorkbenchThreadLookupState,
+  type WorkbenchThreadLookupState,
   getWorkbenchTicketSummaryActionLabel,
   isWorkbenchThreadArchived,
 } from "./workbench.logic";
@@ -130,7 +133,8 @@ type WorkbenchTicketBoardProps = {
   readonly selectedTicketId: WorkbenchTicketId | null;
   readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly repositoriesReady: boolean;
-  readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
+  /** Board repositories; one on another machine is titled with that machine. */
+  readonly repositoriesById: ReadonlyMap<ProjectId, Pick<Project, "id" | "title">>;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -382,6 +386,7 @@ type WorkbenchBoardContext = Pick<
   attentionMode: WorkbenchAttentionMode;
   attentionReasonsByTicket: ReadonlyMap<WorkbenchTicketId, ReadonlyArray<string>>;
   threadCounts: ReadonlyMap<WorkbenchTicketId, number>;
+  remoteEnvironmentStates: ReadonlyMap<EnvironmentId, WorkbenchThreadLookupState>;
 };
 
 function renderWorkbenchBoardColumns(board: WorkbenchBoardContext) {
@@ -581,6 +586,7 @@ function useWorkbenchBoardData({
   | "archivedThreadsById"
 >) {
   const scope = { environmentId, projectId };
+  const { environmentStates: remoteEnvironmentStates } = useWorkbenchRemoteRefs();
   const search = useWorkbenchTicketSearch(scope);
   const { view, setView } = useWorkbenchBoardView(scope);
   const repositoryId = view.repositoryId;
@@ -621,6 +627,7 @@ function useWorkbenchBoardData({
       new Set(threadsById.keys()),
       new Set(archivedThreadsById.keys()),
       true,
+      remoteEnvironmentStates,
     )) {
       if (assignment.supersededAt === null) {
         counts.set(assignment.ticketId, (counts.get(assignment.ticketId) ?? 0) + 1);
@@ -644,6 +651,7 @@ function useWorkbenchBoardData({
     agentStatesByTicket,
     threadCounts,
     columns,
+    remoteEnvironmentStates,
   };
 }
 
@@ -663,6 +671,7 @@ function getWorkbenchBoardTicketPresentation({
     repositoriesById,
     agentStatesByTicket,
     referencesByTicket,
+    remoteEnvironmentStates,
   } = board;
   const assignment = assignmentsByTicket.get(ticket.id);
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
@@ -676,7 +685,9 @@ function getWorkbenchBoardTicketPresentation({
     nativeThread !== undefined,
     nativeStatus?.presentation.label ?? null,
     archivedThread !== undefined,
-    threadLookupReady,
+    assignment === undefined
+      ? "ready"
+      : getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }),
   );
   const threadActionPending =
     isWorkbenchTicketStartPending(pendingAction, ticket.id) ||

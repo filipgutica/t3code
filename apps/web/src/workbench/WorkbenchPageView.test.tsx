@@ -194,6 +194,7 @@ function Harness({
   conversation,
   deletedThread = false,
   archivedAssignedThread = false,
+  unreachableHistory = false,
 }: {
   canOperate?: boolean;
   workspaceState?: "active" | "archived" | "deleted";
@@ -210,6 +211,8 @@ function Harness({
   conversation?: ConversationMode;
   deletedThread?: boolean;
   archivedAssignedThread?: boolean;
+  /** The Ticket's earlier Thread is on a machine this client cannot reach. */
+  unreachableHistory?: boolean;
 }) {
   const { currentWorkspace, selectedProject } = workspaceFixture(workspaceState);
   const {
@@ -236,6 +239,19 @@ function Harness({
   const tickets = [ticket];
   const currentSnapshot = {
     ...snapshot,
+    assignments: unreachableHistory
+      ? [
+          assignment,
+          {
+            ...assignment,
+            id: WorkbenchAssignmentId.make("remote-history"),
+            threadId: ThreadId.make("remote-thread"),
+            supersededAt: timestamp,
+            environmentId: EnvironmentId.make("offline-machine"),
+            projectId: repository.id,
+          },
+        ]
+      : snapshot.assignments,
     projects: [currentWorkspace],
     tickets,
     references,
@@ -245,7 +261,6 @@ function Harness({
     canOperate,
     referencesByTicket: groupWorkbenchReferences(references),
     projects: [repository],
-    repositoriesById: new Map([[repository.id, repository]]),
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
@@ -273,6 +288,10 @@ function Harness({
     threadLookupError,
     refreshArchivedThreads: noop,
     refreshThreadLookup,
+    remoteEnvironmentStates: new Map(),
+    remoteRepositoriesByBoard: new Map(),
+    liveEnvironmentIds: new Set(),
+    environmentLabels: new Map(),
   };
   const selection: PageProps["selection"] = {
     awaitingTicketId: null,
@@ -703,6 +722,11 @@ it("disables Ticket Thread mutations when permission is revoked and restores the
     });
     expect(contextMenu.show).toHaveBeenCalledExactlyOnceWith(menuItems, expect.anything());
   }
+});
+
+it("unlinks an earlier Thread on a machine this client cannot reach", async () => {
+  await render({ detail: true, unreachableHistory: true });
+  expect(button("Unlink Thread on Unknown machine from Ship the release").disabled).toBe(false);
 });
 
 it("requires operate permission to replace a deleted Ticket Thread", async () => {

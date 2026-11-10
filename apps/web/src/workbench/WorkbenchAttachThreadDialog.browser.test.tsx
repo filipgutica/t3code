@@ -1,21 +1,34 @@
-import { ProjectId, ThreadId } from "@t3tools/contracts";
+import { EnvironmentId, ProjectId, ThreadId } from "@t3tools/contracts";
 import { expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
 // Without the app styles the dialog popup is unpositioned, so Base UI's inert layer covers it.
 import "~/index.css";
 import { render } from "../../test/render";
-import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
+import {
+  WorkbenchAttachThreadDialog,
+  type WorkbenchAttachableThread,
+} from "./WorkbenchAttachThreadDialog";
 
 const api = ProjectId.make("api");
 const branch = "main";
 const projects = [{ id: api, title: "api repo" }];
+const environmentId = EnvironmentId.make("host");
 const threads = [
-  { id: ThreadId.make("original"), title: "First", projectId: api, branch },
-  { id: ThreadId.make("other"), title: "Second", projectId: api, branch: "feature/draft" },
+  { id: ThreadId.make("original"), environmentId, title: "First", projectId: api, branch },
+  {
+    id: ThreadId.make("other"),
+    environmentId,
+    title: "Second",
+    projectId: api,
+    branch: "feature/draft",
+  },
 ];
 
-const renderDialog = (onAttach: (threadId: ThreadId) => Promise<void>, candidates = threads) =>
+const renderDialog = (
+  onAttach: (thread: WorkbenchAttachableThread) => Promise<void>,
+  candidates = threads,
+) =>
   render(
     <WorkbenchAttachThreadDialog
       projects={projects}
@@ -45,5 +58,5 @@ it("distinguishes duplicate titles and keeps the selected source clear after fil
   await expect.element(page.getByText("Same title", { exact: true })).toBeVisible();
   await expect.element(page.getByText(`api repo · ${branch}`, { exact: true })).toBeVisible();
   await userEvent.click(page.getByRole("button", { name: "Link Thread" }));
-  expect(onAttach).toHaveBeenCalledWith(ThreadId.make("original"));
+  expect(onAttach).toHaveBeenCalledWith(expect.objectContaining({ id: ThreadId.make("original") }));
 });

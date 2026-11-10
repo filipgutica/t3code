@@ -19,7 +19,12 @@ import {
 import { Input } from "../components/ui/input";
 import { getWorkbenchRepositoryTitle } from "./WorkbenchThreadRepositoryPicker";
 
-type LinkableThread = Pick<EnvironmentThreadShell, "id" | "title" | "projectId" | "branch">;
+export type WorkbenchAttachableThread = Pick<
+  EnvironmentThreadShell,
+  "id" | "environmentId" | "title" | "projectId" | "branch"
+>;
+type LinkableThread = WorkbenchAttachableThread;
+/** A Board repository; one on another machine carries that machine in its title. */
 type RepositoryProject = Pick<EnvironmentProject, "id" | "title">;
 
 function WorkbenchLinkThreadList({
@@ -116,13 +121,14 @@ export function WorkbenchAttachThreadDialog({
   readonly disabled?: boolean;
   readonly error: string | null;
   readonly onClose: () => void;
-  readonly onAttach: (threadId: ThreadId) => Promise<void>;
+  readonly onAttach: (thread: WorkbenchAttachableThread) => Promise<void>;
 }) {
   const [selectedId, setSelectedId] = useState<ThreadId | null>(null);
   const selected = threads.find((thread) => thread.id === selectedId);
   const canLink = !disabled && !pending && selected !== undefined;
   const attachSelectedThread = () => {
-    if (canLink) void onAttach(selected.id);
+    // `selected` comes from the live shells, so a Thread that left its machine cannot be linked.
+    if (canLink) void onAttach(selected);
   };
   return (
     <Dialog
@@ -135,8 +141,8 @@ export function WorkbenchAttachThreadDialog({
         <DialogHeader>
           <DialogTitle>Link existing Thread</DialogTitle>
           <DialogDescription>
-            Choose an unassigned Thread from this Ticket’s repositories. It keeps its existing
-            branch and working directory. No prompt is sent.
+            Choose an unassigned Thread from this Ticket’s repositories, on this machine or another
+            connected one. It keeps its existing branch and working directory. No prompt is sent.
           </DialogDescription>
         </DialogHeader>
         <DialogPanel className="min-w-0">

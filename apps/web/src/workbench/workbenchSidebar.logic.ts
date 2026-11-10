@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { sortPinnedThreadsByOrderKey } from "@t3tools/client-runtime/state/thread-sort";
+import { getWorkbenchThreadsById } from "./workbench.logic";
 import type {
   EnvironmentId,
   ThreadId,
@@ -28,7 +29,7 @@ export type WorkbenchSidebarThread = Pick<
 
 export type WorkbenchSidebarAssignment = Pick<
   WorkbenchAssignment,
-  "id" | "ticketId" | "threadId" | "createdAt" | "supersededAt"
+  "id" | "ticketId" | "threadId" | "createdAt" | "supersededAt" | "environmentId"
 >;
 
 export interface WorkbenchSidebarTicketGroup {
@@ -128,21 +129,18 @@ type SidebarGroupInputs = {
 
 const getVisibleThreadsById = ({
   environmentId,
+  assignments,
   threads,
   selectedThreadId,
-}: Pick<SidebarGroupInputs, "environmentId" | "threads" | "selectedThreadId">) => {
-  const liveThreadsById = new Map<ThreadId, WorkbenchSidebarThread>();
-  if (environmentId === null) return liveThreadsById;
-  for (const thread of threads) {
-    if (
-      thread.environmentId !== environmentId ||
-      (thread.archivedAt !== null && thread.id !== selectedThreadId)
-    )
-      continue;
-    liveThreadsById.set(thread.id, thread);
-  }
-  return liveThreadsById;
-};
+}: Pick<
+  SidebarGroupInputs,
+  "environmentId" | "assignments" | "threads" | "selectedThreadId"
+>): ReadonlyMap<ThreadId, WorkbenchSidebarThread> =>
+  new Map(
+    [...getWorkbenchThreadsById({ hostEnvironmentId: environmentId, assignments, threads })].filter(
+      ([threadId, thread]) => thread.archivedAt === null || threadId === selectedThreadId,
+    ),
+  );
 
 const getAssignmentsByTicket = ({
   assignments,
@@ -199,7 +197,12 @@ export function getWorkbenchSidebarTicketGroups({
   selectedThreadId,
   includeUnassignedTickets = false,
 }: SidebarGroupInputs): ReadonlyMap<WorkbenchProjectId, WorkbenchSidebarTicketSections> {
-  const liveThreadsById = getVisibleThreadsById({ environmentId, threads, selectedThreadId });
+  const liveThreadsById = getVisibleThreadsById({
+    environmentId,
+    assignments,
+    threads,
+    selectedThreadId,
+  });
   const assignmentsByTicket = getAssignmentsByTicket({ assignments, liveThreadsById });
   const groups = new Map<
     WorkbenchProjectId,

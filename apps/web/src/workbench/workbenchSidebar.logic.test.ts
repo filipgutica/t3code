@@ -75,17 +75,24 @@ describe("Workbench sidebar ticket groups", () => {
       "2026-01-01",
     );
     const remoteThread = thread("remote-thread", "Remote Thread", otherEnvironmentId);
+    // An Assignment that names another machine reads its Thread there.
+    const remoteTicket = ticket("remote-ticket");
+    const linkedRemoteThread = thread("linked-remote", "Linked Remote", otherEnvironmentId);
 
     const groups = getWorkbenchSidebarTicketGroups({
       environmentId,
-      tickets: [activeTicket, selectedTicket, unrelatedTicket],
+      tickets: [activeTicket, selectedTicket, unrelatedTicket, remoteTicket],
       assignments: [
         assignment("old", activeTicket.id, activeThread.id, "2026-01-01"),
         assignment("new", activeTicket.id, newerThread.id, "2026-02-01"),
         assignment("archived", activeTicket.id, archivedThread.id, "2026-03-01"),
         assignment("remote", activeTicket.id, remoteThread.id, "2026-04-01"),
+        {
+          ...assignment("remote-ref", remoteTicket.id, linkedRemoteThread.id, "2026-04-02"),
+          environmentId: otherEnvironmentId,
+        },
       ],
-      threads: [activeThread, newerThread, archivedThread, remoteThread],
+      threads: [activeThread, newerThread, archivedThread, remoteThread, linkedRemoteThread],
       selectedTicketId: selectedTicket.id,
     });
 
@@ -98,6 +105,10 @@ describe("Workbench sidebar ticket groups", () => {
         {
           ticket: selectedTicket,
           threads: [],
+        },
+        {
+          ticket: remoteTicket,
+          threads: [linkedRemoteThread],
         },
       ],
       done: [],
