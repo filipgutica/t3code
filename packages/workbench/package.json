@@ -66,7 +66,7 @@
     }
   },
   "scripts": {
-    "typecheck": "tsc --noEmit && node check-boundary.mjs",
+    "typecheck": "effect-tsgo tsrs --noEmit && node check-boundary.mjs",
     "test": "vp test run",
     "check:boundary": "node check-boundary.mjs",
     "lint": "vp run -w workbench:lint",

@@ -182,7 +182,7 @@ jobs:
           node scripts/workbench-ci.ts --run-tests
           node scripts/workbench-ci.ts --packaging
           vp run --filter @t3tools/workbench quality
-          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
+          vp exec effect-tsgo tsrs --noEmit -p scripts/workbench-regression/tsconfig.json
           T3CODE_WORKBENCH_BUILD=1 vp run build:desktop
           node apps/desktop/scripts/verify-preload-bundle.mjs
           xvfb-run -a node scripts/workbench-desktop-smoke.mjs
