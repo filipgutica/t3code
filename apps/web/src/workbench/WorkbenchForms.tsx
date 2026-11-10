@@ -1382,11 +1382,13 @@ function WorkbenchThreadRowIcon({
 
 /** The row's state, then its time or run status, which the quick action replaces on hover or focus. */
 function WorkbenchThreadRowTrailing({
+  thread,
   executionStatus,
   quickAction,
   recencyLabel,
   stateLabel,
 }: {
+  readonly thread: EnvironmentThreadShell | undefined;
   readonly executionStatus: WorkbenchThreadExecutionStatusData | null | undefined;
   readonly quickAction: ReactNode;
   readonly recencyLabel: string | null;
@@ -1402,6 +1404,7 @@ function WorkbenchThreadRowTrailing({
   ) : null;
   return (
     <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <WorkbenchThreadRowMachineLabel thread={thread} />
       {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
       {time && quickAction ? (
         <span className="relative flex items-center">
@@ -1561,6 +1564,7 @@ function WorkbenchThreadRow({
         </span>
       </button>
       <WorkbenchThreadRowTrailing
+        thread={thread}
         executionStatus={executionStatus}
         quickAction={quickAction}
         recencyLabel={recencyLabel}
@@ -2143,9 +2147,22 @@ function WorkbenchTicketThreadsPanel({
     historicalAssignments,
   } = records;
   const [sectionToggles, setSectionToggles] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const { environmentStates: remoteEnvironmentStates } = useWorkbenchRemoteRefs();
+  const isOffline = (rowAssignment: WorkbenchAssignment) =>
+    getWorkbenchThreadLookupState({
+      assignment: rowAssignment,
+      threadLookupReady,
+      remoteEnvironmentStates,
+    }) === "offline";
+  // Offline Threads are still open; they are listed under Offline.
   const openThreadCount = new Set(
     activeAssignments
-      .filter(({ threadId }) => threadsById.has(threadId) || archivedThreadsById.has(threadId))
+      .filter(
+        (activeAssignment) =>
+          threadsById.has(activeAssignment.threadId) ||
+          archivedThreadsById.has(activeAssignment.threadId) ||
+          isOffline(activeAssignment),
+      )
       .map(({ threadId }) => threadId),
   ).size;
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
@@ -2166,12 +2183,14 @@ function WorkbenchTicketThreadsPanel({
     active: listedAssignments.map((activeAssignment) => ({
       threadId: activeAssignment.threadId,
       ...liveStatus(activeAssignment.threadId),
+      offline: isOffline(activeAssignment),
       assignment: activeAssignment,
     })),
     settled: settledAssignments.map((settledAssignment) => ({
       threadId: settledAssignment.threadId,
       status: null,
       unread: false,
+      offline: false,
       assignment: settledAssignment,
     })),
     showingThreadId: assignment?.threadId ?? null,
@@ -3303,6 +3322,22 @@ function WorkbenchTicketActiveThreadRow({
         )
       }
     />
+  );
+}
+
+/** The machine of a loaded Thread that runs off the Board host; an unloaded one names it in its title. */
+function WorkbenchThreadRowMachineLabel({
+  thread,
+}: {
+  thread: EnvironmentThreadShell | undefined;
+}) {
+  const { repositories, environmentStates, environmentLabels } = useWorkbenchRemoteRefs();
+  // The page reads a state for each machine its remote Assignments name.
+  if (thread === undefined || !environmentStates.has(thread.environmentId)) return null;
+  return (
+    <span className="max-w-32 truncate">
+      {getWorkbenchAssignmentMachineLabel({ assignment: thread, repositories, environmentLabels })}
+    </span>
   );
 }
 
