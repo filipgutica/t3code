@@ -83,7 +83,7 @@ jobs:
       - name: Check regression tooling
         if: ${{ matrix.shard == 1 }}
         run: |
-          vp exec tsc --noEmit -p scripts/workbench-regression/tsconfig.json
+          vp exec effect-tsgo tsrs --noEmit -p scripts/workbench-regression/tsconfig.json
           vp lint scripts/workbench-regression --report-unused-disable-directives
       - name: Run browser regressions
         working-directory: scripts
