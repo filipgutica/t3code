@@ -117,6 +117,7 @@ function makeDependencies(events: string[]) {
       events.push("launch-thread");
       return success;
     },
+    canOperateEnvironment: () => true,
     waitForThread: async () => {},
     openThread: async () => {
       events.push("open-thread");
@@ -832,6 +833,32 @@ describe("coordinateWorkbenchTicketStart on another machine", () => {
       [threadId, `workbench-remote-start:${assignmentId}`],
       [threadId, `workbench-remote-start:${assignmentId}`],
     ]);
+  });
+
+  // The launch's own scope check would refuse it after the Assignment was saved, for good.
+  it("writes nothing when this client cannot change Threads on the other machine", async () => {
+    const events: string[] = [];
+    const launched: Launch[] = [];
+    const result = await coordinateWorkbenchTicketStart(
+      remoteInput(),
+      {
+        ...makeRemoteDependencies(events, launched),
+        updateTicket: async () => {
+          events.push("update-ticket");
+          return AsyncResult.success(remoteTicket);
+        },
+        canOperateEnvironment: (id: EnvironmentId) => id !== remoteEnvironmentId,
+      },
+      {
+        modelSelection,
+        repositoryScope: { repositoryProjectIds: [remoteProjectId, projectId] },
+        remote,
+      },
+    );
+
+    expect(result).toEqual({ state: "remote-read-only" });
+    expect(events).toEqual([]);
+    expect(launched).toEqual([]);
   });
 
   // An older host returns its host instruction, which names tools and paths the remote lacks.

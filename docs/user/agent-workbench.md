@@ -378,6 +378,9 @@ brief and your instruction. To attach a Thread that already runs there, use
 - A Thread on another machine has no Workbench tools and does not get later
   Ticket changes, so record its progress on the Ticket yourself. Its work does
   not move the Ticket's status.
+- Starting a Thread there needs a connection that can change Threads on that
+  machine. With a view-only connection, its repositories are unavailable in
+  **Create Thread**.
 - If the Thread does not start, its row shows **Not started**. Use **Retry** to
   start the same Thread again, or **Remove** to take it off the Ticket. If the
   machine says it refused the Thread, Retry cannot succeed; remove it and start a

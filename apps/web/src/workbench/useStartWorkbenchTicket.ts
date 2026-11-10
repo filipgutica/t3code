@@ -4,6 +4,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  AuthOrchestrationOperateScope,
   DEFAULT_SERVER_SETTINGS,
   WorkbenchAssignmentId,
   type EnvironmentId,
@@ -21,6 +22,7 @@ import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentServerConfigsAtom } from "../state/server";
+import { readEnvironmentScope } from "../state/session";
 import { threadEnvironment } from "../state/threads";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useOrchestrationCommand } from "../state/use-orchestration-command";
@@ -78,6 +80,12 @@ const reportTicketStartResult = ({
   if (result.state === "host-outdated") {
     onError(
       "Update T3 Code on the Workbench host before starting a Thread on another machine. This host would send that Thread instructions it cannot use.",
+    );
+    return;
+  }
+  if (result.state === "remote-read-only") {
+    onError(
+      "This connection can only view Threads on that machine. Start the Thread in another repository, or reconnect with access to change Threads there.",
     );
     return;
   }
@@ -221,6 +229,7 @@ export function useStartWorkbenchTicket({
             deleteThread,
             readTicketContext,
             launchThread,
+            canOperateEnvironment: (id) => readEnvironmentScope(id, AuthOrchestrationOperateScope),
             waitForThread: waitForWorkbenchThread,
             openThread,
             resolveRuntimeMode: (project) => {

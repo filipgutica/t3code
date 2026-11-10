@@ -8,6 +8,7 @@ import {
   getWorkbenchBoardProjectUnavailableReason,
   getWorkbenchBoardSelectionGap,
   getWorkbenchRemoteRepositories,
+  getWorkbenchStartThreadRemoteRepositories,
   workbenchBoardProjectOptionKey,
 } from "./workbenchRemote.logic";
 
@@ -103,28 +104,64 @@ describe("Workbench refs on other machines", () => {
   });
 
   it("offers unassigned Threads from the machine that links each Ticket repository", () => {
-    const thread = (id: string, environmentId: EnvironmentId, projectId: ProjectId) => ({
-      id: ThreadId.make(id),
-      environmentId,
-      projectId,
-    });
-    const hostThread = thread("host-thread", host, hostRepo);
+    const thread = (
+      id: string,
+      environmentId: EnvironmentId,
+      projectId: ProjectId,
+      latestRun: { runId: string } | null = { runId: `${id}-run` },
+    ) => ({ id: ThreadId.make(id), environmentId, projectId, latestRun });
+    const hostThread = thread("host-thread", host, hostRepo, null);
     const remoteThread = thread("remote-thread", remote, remoteRepo);
     const wrongMachine = thread("wrong-machine", otherRemote, remoteRepo);
     const hostIdCopy = thread("host-known", remote, remoteRepo);
     const assigned = thread("assigned", remote, remoteRepo);
     const outOfScope = thread("out-of-scope", host, ProjectId.make("other-repo"));
+    // Linked, a remote Thread that never ran would read as a launch that did not start.
+    const neverRanRemote = thread("never-ran", remote, remoteRepo, null);
 
     expect(
       getWorkbenchAttachableThreads({
         hostEnvironmentId: host,
         repositoryProjectIds: [hostRepo, remoteRepo],
         remoteRepositories: new Map([[remoteRepo, { environmentId: remote }]]),
-        threads: [hostThread, remoteThread, wrongMachine, hostIdCopy, assigned, outOfScope],
+        threads: [
+          hostThread,
+          remoteThread,
+          wrongMachine,
+          hostIdCopy,
+          assigned,
+          outOfScope,
+          neverRanRemote,
+        ],
         assignedThreadIds: new Set([assigned.id]),
         reservedThreadIds: new Set(),
         hostThreadIds: new Set([hostThread.id, hostIdCopy.id]),
       }),
     ).toEqual([hostThread, remoteThread]);
+  });
+
+  // The launch is refused where this client may only read, after the Assignment was saved.
+  it("starts a Thread only where this client may change Threads", () => {
+    const repository = {
+      id: remoteRepo,
+      environmentId: remote,
+      title: "App",
+      environmentLabel: "Laptop",
+    };
+    const project = { id: remoteRepo, environmentId: remote, workspaceRoot: "/repos/app" };
+    const start = (operableEnvironmentIds: ReadonlySet<EnvironmentId>) =>
+      getWorkbenchStartThreadRemoteRepositories({
+        repositoryProjectIds: [remoteRepo],
+        remoteRepositories: new Map([[remoteRepo, repository]]),
+        projects: [project],
+        liveEnvironmentIds: new Set([remote]),
+        operableEnvironmentIds,
+        providersByEnvironment: new Map(),
+      });
+
+    expect(start(new Set([remote]))).toMatchObject([{ project, unavailableReason: null }]);
+    expect(start(new Set([host]))).toMatchObject([
+      { project: null, unavailableReason: "This connection cannot start Threads on Laptop" },
+    ]);
   });
 });

@@ -120,12 +120,16 @@ export interface WorkbenchStartThreadRemoteRepository {
   readonly unavailableReason: string | null;
 }
 
-/** The Ticket's repositories on other machines; a Thread starts only where shells are live. */
+/**
+ * The Ticket's repositories on other machines. A Thread starts only where shells are live and this
+ * client's session there may change Threads, which the launch itself requires.
+ */
 export const getWorkbenchStartThreadRemoteRepositories = ({
   repositoryProjectIds,
   remoteRepositories,
   projects,
   liveEnvironmentIds,
+  operableEnvironmentIds,
   providersByEnvironment,
 }: {
   readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
@@ -133,6 +137,7 @@ export const getWorkbenchStartThreadRemoteRepositories = ({
   /** Native Projects from every connected environment. */
   readonly projects: ReadonlyArray<WorkbenchRemoteThreadStart["project"]>;
   readonly liveEnvironmentIds: ReadonlySet<EnvironmentId>;
+  readonly operableEnvironmentIds: ReadonlySet<EnvironmentId>;
   readonly providersByEnvironment: ReadonlyMap<EnvironmentId, ReadonlyArray<ServerProvider>>;
 }): ReadonlyArray<WorkbenchStartThreadRemoteRepository> =>
   repositoryProjectIds.flatMap((id) => {
@@ -144,17 +149,20 @@ export const getWorkbenchStartThreadRemoteRepositories = ({
           (candidate) => candidate.id === id && candidate.environmentId === environmentId,
         ) ?? null)
       : null;
+    const unavailableReason = !liveEnvironmentIds.has(environmentId)
+      ? `${environmentLabel} is not connected`
+      : project === null
+        ? `Not found on ${environmentLabel}`
+        : !operableEnvironmentIds.has(environmentId)
+          ? `This connection cannot start Threads on ${environmentLabel}`
+          : null;
     return [
       {
         id,
         title: formatWorkbenchRemoteRepositoryTitle(repository),
-        project,
+        project: unavailableReason === null ? project : null,
         providers: providersByEnvironment.get(environmentId) ?? [],
-        unavailableReason: !liveEnvironmentIds.has(environmentId)
-          ? `${environmentLabel} is not connected`
-          : project === null
-            ? `Not found on ${environmentLabel}`
-            : null,
+        unavailableReason,
       },
     ];
   });
@@ -258,13 +266,14 @@ export const getWorkbenchBoardSelectionGap = (
 /**
  * Threads a Ticket can link: unassigned Threads in its repositories, each from the machine that
  * links that repository. A remote Thread whose id the host already has is left out, because a
- * Board names each Thread by id alone.
+ * Board names each Thread by id alone, as is one that never ran: a Board shows that as Not started.
  */
 export function getWorkbenchAttachableThreads<
   Thread extends {
     readonly id: ThreadId;
     readonly environmentId: EnvironmentId;
     readonly projectId: ProjectId;
+    readonly latestRun: unknown;
   },
 >({
   hostEnvironmentId,
@@ -293,6 +302,8 @@ export function getWorkbenchAttachableThreads<
     const remote = remoteRepositories.get(thread.projectId);
     return remote === undefined
       ? thread.environmentId === hostEnvironmentId
-      : thread.environmentId === remote.environmentId && !hostThreadIds.has(thread.id);
+      : thread.environmentId === remote.environmentId &&
+          !hostThreadIds.has(thread.id) &&
+          thread.latestRun !== null;
   });
 }

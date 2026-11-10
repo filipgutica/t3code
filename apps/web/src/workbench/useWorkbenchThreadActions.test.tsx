@@ -69,6 +69,11 @@ vi.mock("../state/use-atom-command", () => ({
 vi.mock("../state/use-orchestration-command", () => ({
   useOrchestrationCommand: (command: keyof typeof commands) => commands[command],
 }));
+// This client may change Threads on every machine; `useOrchestrationCommand` is mocked as well.
+vi.mock("../state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/session")>()),
+  readEnvironmentScope: () => true,
+}));
 vi.mock("../hooks/useThreadActions", () => ({
   useThreadActions: () => ({ confirmAndDeleteThread: nativeDelete }),
 }));

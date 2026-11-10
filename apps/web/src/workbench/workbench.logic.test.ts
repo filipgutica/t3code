@@ -13,6 +13,7 @@ import {
   getWorkbenchContextForThread,
   getWorkbenchThreadLookupState,
   getWorkbenchReachableThreads,
+  getWorkbenchStartedThreadsById,
   getWorkbenchThreadsById,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
@@ -235,6 +236,26 @@ describe("Workbench ticket helpers", () => {
         threads: [host, remote, unassignedRemote, hostIdElsewhere, remoteIdOnHost],
       }).values(),
     ]).toEqual([host, remote]);
+
+    // A remote launch can stop after creating its Thread; without a run it has not started.
+    const withRun = <T extends object>(value: T, latestRun: { runId: string } | null) => ({
+      ...value,
+      latestRun,
+    });
+    const halfLaunched = withRun(remote, null);
+    const launched = withRun(thread("launched", remoteEnvironmentId), { runId: "run-one" });
+    const emptyHost = withRun(host, null);
+    expect([
+      ...getWorkbenchStartedThreadsById({
+        hostEnvironmentId,
+        assignments: [
+          { threadId: halfLaunched.id, environmentId: remoteEnvironmentId },
+          { threadId: launched.id, environmentId: remoteEnvironmentId },
+          { threadId: emptyHost.id },
+        ],
+        threads: [halfLaunched, launched, emptyHost],
+      }).values(),
+    ]).toEqual([launched, emptyHost]);
 
     // A cached shell from a machine whose shells are not live would show a stale status.
     const offlineRemote = thread("offline-remote", EnvironmentId.make("offline-machine"));

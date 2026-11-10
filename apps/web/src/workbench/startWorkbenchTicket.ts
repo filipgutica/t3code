@@ -163,6 +163,8 @@ interface StartWorkbenchTicketDependencies {
       readonly audience: "remote-thread";
     }>,
   ) => Promise<AtomCommandResult<WorkbenchTicketContext | null, unknown>>;
+  /** Whether this client may change Threads on an environment, as the launch itself checks. */
+  readonly canOperateEnvironment: (environmentId: EnvironmentId) => boolean;
   /** Native `orchestration.launchThread` on the Thread's own environment. */
   readonly launchThread: (
     input: EnvironmentCommandInput<StartThreadTurnInput>,
@@ -190,6 +192,8 @@ export type StartWorkbenchTicketResult =
   /** The host predates remote Thread context, so its text would name tools the remote lacks. */
   | { readonly state: "host-outdated" }
   | { readonly state: "ticket-unavailable" }
+  /** This client may only read on the Thread's machine, so its launch would be refused. */
+  | { readonly state: "remote-read-only" }
   /**
    * The Assignment was written but its remote launch failed. Retry relaunches it, unless the
    * remote recorded the rejection, which every relaunch with the same command id repeats.
@@ -441,6 +445,10 @@ export async function coordinateWorkbenchTicketStart(
       mode: options.mode,
     });
     if (existing !== null) return existing;
+  }
+  // Checked before any write: a refused launch would leave an Assignment that can never start.
+  if (options.remote && !dependencies.canOperateEnvironment(options.remote.project.environmentId)) {
+    return { state: "remote-read-only" };
   }
 
   const saved = await saveReviewedRepositoryScope({

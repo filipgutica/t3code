@@ -9,6 +9,7 @@ import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import {
+  AuthOrchestrationOperateScope,
   EnvironmentId,
   type WorkbenchProjectId,
   type WorkbenchTicket,
@@ -85,6 +86,7 @@ import { environmentServerConfigsAtom } from "../state/server";
 import { useProjects, useThreadShells } from "../state/entities";
 import { getWorkbenchReachableThreads } from "./workbench.logic";
 import { useConnectedEnvironmentIds } from "../state/environments";
+import { useEnvironmentsWithScope } from "../state/session";
 import {
   getPlanningTicketDraft,
   getUnsavedConversationDrafts,
@@ -890,12 +892,17 @@ function WorkbenchPageStartThreadDialog({
   readonly pageData: WorkbenchPageViewProps["pageData"];
 }) {
   const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const boardRemoteRepositories = pageData.remoteRepositoriesByBoard.get(request.ticket.projectId);
   const remoteRepositories = getWorkbenchStartThreadRemoteRepositories({
     repositoryProjectIds: request.ticket.repositoryProjectIds,
-    remoteRepositories:
-      pageData.remoteRepositoriesByBoard.get(request.ticket.projectId) ?? new Map(),
+    remoteRepositories: boardRemoteRepositories ?? new Map(),
     projects: useProjects(),
     liveEnvironmentIds: pageData.liveEnvironmentIds,
+    // The scope the launch's own `useOrchestrationCommand` check requires there.
+    operableEnvironmentIds: useEnvironmentsWithScope(
+      [...(boardRemoteRepositories?.values() ?? [])],
+      AuthOrchestrationOperateScope,
+    ),
     providersByEnvironment: new Map(
       [...serverConfigs].map(([environmentId, config]) => [environmentId, config.providers]),
     ),

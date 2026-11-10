@@ -149,6 +149,29 @@ export function getWorkbenchThreadsById<
 }
 
 /**
+ * `getWorkbenchThreadsById`, less each remote Assignment's Thread that has no run. Its launch
+ * created it but never sent the first message, so it shows Not started and Retry finishes it.
+ */
+export function getWorkbenchStartedThreadsById<
+  Thread extends {
+    readonly id: ThreadId;
+    readonly environmentId: EnvironmentId;
+    readonly latestRun: unknown;
+  },
+>(input: Parameters<typeof getWorkbenchThreadsById<Thread>>[0]): ReadonlyMap<ThreadId, Thread> {
+  const remoteThreadIds = new Set(
+    input.assignments.flatMap(({ threadId, environmentId }) =>
+      environmentId === undefined ? [] : [threadId],
+    ),
+  );
+  return new Map(
+    [...getWorkbenchThreadsById(input)].filter(
+      ([threadId, thread]) => thread.latestRun !== null || !remoteThreadIds.has(threadId),
+    ),
+  );
+}
+
+/**
  * Threads whose shells reflect their server: every host Thread, and one on another machine only
  * while that machine's shells are live. A disconnected machine's cached shell keeps a stale status.
  */
