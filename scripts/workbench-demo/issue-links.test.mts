@@ -18,7 +18,7 @@ const NOW = "2026-01-01T00:00:00.000Z";
 
 it.effect("seeds Orbit References of every listed kind after the current migrations", () =>
   Effect.gen(function* () {
-    const home = yield* Effect.tryPromise(() =>
+    const home = yield* Effect.promise(() =>
       NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-demo-references-")),
     );
     try {

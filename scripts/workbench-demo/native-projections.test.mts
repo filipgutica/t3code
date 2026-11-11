@@ -18,7 +18,7 @@ it.effect(
   "reads projection-only synthetic outcomes and transcript through native V2 shell and timeline readers",
   () =>
     Effect.gen(function* () {
-      const home = yield* Effect.tryPromise(() =>
+      const home = yield* Effect.promise(() =>
         NodeFSP.mkdtemp(NodePath.join(NodeOS.tmpdir(), "t3-demo-v2-")),
       );
       const filename = NodePath.join(home, "statev2.sqlite");
