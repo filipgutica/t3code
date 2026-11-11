@@ -3,6 +3,7 @@ import { TaskItem } from "@tiptap/extension-task-item";
 import { TaskList } from "@tiptap/extension-task-list";
 import { Node as ProseMirrorNode, type Mark } from "@tiptap/pm/model";
 import { StarterKit } from "@tiptap/starter-kit";
+import * as Schema from "effect/Schema";
 import type {
   BlockContent,
   DefinitionContent,
@@ -145,7 +146,11 @@ const stringifier = unified()
   .use(remarkGfm)
   .use(remarkStringify, { bullet: "-", emphasis: "*", rule: "-", listItemIndent: "one" });
 
-class Unsupported extends Error {}
+class Unsupported extends Schema.TaggedError<Unsupported>()("Unsupported", {
+  message: Schema.String,
+}) {}
+
+const isUnsupported = Schema.is(Unsupported);
 
 type MdastBlock = BlockContent | DefinitionContent;
 
@@ -194,7 +199,7 @@ function inlineToJson(nodes: ReadonlyArray<PhrasingContent>, marks: MarkJson[]):
       case "break":
         return [{ type: "hardBreak" }];
       default:
-        throw new Unsupported(node.type);
+        throw new Unsupported({ message: node.type });
     }
   });
 }
@@ -206,7 +211,7 @@ const withInline = (type: string, children: ReadonlyArray<PhrasingContent>, attr
 
 function listItemToJson(item: ListItem, task: boolean): JSONContent {
   const [first, ...rest] = item.children;
-  if (first?.type !== "paragraph") throw new Unsupported("listItem");
+  if (first?.type !== "paragraph") throw new Unsupported({ message: "listItem" });
   return {
     type: task ? "taskItem" : "listItem",
     ...(task ? { attrs: { checked: item.checked === true } } : {}),
@@ -223,7 +228,7 @@ function blockToJson(node: RootContent | MdastBlock): JSONContent {
     case "blockquote":
       return { type: "blockquote", content: node.children.map(blockToJson) };
     case "code":
-      if (node.meta) throw new Unsupported("code meta");
+      if (node.meta) throw new Unsupported({ message: "code meta" });
       return {
         type: "codeBlock",
         attrs: { language: node.lang ?? "" },
@@ -235,14 +240,14 @@ function blockToJson(node: RootContent | MdastBlock): JSONContent {
       const tasks = node.children.filter((item) => typeof item.checked === "boolean").length;
       const task = tasks > 0;
       if (task && (node.ordered || tasks < node.children.length))
-        throw new Unsupported("task list");
+        throw new Unsupported({ message: "task list" });
       const content = node.children.map((item) => listItemToJson(item, task));
       if (task) return { type: "taskList", content };
       if (node.ordered) return { type: "orderedList", attrs: { start: node.start ?? 1 }, content };
       return { type: "bulletList", content };
     }
     default:
-      throw new Unsupported(node.type);
+      throw new Unsupported({ message: node.type });
   }
 }
 
@@ -267,7 +272,7 @@ function blockOrSource(node: RootContent, source: string): JSONContent {
   try {
     return blockToJson(node);
   } catch (error) {
-    if (!(error instanceof Unsupported)) throw error;
+    if (!isUnsupported(error)) throw error;
     return sourceBlock(source);
   }
 }

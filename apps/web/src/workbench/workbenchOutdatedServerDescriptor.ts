@@ -9,18 +9,21 @@ import type * as HttpClient from "effect/http/HttpClient";
 import * as Effect from "effect/Effect";
 import * as Data from "effect/Data";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { Atom } from "effect/reactivity";
 import { environmentCatalog } from "../connection/catalog";
 import { connectionAtomRuntime } from "../connection/runtime";
 import { relayEnvironmentDiscovery } from "../state/relay";
 
-class WorkbenchDescriptorMismatch extends Data.TaggedError("WorkbenchDescriptorMismatch")<{
-  readonly message: string;
-}> {}
+class WorkbenchDescriptorMismatch extends Schema.TaggedError<WorkbenchDescriptorMismatch>()(
+  "WorkbenchDescriptorMismatch",
+  { message: Schema.String },
+) {}
 
-class WorkbenchSshDescriptorError extends Data.TaggedError("WorkbenchSshDescriptorError")<{
-  readonly message: string;
-}> {}
+class WorkbenchSshDescriptorError extends Schema.TaggedError<WorkbenchSshDescriptorError>()(
+  "WorkbenchSshDescriptorError",
+  { message: Schema.String },
+) {}
 
 class DescriptorLookup extends Data.Class<{
   readonly environmentId: EnvironmentId;
