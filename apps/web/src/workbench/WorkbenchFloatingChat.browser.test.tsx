@@ -113,6 +113,7 @@ const thread = (
   recap: string | null = null,
 ): WorkbenchFloatingChatThread => ({
   threadId: ThreadId.make(id),
+  environmentId: EnvironmentId.make("environment"),
   title: `Thread ${id}`,
   unread: false,
   status:
@@ -140,7 +141,6 @@ function Harness(props: {
   const [explicitThreadId, setExplicitThreadId] = useState<ThreadId | null>(null);
   return (
     <WorkbenchFloatingChat
-      environmentId={EnvironmentId.make("environment")}
       kind={props.kind ?? "ticket"}
       label="PAY-1"
       chat={resolveWorkbenchFloatingChat({

@@ -92,9 +92,8 @@ import {
 } from "./startWorkbenchTicket";
 import {
   getWorkbenchBoardColumns,
-  getWorkbenchThreadPresentation,
+  getWorkbenchAssignmentThreadPresentation,
   getVisibleWorkbenchAssignments,
-  getWorkbenchThreadLookupState,
   type WorkbenchThreadLookupState,
   getWorkbenchTicketSummaryActionLabel,
   isWorkbenchThreadArchived,
@@ -680,15 +679,14 @@ function getWorkbenchBoardTicketPresentation({
       ? archivedThreadsById.get(assignment.threadId)
       : undefined;
   const nativeStatus = agentStatesByTicket.get(ticket.id) ?? null;
-  const thread = getWorkbenchThreadPresentation(
-    assignment !== undefined,
-    nativeThread !== undefined,
-    nativeStatus?.presentation.label ?? null,
-    archivedThread !== undefined,
-    assignment === undefined
-      ? "ready"
-      : getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }),
-  );
+  const thread = getWorkbenchAssignmentThreadPresentation({
+    assignment,
+    threadExists: nativeThread !== undefined,
+    nativeStateLabel: nativeStatus?.presentation.label ?? null,
+    archived: archivedThread !== undefined,
+    threadLookupReady,
+    remoteEnvironmentStates,
+  });
   const threadActionPending =
     isWorkbenchTicketStartPending(pendingAction, ticket.id) ||
     (assignment !== undefined && pendingAction === `restore:${assignment.threadId}`);
@@ -803,13 +801,15 @@ function renderWorkbenchBoardTicketThreadAction(
   const { ticket, board, assignment, thread, threadActionPending, threadActionLabel } =
     presentation;
   const { pending, pendingTicketIds, onOpenThread } = board;
+  const startsThread =
+    thread.state === "unassigned" || thread.state === "missing" || thread.state === "not-started";
   return (
     <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {renderWorkbenchBoardTicketThreadStatus(presentation)}
         <WorkbenchProgressCount done={ticket.progressDone ?? 0} total={ticket.progressTotal ?? 0} />
       </div>
-      {ticket.status !== "done" || (thread.state !== "unassigned" && thread.state !== "missing") ? (
+      {ticket.status !== "done" || !startsThread ? (
         <Button
           aria-busy={threadActionPending}
           aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
@@ -819,8 +819,7 @@ function renderWorkbenchBoardTicketThreadAction(
             pending ||
             pendingTicketIds.has(ticket.id) ||
             (board.threadRestoreDisabled === true && thread.state === "archived") ||
-            (board.readOnly === true &&
-              (thread.state === "unassigned" || thread.state === "missing"))
+            (board.readOnly === true && startsThread)
           }
           onClick={() => onOpenThread(ticket, assignment?.threadId)}
           size="xs"

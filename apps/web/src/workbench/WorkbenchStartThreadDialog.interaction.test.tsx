@@ -18,6 +18,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { Project } from "../types";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
+import type { WorkbenchStartThreadRemoteRepository } from "./workbenchRemote.logic";
 import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
 
 vi.mock("../hooks/useSettings", async () => {
@@ -28,6 +29,20 @@ vi.mock("../hooks/useSettings", async () => {
   };
 });
 vi.mock("../components/chat/ProviderModelPicker", () => ({ ProviderModelPicker: () => null }));
+// The native picker reads the remote's refs over its connection.
+vi.mock("../components/WorktreeBaseBranchPicker", () => ({
+  WorktreeBaseBranchPicker: (props: {
+    id: string;
+    value: string;
+    onValueChange: (value: string) => void;
+  }) => (
+    <input
+      id={props.id}
+      value={props.value}
+      onChange={(event) => props.onValueChange(event.target.value)}
+    />
+  ),
+}));
 vi.mock("../components/chat/TraitsPicker", () => ({ TraitsPicker: () => null }));
 vi.mock("../composerDraftStore", async () => {
   const Schema = await import("effect/Schema");
@@ -133,6 +148,8 @@ const render = async ({
   unprepared = false,
   repositoryProjectId,
   board,
+  remoteRepositories = [],
+  retry,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
@@ -142,6 +159,8 @@ const render = async ({
   unprepared?: boolean;
   repositoryProjectId?: ProjectId;
   board?: Pick<WorkbenchProject, "remoteProjects">;
+  remoteRepositories?: ReadonlyArray<WorkbenchStartThreadRemoteRepository>;
+  retry?: { readonly projectId: ProjectId };
 } = {}) => {
   await act(async () =>
     root.render(
@@ -157,6 +176,8 @@ const render = async ({
           initialRepositoryScope: repositoryScope,
           repositoryProjectId,
           board,
+          remoteRepositories,
+          ...(retry ? { retry } : {}),
           additional: true,
         }}
         pending={pending}
@@ -356,6 +377,103 @@ it("starts a host Thread when the Ticket also scopes a repository on another mac
   expect(radioLabels()).toEqual(["PrimaryPrepared"]);
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({ modelSelection, repositoryProjectId: projects[0]!.id });
+});
+
+const typeInto = (label: string, value: string) =>
+  act(async () => {
+    const labelElement = [...document.querySelectorAll("label")].find(
+      (candidate) => candidate.textContent === label,
+    );
+    const field = labelElement ? document.getElementById(labelElement.htmlFor) : null;
+    if (!(field instanceof HTMLInputElement || field instanceof HTMLTextAreaElement)) {
+      throw new Error(`Missing field: ${label}`);
+    }
+    const prototype = Object.getPrototypeOf(field) as HTMLInputElement | HTMLTextAreaElement;
+    Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(field, value);
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+
+// The launch starts a run on the remote at once, with that machine's own providers.
+it("starts on another machine only with a first instruction and a provider enabled there", async () => {
+  const remoteId = ProjectId.make("remote-repository");
+  const offlineId = ProjectId.make("offline-repository");
+  const remoteProject = {
+    id: remoteId,
+    environmentId: EnvironmentId.make("laptop"),
+    workspaceRoot: "/laptop/repos/remote",
+  };
+  // Only the remote offers this model, so a selection of it comes from the remote's list.
+  const remoteProvider: ServerProvider = {
+    ...provider,
+    models: [{ ...provider.models[0]!, slug: "gpt-remote", name: "GPT Remote" }],
+  };
+  const remoteRepository = (providers: ReadonlyArray<ServerProvider>) => [
+    {
+      id: remoteId,
+      title: "Remote · Laptop",
+      project: remoteProject,
+      providers,
+      unavailableReason: null,
+    },
+    {
+      id: offlineId,
+      title: "Offline · Desktop",
+      project: null,
+      providers: [],
+      unavailableReason: "Desktop is not connected",
+    },
+  ];
+  const remoteOnly = { ...ticket, repositoryProjectIds: [remoteId, offlineId] };
+  const remoteLink = (environmentLabel: string, projectTitle: string) => ({
+    environmentId: EnvironmentId.make(environmentLabel.toLowerCase()),
+    environmentLabel,
+    projectTitle,
+  });
+  const board = {
+    remoteProjects: {
+      [remoteId]: remoteLink("Laptop", "Remote"),
+      [offlineId]: remoteLink("Desktop", "Offline"),
+    },
+  };
+
+  await render({ savedTicket: remoteOnly, board, remoteRepositories: remoteRepository([]) });
+  expect(repositoryTrigger().textContent).toBe("Remote · Laptop");
+  await openRepositoryMenu();
+  expect(menuItem("menuitemradio", "Offline · Desktop").getAttribute("aria-disabled")).toBe("true");
+  await typeInto("First instruction", "Fix the parser.");
+  await typeInto("Base branch", "main");
+  // The host's provider cannot run a Thread on the remote.
+  expect(button("Start Thread").disabled).toBe(true);
+
+  await render({
+    savedTicket: remoteOnly,
+    board,
+    remoteRepositories: remoteRepository([remoteProvider]),
+  });
+  await typeInto("First instruction", "");
+  expect(button("Start Thread").disabled).toBe(true);
+  await typeInto("First instruction", "Fix the parser.");
+  await act(async () => button("Start Thread").click());
+  expect(onStart).toHaveBeenCalledWith({
+    modelSelection: { instanceId: remoteProvider.instanceId, model: "gpt-remote" },
+    remote: {
+      project: remoteProject,
+      baseRef: "main",
+      branch: expect.stringMatching(/^ship-a-change-[0-9a-f]{6}$/),
+      startFromOrigin: false,
+      instruction: "Fix the parser.",
+    },
+  });
+});
+
+// A relaunch reuses its Thread id on the remote; a host start would add a second Thread.
+it("never relaunches a Thread on the host when its remote repository is gone", async () => {
+  await render({ retry: { projectId: ProjectId.make("removed-remote-repository") } });
+  await typeInto("First instruction", "Fix the parser.");
+  expect(document.querySelector('[role="alert"]')?.textContent).toBe(
+    "This repository is no longer on the Ticket's Board.",
+  );
+  expect(button("Start Thread").disabled).toBe(true);
 });
 
 it("shows why a Ticket repository failed to prepare", async () => {

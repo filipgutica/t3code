@@ -24,10 +24,12 @@ import {
 } from "./WorkbenchFloatingChat";
 import {
   getWorkbenchBoardChatThreads,
+  getWorkbenchOfflineChatThreads,
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
 } from "./workbenchFloatingChat.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { useWorkbenchRemoteRefs } from "./WorkbenchRemoteRefs";
 import { getTicketDraftCreateState } from "./WorkbenchTicketDraftPanel";
 import {
   useTicketDraftBegin,
@@ -186,10 +188,16 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   };
   const flushDraft = async () => (await editorRef.current?.flush())?.ok !== false;
   const pick = useWorkbenchFloatingChatStore((state) => state.pickedThreads[pageChatKey] ?? null);
+  const threadEnvironmentId = (threadId: ThreadId) =>
+    (props.threadsById.get(threadId) ?? props.archivedThreadsById.get(threadId))?.environmentId ??
+    environmentId;
   const setExplicitThreadId = (threadId: ThreadId | null) =>
     useWorkbenchFloatingChatStore
       .getState()
-      .pickThread(pageChatKey, threadId === null ? null : scopeThreadRef(environmentId, threadId));
+      .pickThread(
+        pageChatKey,
+        threadId === null ? null : scopeThreadRef(threadEnvironmentId(threadId), threadId),
+      );
   const showThread = (threadId: ThreadId) => {
     setExplicitThreadId(threadId);
     useWorkbenchFloatingChatStore.getState().expand(threadId);
@@ -219,6 +227,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     discarded,
   } = useBoardDraftRequest({ props, showThread, selectThread: setExplicitThreadId });
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
+  const remoteRefs = useWorkbenchRemoteRefs();
   const threads = getWorkbenchBoardChatThreads({
     projectId,
     tickets: props.tickets,
@@ -226,6 +235,10 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
     drafts,
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,
+    offlineThreads: getWorkbenchOfflineChatThreads({
+      assignments: props.assignments,
+      remoteRefs,
+    }),
     recaps: useWorkbenchThreadRecaps(environmentId),
     referencesByTicket: props.referencesByTicket,
     localVisits,
@@ -237,7 +250,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   });
   const chat = { ...resolvedChat, selected: startingDraft ? null : resolvedChat.selected };
   useRefreshOnThreadActivity(
-    chat.selected ? scopeThreadRef(environmentId, chat.selected.threadId) : null,
+    chat.selected ? scopeThreadRef(chat.selected.environmentId, chat.selected.threadId) : null,
     props.refreshSnapshot,
   );
   const canBeginDraft = useAtomValue(
@@ -278,7 +291,6 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   );
   return (
     <WorkbenchFloatingChat
-      environmentId={environmentId}
       kind="board"
       label={workspace.title}
       chat={chat}

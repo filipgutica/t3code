@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
+  EnvironmentId,
   ThreadId,
   WorkbenchAssignment,
   WorkbenchProjectId,
@@ -8,7 +9,9 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { getAssignmentsForTicket, isWorkbenchHostAssignment } from "./workbench.logic";
+import type { WorkbenchRemoteRefs } from "./WorkbenchRemoteRefs";
+import { getAssignmentsForTicket, getWorkbenchThreadLookupState } from "./workbench.logic";
+import { getWorkbenchAssignmentMachineLabel } from "./workbenchRemote.logic";
 import {
   getTicketIssue,
   getTicketReferences,
@@ -30,6 +33,10 @@ export interface WorkbenchFloatingChatTicket {
 
 export interface WorkbenchFloatingChatThread {
   readonly threadId: ThreadId;
+  /** The machine that runs the Thread, which may be another one than the Board host. */
+  readonly environmentId: EnvironmentId;
+  /** On a machine this client cannot reach: its status is unknown and it has no conversation. */
+  readonly offline?: boolean;
   readonly title: string;
   readonly status: WorkbenchThreadExecutionStatus | null;
   /** A finished reply the user has not opened. */
@@ -50,6 +57,121 @@ const getWorkbenchFloatingChatTicketLabel = (ticket: WorkbenchFloatingChatTicket
 export const getWorkbenchFloatingChatThreadLabel = (thread: WorkbenchFloatingChatThread) =>
   thread.ticket ? `${thread.ticket.key ?? thread.ticket.title} · ${thread.title}` : thread.title;
 
+/** A Thread on a machine this client cannot reach, which the chat lists without a conversation. */
+interface WorkbenchOfflineChatThread {
+  readonly environmentId: EnvironmentId;
+  readonly machineLabel: string;
+}
+
+/** Current Assignments whose Thread runs on a machine this client cannot reach, by Thread. */
+export const getWorkbenchOfflineChatThreads = ({
+  assignments,
+  remoteRefs,
+}: {
+  readonly assignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly remoteRefs: WorkbenchRemoteRefs;
+}): ReadonlyMap<ThreadId, WorkbenchOfflineChatThread> =>
+  new Map(
+    assignments.flatMap((assignment) => {
+      const { environmentId } = assignment;
+      if (
+        environmentId === undefined ||
+        assignment.supersededAt !== null ||
+        getWorkbenchThreadLookupState({
+          assignment,
+          // Only the host's lookup reads this; a remote Assignment uses its machine's state.
+          threadLookupReady: true,
+          remoteEnvironmentStates: remoteRefs.environmentStates,
+        }) !== "offline"
+      )
+        return [];
+      const machineLabel = getWorkbenchAssignmentMachineLabel({
+        assignment,
+        repositories: remoteRefs.repositories,
+        environmentLabels: remoteRefs.environmentLabels,
+      });
+      return [[assignment.threadId, { environmentId, machineLabel }] as const];
+    }),
+  );
+
+const offlineChatThread = (
+  threadId: ThreadId,
+  { environmentId, machineLabel }: WorkbenchOfflineChatThread,
+  ticket: WorkbenchFloatingChatTicket,
+): WorkbenchFloatingChatThread => ({
+  threadId,
+  environmentId,
+  offline: true,
+  title: `Thread on ${machineLabel}`,
+  status: null,
+  unread: false,
+  ticket,
+  recap: null,
+  settledAt: null,
+});
+
+const chatThread = ({
+  threadId,
+  thread,
+  ticket,
+  recaps,
+  localVisits,
+}: {
+  readonly threadId: ThreadId;
+  readonly thread: EnvironmentThreadShell;
+  readonly ticket: WorkbenchFloatingChatTicket | null;
+  readonly recaps: ReadonlyMap<ThreadId, string>;
+  readonly localVisits: Readonly<Record<string, string>>;
+}): WorkbenchFloatingChatThread => ({
+  threadId,
+  environmentId: thread.environmentId,
+  title: thread.title,
+  status: getWorkbenchThreadExecutionStatus(thread),
+  unread: hasWorkbenchUnreadReply(thread, localVisits),
+  ticket,
+  recap: recaps.get(threadId) ?? null,
+  settledAt: thread.settledAt ?? null,
+});
+
+/** A Ticket's Threads; those on unreachable machines follow the rest, so none is the default. */
+export const getWorkbenchTicketChatThreads = ({
+  ticket,
+  activeAssignments,
+  settledAssignments,
+  threadsById,
+  archivedThreadsById,
+  offlineThreads,
+  recaps,
+  localVisits,
+}: {
+  readonly ticket: WorkbenchFloatingChatTicket;
+  readonly activeAssignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly settledAssignments: ReadonlyArray<WorkbenchAssignment>;
+  readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly offlineThreads: ReadonlyMap<ThreadId, WorkbenchOfflineChatThread>;
+  readonly recaps: ReadonlyMap<ThreadId, string>;
+  readonly localVisits: Readonly<Record<string, string>>;
+}) => {
+  const from = (
+    assignments: ReadonlyArray<WorkbenchAssignment>,
+    threads: ReadonlyMap<ThreadId, EnvironmentThreadShell>,
+  ) =>
+    assignments.flatMap(({ threadId }) => {
+      const thread = threads.get(threadId);
+      return thread ? [chatThread({ threadId, thread, ticket, recaps, localVisits })] : [];
+    });
+  const offline = activeAssignments.flatMap(({ threadId }) => {
+    const machine = offlineThreads.get(threadId);
+    return machine ? [offlineChatThread(threadId, machine, ticket)] : [];
+  });
+  return {
+    active: [...from(activeAssignments, threadsById), ...offline],
+    archived: from(activeAssignments, archivedThreadsById),
+    settled: from(settledAssignments, threadsById),
+  };
+};
+
 export const getWorkbenchBoardChatThreads = ({
   projectId,
   tickets,
@@ -57,6 +179,7 @@ export const getWorkbenchBoardChatThreads = ({
   drafts,
   threadsById,
   archivedThreadsById,
+  offlineThreads,
   recaps,
   referencesByTicket,
   localVisits,
@@ -68,6 +191,7 @@ export const getWorkbenchBoardChatThreads = ({
   readonly drafts: ReadonlyArray<WorkbenchTicketDraft>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  readonly offlineThreads: ReadonlyMap<ThreadId, WorkbenchOfflineChatThread>;
   readonly recaps: ReadonlyMap<ThreadId, string>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly localVisits: Readonly<Record<string, string>>;
@@ -77,7 +201,13 @@ export const getWorkbenchBoardChatThreads = ({
   const active: WorkbenchFloatingChatThread[] = [];
   const settled: WorkbenchFloatingChatThread[] = [];
   const archived: WorkbenchFloatingChatThread[] = [];
+  const offline: WorkbenchFloatingChatThread[] = [];
   const seen = new Set<ThreadId>();
+  const chatTicket = (ticket: WorkbenchTicket): WorkbenchFloatingChatTicket => ({
+    id: ticket.id,
+    key: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id))?.label ?? null,
+    title: ticket.title,
+  });
   const addThread = (
     threadId: ThreadId,
     ticket: WorkbenchTicket | undefined,
@@ -86,26 +216,28 @@ export const getWorkbenchBoardChatThreads = ({
     if (seen.has(threadId)) return;
     const live = threadsById.get(threadId);
     const thread = live ?? archivedThreadsById.get(threadId);
-    if (!thread) return;
+    const machine = offlineThreads.get(threadId);
+    if (!thread) {
+      if (machine && ticket) {
+        seen.add(threadId);
+        offline.push(offlineChatThread(threadId, machine, chatTicket(ticket)));
+      }
+      return;
+    }
     seen.add(threadId);
     const entry: WorkbenchFloatingChatThread = {
-      threadId,
+      ...chatThread({
+        threadId,
+        thread,
+        ticket: ticket ? chatTicket(ticket) : null,
+        recaps,
+        localVisits,
+      }),
       title: title(thread),
       planning: drafts.some(
         (draft) =>
           draft.threadId === threadId && (draft.phase === "planning" || draft.phase === "starting"),
       ),
-      status: getWorkbenchThreadExecutionStatus(thread),
-      unread: hasWorkbenchUnreadReply(thread, localVisits),
-      ticket: ticket
-        ? {
-            id: ticket.id,
-            key: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id))?.label ?? null,
-            title: ticket.title,
-          }
-        : null,
-      recap: recaps.get(threadId) ?? null,
-      settledAt: thread.settledAt ?? null,
     };
     if (!live) archived.push(entry);
     else if (thread.settledOverride === "settled") settled.push(entry);
@@ -121,16 +253,15 @@ export const getWorkbenchBoardChatThreads = ({
       ticket ? undefined : (thread) => getConversationDraftTitle(draft, thread.title),
     );
   }
-  const hostAssignments = assignments.filter(isWorkbenchHostAssignment);
   for (const ticket of boardTickets) {
-    for (const assignment of getAssignmentsForTicket(hostAssignments, ticket.id)) {
+    for (const assignment of getAssignmentsForTicket(assignments, ticket.id)) {
       const thread =
         threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
       if (assignment.supersededAt !== null && thread?.settledOverride !== "settled") continue;
       addThread(assignment.threadId, ticket);
     }
   }
-  return { active, settled, archived };
+  return { active: [...active, ...offline], settled, archived };
 };
 
 export const WORKBENCH_ATTENTION_KINDS: ReadonlySet<WorkbenchThreadExecutionStatus["kind"]> =
@@ -189,10 +320,10 @@ export function resolveWorkbenchFloatingChat({
   };
 }
 
-type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status" | "unread"> & {
-  /** On a machine this client cannot reach, so its status is unknown rather than idle. */
-  readonly offline?: boolean;
-};
+type WorkbenchStatusThread = Pick<
+  WorkbenchFloatingChatThread,
+  "threadId" | "status" | "unread" | "offline"
+>;
 
 type WorkbenchThreadSectionId = "unread" | "idle" | "working" | "offline" | "settled";
 

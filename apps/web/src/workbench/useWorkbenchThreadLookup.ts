@@ -14,7 +14,7 @@ import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
 import { useWorkbenchThreadShells } from "./useWorkbenchThreadShells";
 import {
   getActiveAssignmentsByTicket,
-  getWorkbenchThreadsById,
+  getWorkbenchStartedThreadsById,
   type WorkbenchThreadLookupState,
 } from "./workbench.logic";
 
@@ -73,12 +73,12 @@ export function useWorkbenchThreadLookup({
     refreshHostArchivedThreads();
     remoteArchived.refresh();
   };
-  const threadsById = getWorkbenchThreadsById({
+  const threadsById = getWorkbenchStartedThreadsById({
     hostEnvironmentId: environmentId,
     assignments,
     threads: threadShells,
   });
-  const archivedThreadsById = getWorkbenchThreadsById({
+  const archivedThreadsById = getWorkbenchStartedThreadsById({
     hostEnvironmentId: environmentId,
     assignments,
     threads: [...archivedSnapshots, ...remoteArchived.snapshots].flatMap(

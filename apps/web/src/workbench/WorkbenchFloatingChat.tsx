@@ -93,7 +93,6 @@ const CHAT_COPY = {
 type ChatCopy = (typeof CHAT_COPY)[WorkbenchFloatingChatKind];
 
 export interface WorkbenchFloatingChatProps {
-  readonly environmentId: EnvironmentId;
   readonly kind: WorkbenchFloatingChatKind;
   /** Names the panel for assistive technology, such as the ticket key. */
   readonly label: string;
@@ -250,8 +249,29 @@ interface FloatingChatThreadDetails {
   readonly handle: ReturnType<typeof PopoverCreateHandle>;
 }
 
+/** A Thread on a machine that is not connected has no conversation to show or composer to send from. */
+function FloatingChatOffline({
+  thread,
+  hidden,
+}: {
+  readonly thread: WorkbenchFloatingChatThread;
+  readonly hidden: boolean;
+}) {
+  return (
+    <div
+      role="region"
+      aria-label={thread.title}
+      className={cn("flex flex-col items-start gap-1 p-4", hidden && "hidden")}
+    >
+      <p className="text-xs font-medium">Offline</p>
+      <p className="text-xs text-muted-foreground">
+        Its machine is not connected. Reconnect it to chat with this Thread.
+      </p>
+    </div>
+  );
+}
+
 function FloatingChatThread({
-  environmentId,
   thread,
   hidden,
   composerFocusRequest,
@@ -260,7 +280,6 @@ function FloatingChatThread({
   onOpenThread,
   planning,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly thread: WorkbenchFloatingChatThread;
   readonly hidden: boolean;
   readonly composerFocusRequest: number | null;
@@ -281,7 +300,7 @@ function FloatingChatThread({
       <ComposerHandleContext value={composerHandle}>
         <ChatView
           key={thread.threadId}
-          environmentId={environmentId}
+          environmentId={thread.environmentId}
           threadId={thread.threadId}
           routeKind="server"
           hideHeader
@@ -336,15 +355,7 @@ function FloatingChatBody({
   readonly threadDetails: FloatingChatThreadDetails;
   readonly onExpand: () => void;
 }) {
-  const {
-    environmentId,
-    label,
-    draftStart,
-    onOpenThread,
-    onNewThread,
-    newThreadDisabled,
-    planning,
-  } = chatProps;
+  const { label, draftStart, onOpenThread, onNewThread, newThreadDisabled, planning } = chatProps;
   if (draftStart) return <div hidden={!expanded}>{draftStart}</div>;
   if (selected === null) {
     return (
@@ -359,10 +370,13 @@ function FloatingChatBody({
   }
   return (
     <>
-      {expanded ? null : <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />}
-      {mounted ? (
+      {expanded || selected.offline ? null : (
+        <FloatingChatPlaceholder title={selected.title} onExpand={onExpand} />
+      )}
+      {selected.offline ? (
+        <FloatingChatOffline thread={selected} hidden={!expanded} />
+      ) : mounted ? (
         <FloatingChatThread
-          environmentId={environmentId}
           thread={selected}
           hidden={!expanded}
           composerFocusRequest={composerFocusRequest}
@@ -605,18 +619,20 @@ function FloatingChatThreadMenu({
  * hides the chat behind its launcher.
  */
 function useFloatingChatLayout(
-  environmentId: EnvironmentId,
-  threadId: ThreadId | null,
+  thread: Pick<WorkbenchFloatingChatThread, "environmentId" | "threadId"> | null,
   mode: WorkbenchFloatingChatMode,
   /** The page shows the Thread's terminal and toggles, which the mounted conversation renders. */
   keepMounted: boolean,
   hasDraftStart: boolean,
 ) {
-  const threadRef = threadId === null ? null : scopeThreadRef(environmentId, threadId);
+  const environmentId = thread?.environmentId ?? null;
+  const threadId = thread?.threadId ?? null;
+  const threadRef =
+    environmentId === null || threadId === null ? null : scopeThreadRef(environmentId, threadId);
   const { open, maximized } = useWorkbenchThreadPanel(threadRef);
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- publishes the showing Thread to the page's pull request opener and clears it when the chat leaves
   useEffect(() => {
-    if (threadId === null) return;
+    if (environmentId === null || threadId === null) return;
     const { setShownThread } = useWorkbenchFloatingChatStore.getState();
     setShownThread(scopeThreadRef(environmentId, threadId));
     return () => setShownThread(null);
@@ -705,7 +721,6 @@ function FloatingChatHeader({
         <span className="min-w-0 flex-1 truncate ps-2 text-xs font-medium">{copy.title}</span>
       ) : (
         <WorkbenchFloatingChatPicker
-          environmentId={chatProps.environmentId}
           chat={chat}
           grouped={chatProps.kind === "board"}
           title={copy.title}
@@ -726,16 +741,18 @@ function FloatingChatHeader({
       {selected === null ? null : (
         <>
           <FloatingChatSettleAction
-            environmentId={chatProps.environmentId}
+            environmentId={selected.environmentId}
             threadId={selected.threadId}
           />
-          <FloatingChatThreadMenu
-            environmentId={chatProps.environmentId}
-            threadId={selected.threadId}
-            // The hidden conversation measures 0px, which would strip the details card.
-            detailsAvailable={expanded}
-            onOpenThread={() => onOpenThread(selected.threadId)}
-          />
+          {selected.offline ? null : (
+            <FloatingChatThreadMenu
+              environmentId={selected.environmentId}
+              threadId={selected.threadId}
+              // The hidden conversation measures 0px, which would strip the details card.
+              detailsAvailable={expanded}
+              onOpenThread={() => onOpenThread(selected.threadId)}
+            />
+          )}
           <Separator orientation="vertical" className="h-4 mx-1" />
         </>
       )}
@@ -752,17 +769,12 @@ function FloatingChatHeader({
  * layout cleanup, which runs after the Ticket chat's first render but before its layout effect, so
  * the Ticket chat shows nothing until then and never mounts, or marks read, the wrong Thread.
  */
-function useBoardTicketHandoff({
-  kind,
-  environmentId,
-  chat,
-  onSelectThread,
-}: WorkbenchFloatingChatProps) {
+function useBoardTicketHandoff({ kind, chat, onSelectThread }: WorkbenchFloatingChatProps) {
   const [ready, setReady] = useState(kind === "board");
   const recordBoardThread = useStableCallback(() => {
-    const threadId = chat.selected?.threadId ?? null;
+    const { selected } = chat;
     useWorkbenchFloatingChatStore.getState().setBoardHandoff({
-      thread: threadId === null ? null : scopeThreadRef(environmentId, threadId),
+      thread: selected === null ? null : scopeThreadRef(selected.environmentId, selected.threadId),
     });
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- records the Board chat's Thread as it unmounts, for the Ticket chat that replaces it
@@ -779,9 +791,11 @@ function useBoardTicketHandoff({
       setBoardHandoff(null);
       const { thread } = boardHandoff;
       if (
-        thread?.environmentId === environmentId &&
+        thread &&
         [...chat.active, ...chat.settled].some(
-          (candidate) => candidate.threadId === thread.threadId,
+          (candidate) =>
+            candidate.environmentId === thread.environmentId &&
+            candidate.threadId === thread.threadId,
         )
       )
         onSelectThread(thread.threadId);
@@ -789,7 +803,7 @@ function useBoardTicketHandoff({
     }
     // oxlint-disable-next-line react/set-state-in-effect -- the Board's handoff exists only after this chat's first commit
     setReady(true);
-  }, [ready, environmentId, chat.active, chat.settled, onSelectThread]);
+  }, [ready, chat.active, chat.settled, onSelectThread]);
   return ready;
 }
 
@@ -803,7 +817,7 @@ const isBoardPlanningThread = ({ kind, chat, planning }: WorkbenchFloatingChatPr
   planning?.threadIds.has(chat.selected.threadId) === true;
 
 function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
-  const { environmentId, label, chat } = props;
+  const { label, chat } = props;
   const copy = CHAT_COPY[props.kind];
   const { mode, focusRequest, expand, collapse } = useWorkbenchFloatingChatStore();
 
@@ -824,8 +838,7 @@ function FloatingChatPanel(props: WorkbenchFloatingChatProps) {
     ? { ...pageHosts, terminalHost: null, controlsHost: null }
     : pageHosts;
   const { expanded, mounted, maximized, closeSheet } = useFloatingChatLayout(
-    environmentId,
-    selectedThreadId,
+    selected,
     mode,
     hosts.controlsHost !== null || boardDraftShown,
     Boolean(props.draftStart),

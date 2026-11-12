@@ -13,6 +13,7 @@ import {
   getWorkbenchContextForThread,
   getWorkbenchThreadLookupState,
   getWorkbenchReachableThreads,
+  getWorkbenchStartedThreadsById,
   getWorkbenchThreadsById,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
@@ -164,6 +165,13 @@ describe("Workbench ticket helpers", () => {
       offline,
     );
     expect(getWorkbenchThreadPresentation(true, false, null, true, "offline")).toEqual(offline);
+    // A Thread on another machine that never launched there is not deleted either.
+    expect(getWorkbenchThreadPresentation(true, false, null, false, "ready", true)).toEqual({
+      actionLabel: "Retry",
+      pendingActionLabel: "Retrying…",
+      stateLabel: "Not started",
+      state: "not-started",
+    });
   });
 
   it("starts a replacement only once the Thread's own environment confirms it is gone", () => {
@@ -177,8 +185,9 @@ describe("Workbench ticket helpers", () => {
     expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "checking")).toEqual({
       state: "thread-status-unavailable",
     });
+    // A ready machine without the Thread never ran its launch; Retry relaunches it there.
     expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "ready")).toEqual({
-      state: "start",
+      state: "not-started",
     });
     expect(
       resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set([threadId]), "offline"),
@@ -227,6 +236,26 @@ describe("Workbench ticket helpers", () => {
         threads: [host, remote, unassignedRemote, hostIdElsewhere, remoteIdOnHost],
       }).values(),
     ]).toEqual([host, remote]);
+
+    // A remote launch can stop after creating its Thread; without a run it has not started.
+    const withRun = <T extends object>(value: T, latestRun: { runId: string } | null) => ({
+      ...value,
+      latestRun,
+    });
+    const halfLaunched = withRun(remote, null);
+    const launched = withRun(thread("launched", remoteEnvironmentId), { runId: "run-one" });
+    const emptyHost = withRun(host, null);
+    expect([
+      ...getWorkbenchStartedThreadsById({
+        hostEnvironmentId,
+        assignments: [
+          { threadId: halfLaunched.id, environmentId: remoteEnvironmentId },
+          { threadId: launched.id, environmentId: remoteEnvironmentId },
+          { threadId: emptyHost.id },
+        ],
+        threads: [halfLaunched, launched, emptyHost],
+      }).values(),
+    ]).toEqual([launched, emptyHost]);
 
     // A cached shell from a machine whose shells are not live would show a stale status.
     const offlineRemote = thread("offline-remote", EnvironmentId.make("offline-machine"));
@@ -571,6 +600,7 @@ describe("Workbench ticket helpers", () => {
     expect(
       getVisibleWorkbenchAssignments([offlineRemote], new Set(), new Set(), true, new Map()),
     ).toEqual([offlineRemote]);
+    // So does one its ready machine lacks, which shows Not started with Retry and Remove.
     expect(
       getVisibleWorkbenchAssignments(
         [offlineRemote],
@@ -579,7 +609,7 @@ describe("Workbench ticket helpers", () => {
         true,
         new Map([[remoteEnvironmentId, "ready"]]),
       ),
-    ).toEqual([]);
+    ).toEqual([offlineRemote]);
   });
 
   it("reads assigned Threads only when the shell left them out as older settled", () => {

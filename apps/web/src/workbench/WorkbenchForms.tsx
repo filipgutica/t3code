@@ -143,6 +143,7 @@ import {
   type WorkbenchBoardProjectOption,
 } from "./workbenchRemote.logic";
 import {
+  getWorkbenchAssignmentThreadPresentation,
   getWorkbenchThreadLookupState,
   getWorkbenchThreadPresentation,
   type WorkbenchThreadLookupState,
@@ -150,7 +151,6 @@ import {
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketThreadSections,
-  isWorkbenchHostAssignment,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_STATUS_LABELS,
   WORKBENCH_TICKET_TEMPLATE,
@@ -736,7 +736,6 @@ function WorkbenchTicketDetailController({
     settledAssignments,
     associatedPullRequests,
     assignment,
-    chatAssignments,
   } = getWorkbenchDetailAssignments({
     assignments,
     threadsById,
@@ -827,9 +826,7 @@ function WorkbenchTicketDetailController({
       pageChat?.kind === "ticket" &&
       pageChat.ticketId === ticket.id &&
       threadsById.has(threadId) &&
-      [...chatAssignments.active, ...chatAssignments.settled].some(
-        (entry) => entry.threadId === threadId,
-      );
+      [...activeAssignments, ...settledAssignments].some((entry) => entry.threadId === threadId);
     if (inChat) pageChat.showThread(threadId);
     return inChat;
   };
@@ -1198,9 +1195,9 @@ function WorkbenchTicketDetailController({
         environmentId={environmentId}
         ticket={actionableTicket}
         ticketKey={getTicketIssue(references)?.label}
-        activeAssignments={chatAssignments.active}
-        settledAssignments={chatAssignments.settled}
-        primaryAssignment={chatAssignments.primary}
+        activeAssignments={activeAssignments}
+        settledAssignments={settledAssignments}
+        primaryAssignment={assignment}
         threadsById={threadsById}
         archivedThreadsById={archivedThreadsById}
         onOpenThread={onOpenAssignedThread}
@@ -2147,13 +2144,27 @@ function WorkbenchTicketThreadsPanel({
     historicalAssignments,
   } = records;
   const [sectionToggles, setSectionToggles] = useState<ReadonlyMap<string, boolean>>(new Map());
-  const { environmentStates: remoteEnvironmentStates } = useWorkbenchRemoteRefs();
+  const remoteRefs = useWorkbenchRemoteRefs();
   const isOffline = (rowAssignment: WorkbenchAssignment) =>
     getWorkbenchThreadLookupState({
       assignment: rowAssignment,
       threadLookupReady,
-      remoteEnvironmentStates,
+      remoteEnvironmentStates: remoteRefs.environmentStates,
     }) === "offline";
+  // Their first message carried the brief; later Ticket changes reach only this machine's Threads.
+  const remoteMachines = [
+    ...new Set(
+      activeAssignments
+        .filter((activeAssignment) => activeAssignment.environmentId !== undefined)
+        .map((activeAssignment) =>
+          getWorkbenchAssignmentMachineLabel({
+            assignment: activeAssignment,
+            repositories: remoteRefs.repositories,
+            environmentLabels: remoteRefs.environmentLabels,
+          }),
+        ),
+    ),
+  ];
   // Offline Threads are still open; they are listed under Offline.
   const openThreadCount = new Set(
     activeAssignments
@@ -2319,6 +2330,12 @@ function WorkbenchTicketThreadsPanel({
               </WorkbenchTicketThreadSection>
             );
           })}
+          {!planningRow && remoteMachines.length > 0 ? (
+            <p className="px-4 pb-2 text-xs text-muted-foreground">
+              Context updates are not sent to Threads on{" "}
+              {new Intl.ListFormat("en", { type: "conjunction" }).format(remoteMachines)}.
+            </p>
+          ) : null}
           {historicalAssignments.length > 0 ? (
             <WorkbenchTicketHistoricalThreads
               threadMutationsDisabled={threadMutationsDisabled}
@@ -3051,6 +3068,13 @@ function WorkbenchTicketPrimaryThread({
             settled={displayedThread.settledOverride === "settled"}
             title={displayedThread.title}
           />
+        ) : assignment && thread.state === "not-started" ? (
+          <WorkbenchNotStartedThreadActions
+            title={agentTitle}
+            disabled={pending || threadMutationsDisabled || isArchived}
+            onRetry={() => onOpenThread(actionableTicket, assignment.threadId)}
+            onRemove={() => onUnlinkThread(assignment.threadId)}
+          />
         ) : undefined
       }
     />
@@ -3301,22 +3325,14 @@ function WorkbenchTicketActiveThreadRow({
               title={displayedActiveThread.title}
             />
           ) : undefined
-        ) : threadLookupState === "ready" ? (
-          <Button
-            aria-label={`Create replacement Thread for ${ticket.title}`}
-            disabled={mutationDisabled}
-            onClick={() => onReplaceThread(ticket, activeAssignment.threadId)}
-            size="xs"
-            type="button"
-            variant="ghost"
-          >
-            Create replacement Thread
-          </Button>
         ) : (
-          <WorkbenchUnreachableThreadUnlink
+          <WorkbenchMissingThreadAction
+            ticket={ticket}
             assignment={activeAssignment}
-            label={`Unlink ${rowPresentation.title} from ${ticket.title}`}
+            threadLookupState={threadLookupState}
+            title={rowPresentation.title}
             disabled={mutationDisabled}
+            onReplaceThread={onReplaceThread}
             onUnlinkThread={onUnlinkThread}
           />
         )
@@ -3337,6 +3353,96 @@ function WorkbenchThreadRowMachineLabel({
   return (
     <span className="max-w-32 truncate">
       {getWorkbenchAssignmentMachineLabel({ assignment: thread, repositories, environmentLabels })}
+    </span>
+  );
+}
+
+/** The row action for an Assignment whose Thread its machine does not list. */
+function WorkbenchMissingThreadAction({
+  ticket,
+  assignment,
+  threadLookupState,
+  title,
+  disabled,
+  onReplaceThread,
+  onUnlinkThread,
+}: {
+  ticket: WorkbenchTicket;
+  assignment: WorkbenchAssignment;
+  threadLookupState: WorkbenchThreadLookupState;
+  title: string;
+  disabled: boolean;
+  onReplaceThread: WorkbenchTicketActiveThreadRowProps["onReplaceThread"];
+  onUnlinkThread: WorkbenchTicketActiveThreadRowProps["onUnlinkThread"];
+}) {
+  if (threadLookupState !== "ready") {
+    return (
+      <WorkbenchUnreachableThreadUnlink
+        assignment={assignment}
+        label={`Unlink ${title} from ${ticket.title}`}
+        disabled={disabled}
+        onUnlinkThread={onUnlinkThread}
+      />
+    );
+  }
+  if (assignment.environmentId !== undefined) {
+    return (
+      <WorkbenchNotStartedThreadActions
+        title={title}
+        disabled={disabled}
+        onRetry={() => onReplaceThread(ticket, assignment.threadId)}
+        onRemove={() => onUnlinkThread(assignment.threadId)}
+      />
+    );
+  }
+  return (
+    <Button
+      aria-label={`Create replacement Thread for ${ticket.title}`}
+      disabled={disabled}
+      onClick={() => onReplaceThread(ticket, assignment.threadId)}
+      size="xs"
+      type="button"
+      variant="ghost"
+    >
+      Create replacement Thread
+    </Button>
+  );
+}
+
+/** A Thread on another machine whose launch never reached it: start it again, or drop it. */
+function WorkbenchNotStartedThreadActions({
+  title,
+  disabled,
+  onRetry,
+  onRemove,
+}: {
+  title: string;
+  disabled: boolean;
+  onRetry: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <span className="flex shrink-0 items-center">
+      <Button
+        aria-label={`Retry ${title}`}
+        disabled={disabled}
+        onClick={onRetry}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        Retry
+      </Button>
+      <Button
+        aria-label={`Remove ${title}`}
+        disabled={disabled}
+        onClick={onRemove}
+        size="xs"
+        type="button"
+        variant="ghost"
+      >
+        Remove
+      </Button>
     </span>
   );
 }
@@ -3875,6 +3981,7 @@ function getWorkbenchActiveThreadRow({
     null,
     archivedActiveThread !== undefined,
     threadLookupState,
+    activeAssignment.environmentId !== undefined,
   ).stateLabel;
   const activeThreadModel = getWorkbenchThreadModelLabel(displayedActiveThread);
   const activeThreadRecency = displayedActiveThread
@@ -4030,12 +4137,6 @@ function getWorkbenchDetailAssignments({
     settledAssignments,
     associatedPullRequests,
     assignment,
-    // The floating chat talks to the Board host; a Thread on another machine opens on its own page.
-    chatAssignments: {
-      active: activeAssignments.filter(isWorkbenchHostAssignment),
-      settled: settledAssignments.filter(isWorkbenchHostAssignment),
-      primary: assignment && isWorkbenchHostAssignment(assignment) ? assignment : undefined,
-    },
   };
 }
 
@@ -4162,15 +4263,14 @@ function getWorkbenchDetailThread({
       : undefined;
   const displayedThread = nativeThread ?? archivedThread;
   const nativeStatus = nativeThread ? getWorkbenchThreadExecutionStatus(nativeThread) : null;
-  const thread = getWorkbenchThreadPresentation(
-    assignment !== undefined,
-    nativeThread !== undefined,
-    nativeStatus?.presentation.label ?? null,
-    archivedThread !== undefined,
-    assignment === undefined
-      ? "ready"
-      : getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }),
-  );
+  const thread = getWorkbenchAssignmentThreadPresentation({
+    assignment,
+    threadExists: nativeThread !== undefined,
+    nativeStateLabel: nativeStatus?.presentation.label ?? null,
+    archived: archivedThread !== undefined,
+    threadLookupReady,
+    remoteEnvironmentStates,
+  });
   return {
     nativeThread,
     archivedThread,
@@ -4282,7 +4382,10 @@ function useWorkbenchBoardRepositoryOptions(
   ];
 }
 
-/** The row title of an assigned Thread that is not loaded: deleted, unchecked, or out of reach. */
+/**
+ * The row title of an assigned Thread that is not loaded: deleted, unchecked, out of reach, or
+ * not started on its machine.
+ */
 function getWorkbenchMissingThreadTitle({
   assignment,
   threadLookupState,
@@ -4292,8 +4395,9 @@ function getWorkbenchMissingThreadTitle({
   threadLookupState: WorkbenchThreadLookupState;
   remoteRefs: ReturnType<typeof useWorkbenchRemoteRefs>;
 }) {
-  if (threadLookupState === "ready") return "Thread deleted";
-  if (assignment.environmentId === undefined) return "Checking Thread…";
+  if (assignment.environmentId === undefined) {
+    return threadLookupState === "ready" ? "Thread deleted" : "Checking Thread…";
+  }
   return `Thread on ${getWorkbenchAssignmentMachineLabel({
     assignment,
     repositories: remoteRefs.repositories,
@@ -4580,6 +4684,7 @@ function getWorkbenchAgentTitle({
 }) {
   if (displayedThread) return displayedThread.title;
   if (assignment && threadState === "checking") return "Checking Thread…";
-  if (assignment && threadState === "offline") return "Thread on another machine";
+  if (assignment && (threadState === "offline" || threadState === "not-started"))
+    return "Thread on another machine";
   return settledCount > 0 ? "No active Threads" : "No Threads yet";
 }

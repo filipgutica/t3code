@@ -18,6 +18,8 @@ import {
   getWorkbenchFloatingChatThreadLabel,
   getWorkbenchBoardChatThreads,
   getWorkbenchFloatingChatPickerRow,
+  getWorkbenchOfflineChatThreads,
+  getWorkbenchTicketChatThreads,
   getWorkbenchThreadStatusSections,
   resolveWorkbenchFloatingChat,
   type WorkbenchFloatingChatThread,
@@ -32,6 +34,7 @@ const thread = (
   extra: Partial<WorkbenchFloatingChatThread> = {},
 ): WorkbenchFloatingChatThread => ({
   threadId: ThreadId.make(id),
+  environmentId: EnvironmentId.make("local"),
   title: `Thread ${id}`,
   unread: false,
   ticket: null,
@@ -92,11 +95,11 @@ const assignmentFor = (threadId: string, ticketId = ticket.id): WorkbenchAssignm
   supersededAt: null,
   createdAt,
 });
-const liveThread = (id: string) =>
+const liveThread = (id: string, environmentId = EnvironmentId.make("local")) =>
   makeThreadFixture({
     id: ThreadId.make(id),
     projectId: repositoryId,
-    environmentId: EnvironmentId.make("local"),
+    environmentId,
     title: `Thread ${id}`,
   });
 const boardInput = () => ({
@@ -106,6 +109,7 @@ const boardInput = () => ({
   drafts: [],
   threadsById: new Map([liveThread("first"), liveThread("second")].map((t) => [t.id, t])),
   archivedThreadsById: new Map<ThreadId, ReturnType<typeof liveThread>>(),
+  offlineThreads: new Map(),
   recaps: new Map<ThreadId, string>(),
   localVisits: {},
   referencesByTicket: new Map([
@@ -253,6 +257,74 @@ describe("getWorkbenchBoardChatThreads", () => {
     expect(ids(result.active)).toEqual(["first", "second"]);
     expect(result.settled).toEqual([]);
     expect(result.archived).toEqual([]);
+  });
+
+  // Turns go to each Thread's own machine; one this client cannot reach shows Offline, never chat.
+  it("lists Threads on other machines, with unreachable ones last and offline", () => {
+    const laptop = EnvironmentId.make("laptop");
+    const desktop = EnvironmentId.make("desktop");
+    const remote = { ...assignmentFor("remote"), environmentId: laptop, projectId: repositoryId };
+    const away = { ...assignmentFor("away"), environmentId: desktop, projectId: repositoryId };
+    const input = boardInput();
+    const assignments = [...input.assignments, away, remote];
+    const threadsById = new Map(
+      [...input.threadsById.values(), liveThread("remote", laptop)].map((t) => [t.id, t]),
+    );
+    const offlineThreads = new Map([
+      [away.threadId, { environmentId: desktop, machineLabel: "Desktop" }],
+    ]);
+    const expectOnMachines = (active: ReadonlyArray<WorkbenchFloatingChatThread>) => {
+      expect(
+        active.map(({ threadId, environmentId, offline, title }) => ({
+          threadId,
+          environmentId,
+          offline,
+          title,
+        })),
+      ).toEqual([
+        expect.objectContaining({ threadId: "first", offline: undefined }),
+        expect.objectContaining({ threadId: "second", offline: undefined }),
+        {
+          threadId: "remote",
+          environmentId: laptop,
+          offline: undefined,
+          title: "Thread remote",
+        },
+        {
+          threadId: "away",
+          environmentId: desktop,
+          offline: true,
+          title: "Thread on Desktop",
+        },
+      ]);
+    };
+
+    expectOnMachines(
+      getWorkbenchBoardChatThreads({ ...input, assignments, threadsById, offlineThreads }).active,
+    );
+    expectOnMachines(
+      getWorkbenchTicketChatThreads({
+        ticket: { id: ticket.id, key: null, title: ticket.title },
+        activeAssignments: assignments,
+        settledAssignments: [],
+        threadsById,
+        archivedThreadsById: new Map(),
+        offlineThreads,
+        recaps: new Map(),
+        localVisits: {},
+      }).active,
+    );
+    // Only a machine this client cannot reach is offline; a ready one shows its live Threads.
+    expect(
+      getWorkbenchOfflineChatThreads({
+        assignments,
+        remoteRefs: {
+          repositories: new Map(),
+          environmentStates: new Map([[laptop, "ready"]]),
+          environmentLabels: new Map([[desktop, "Desktop"]]),
+        },
+      }),
+    ).toEqual(offlineThreads);
   });
 });
 

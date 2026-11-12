@@ -1,5 +1,5 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import type { ThreadId } from "@t3tools/contracts";
 import { ArchiveRestoreIcon, ChevronRightIcon, ChevronsUpDownIcon } from "lucide-react";
 import { useId, useRef, useState, type ReactNode } from "react";
 
@@ -42,14 +42,8 @@ type FloatingChat = ReturnType<typeof resolveWorkbenchFloatingChat>;
 // Fewer Threads than this fit without scrolling, so a filter would only add noise.
 const SEARCH_THRESHOLD = 8;
 
-function ThreadStatusIcon({
-  environmentId,
-  thread,
-}: {
-  readonly environmentId: EnvironmentId;
-  readonly thread: WorkbenchFloatingChatThread;
-}) {
-  const shell = useThreadShell(scopeThreadRef(environmentId, thread.threadId));
+function ThreadStatusIcon({ thread }: { readonly thread: WorkbenchFloatingChatThread }) {
+  const shell = useThreadShell(scopeThreadRef(thread.environmentId, thread.threadId));
   return (
     <span className="mt-0.5 flex size-3.5 shrink-0 text-muted-foreground">
       {thread.status ? (
@@ -62,12 +56,10 @@ function ThreadStatusIcon({
 }
 
 function PickerThreadItem({
-  environmentId,
   row: { thread, ticketLabel, title },
   selected,
   onSelect,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly row: WorkbenchFloatingChatPickerRow;
   readonly selected: boolean;
   readonly onSelect: (threadId: ThreadId) => void;
@@ -77,7 +69,7 @@ function PickerThreadItem({
   const name = [ticketLabel, title, status?.presentation.label].filter(Boolean).join(" ");
   return (
     <WorkbenchThreadHoverPreview
-      environmentId={environmentId}
+      environmentId={thread.environmentId}
       threadId={thread.threadId}
       title={thread.title}
     >
@@ -89,7 +81,7 @@ function PickerThreadItem({
         onClick={() => onSelect(thread.threadId)}
       >
         <span className="flex min-w-0 flex-1 items-start gap-2">
-          <ThreadStatusIcon environmentId={environmentId} thread={thread} />
+          <ThreadStatusIcon thread={thread} />
           <span className="flex min-w-0 flex-1 flex-col">
             <span className="flex min-w-0 items-baseline gap-1.5">
               {ticketLabel ? (
@@ -127,12 +119,10 @@ function PickerThreadItem({
 
 /** Archived Threads, restored on their own route when chosen. */
 function PickerArchived({
-  environmentId,
   threads,
   separated,
   onRestore,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly threads: ReadonlyArray<WorkbenchFloatingChatThread>;
   /** Other Threads are listed above, so a rule sets these apart. */
   readonly separated: boolean;
@@ -158,7 +148,7 @@ function PickerArchived({
           {threads.map((thread) => (
             <WorkbenchThreadHoverPreview
               key={thread.threadId}
-              environmentId={environmentId}
+              environmentId={thread.environmentId}
               threadId={thread.threadId}
               title={thread.title}
             >
@@ -181,16 +171,15 @@ function PickerArchived({
  * own label hides its content, so the PR and provider also go in a description.
  */
 function PickerTriggerThread({
-  environmentId,
   grouped,
   selected,
   descriptionId,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly grouped: boolean;
   readonly selected: WorkbenchFloatingChatThread;
   readonly descriptionId: string;
 }) {
+  const { environmentId } = selected;
   const data = useWorkbenchSidebarThreadRowData({
     thread: { environmentId },
     threadRef: scopeThreadRef(environmentId, selected.threadId),
@@ -247,13 +236,11 @@ function PickerTriggerThread({
 }
 
 function PickerTriggerContent({
-  environmentId,
   grouped,
   selected,
   title,
   descriptionId,
 }: {
-  readonly environmentId: EnvironmentId;
   /** The board's picker, whose trigger keeps the full title. */
   readonly grouped: boolean;
   readonly descriptionId: string;
@@ -265,12 +252,7 @@ function PickerTriggerContent({
       {selected === null ? (
         <span className="min-w-0 truncate text-xs font-medium">{title}</span>
       ) : (
-        <PickerTriggerThread
-          environmentId={environmentId}
-          grouped={grouped}
-          selected={selected}
-          descriptionId={descriptionId}
-        />
+        <PickerTriggerThread grouped={grouped} selected={selected} descriptionId={descriptionId} />
       )}
       <ChevronsUpDownIcon aria-hidden className="ms-auto size-3.5 shrink-0 text-muted-foreground" />
     </>
@@ -336,7 +318,6 @@ const getPickerSections = ({
 };
 
 function PickerThreadSections({
-  environmentId,
   sections,
   board,
   selectedThreadId,
@@ -345,7 +326,6 @@ function PickerThreadSections({
   onToggleGroup,
   onSelect,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly sections: ReadonlyArray<PickerSectionLayout>;
   /** Board rows name their ticket; the ticket chat's header already does. */
   readonly board: boolean;
@@ -373,7 +353,6 @@ function PickerThreadSections({
               ? section.threads.map((thread) => (
                   <PickerThreadItem
                     key={thread.threadId}
-                    environmentId={environmentId}
                     row={getWorkbenchFloatingChatPickerRow(thread, board)}
                     selected={thread.threadId === selectedThreadId}
                     onSelect={onSelect}
@@ -451,7 +430,6 @@ function usePickerSections(chat: FloatingChat, board: boolean) {
  * or ticket's Threads with their recaps. The pill opens it on the first Thread waiting on you.
  */
 export function WorkbenchFloatingChatPicker({
-  environmentId,
   chat,
   title,
   listLabel,
@@ -460,7 +438,6 @@ export function WorkbenchFloatingChatPicker({
   actions,
   grouped,
 }: {
-  readonly environmentId: EnvironmentId;
   readonly chat: FloatingChat;
   /** Shown in the trigger when no Thread is selected. */
   readonly title: string;
@@ -525,7 +502,6 @@ export function WorkbenchFloatingChatPicker({
           }
         >
           <PickerTriggerContent
-            environmentId={environmentId}
             grouped={grouped}
             selected={selected}
             title={title}
@@ -548,7 +524,6 @@ export function WorkbenchFloatingChatPicker({
               <MenuItem disabled>No Threads match</MenuItem>
             ) : null}
             <PickerThreadSections
-              environmentId={environmentId}
               sections={groups.sections}
               board={grouped}
               selectedThreadId={selected?.threadId ?? null}
@@ -559,7 +534,6 @@ export function WorkbenchFloatingChatPicker({
             />
           </div>
           <PickerArchived
-            environmentId={environmentId}
             threads={chat.archived}
             separated={threadCount > 0}
             onRestore={(threadId) => {

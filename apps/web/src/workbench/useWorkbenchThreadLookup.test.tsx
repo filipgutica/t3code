@@ -1,5 +1,6 @@
 import {
   EnvironmentId,
+  RunId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchTicketId,
@@ -128,7 +129,19 @@ it("reads a remote Thread from its own machine and reports that machine's state"
     ticketWorkspaces: [],
     reservedThreadIds: [],
   } satisfies WorkbenchSnapshot;
-  const remoteThread = makeThreadFixture({ id: remoteThreadId, environmentId: remote });
+  // A remote Thread counts once it has a run; one without is a launch that did not finish.
+  const remoteThread = makeThreadFixture({
+    id: remoteThreadId,
+    environmentId: remote,
+    latestRun: {
+      runId: RunId.make("remote-run"),
+      status: "completed",
+      requestedAt: null,
+      startedAt: null,
+      completedAt: null,
+      assistantMessageId: null,
+    },
+  });
   state.threads = [remoteThread, makeThreadFixture({ id: remoteThreadId, environmentId: host })];
   vi.mocked(useArchivedThreadSnapshots).mockImplementation((environmentIds) => ({
     snapshots: environmentIds.map((environmentId) => ({
