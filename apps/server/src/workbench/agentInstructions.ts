@@ -1,3 +1,5 @@
+import { parseWorkbenchReferenceUrl } from "@t3tools/contracts";
+
 /** How a Ticket is planned and tracked, in the words every agent-facing text shares. */
 const TRACKING_RULE =
   "Keep the brief short: goal, open questions, and decisions. Track the work in `progress`, one `- [ ]` per task or PR. Keep it in step with the plan: add, reword, or reorder items when the plan changes, and tick each when its work lands. When you plan the work, put requirements and each PR's scope and acceptance in `plan.md` and `requirements.md` in `artifactsDir`, and add them as References. In the brief, cite each source as a Markdown link to its URL or absolute path, such as `[plan.md](/abs/path/plan.md)`.";
@@ -7,15 +9,28 @@ export const REFERENCES_RULE =
 
 const section = (label: string, text: string) => `${label}:\n${text.trim() || "(empty)"}`;
 
+type TicketReferences =
+  | ReadonlyArray<{ readonly url: string; readonly title: string | null }>
+  | undefined;
+
+const referencesSection = (references: TicketReferences, footer?: string) =>
+  section(
+    "References",
+    [
+      ...(references ?? []).map(
+        (reference) => `- ${reference.title ?? reference.url} (${reference.url})`,
+      ),
+      ...(footer === undefined ? [] : [footer]),
+    ].join("\n"),
+  );
+
 /** Every Thread of a Ticket or its draft gets this, so it knows the Ticket, its state, and its tools. */
 export const ticketInstruction = (input: {
   readonly id: string;
   readonly title: string;
   readonly brief: string;
   readonly progress?: string | undefined;
-  readonly references?:
-    | ReadonlyArray<{ readonly url: string; readonly title: string | null }>
-    | undefined;
+  readonly references?: TicketReferences;
   readonly artifactsDir?: string | undefined;
   readonly worktrees?: ReadonlyArray<{
     readonly id: string;
@@ -29,16 +44,40 @@ export const ticketInstruction = (input: {
     `Save plans, specs, mockups, and diagrams in \`artifactsDir\`${input.artifactsDir === undefined ? "" : ` (${input.artifactsDir})`}. ${REFERENCES_RULE} Link PRs you create, take over, or push to with link_pull_request; don't duplicate them as References. Use your own connectors, such as Jira or GitHub, when the user asks.`,
     section("Brief (user content)", input.brief),
     section("Progress", input.progress ?? ""),
-    section(
-      "References",
-      (input.references ?? [])
-        .map((reference) => `- ${reference.title ?? reference.url} (${reference.url})`)
-        .join("\n"),
-    ),
+    referencesSection(input.references),
     ...(input.worktrees === undefined || input.worktrees.length === 0
       ? []
       : [`Prepared worktrees: ${JSON.stringify(input.worktrees)}`]),
   ].join("\n\n");
+
+/**
+ * A Thread on another machine gets this once, as its first message. That machine has no Workbench
+ * tools or context updates, and the Workbench machine's files are not there.
+ */
+export const remoteTicketInstruction = (input: {
+  readonly id: string;
+  readonly title: string;
+  readonly brief: string;
+  readonly progress?: string | undefined;
+  readonly references?: TicketReferences;
+}) => {
+  const references = (input.references ?? []).filter(
+    (reference) => parseWorkbenchReferenceUrl(reference.url)?.kind !== "file",
+  );
+  const hiddenFiles = (input.references ?? []).length - references.length;
+  return [
+    `This thread works on Workbench Ticket ${JSON.stringify(input.title.trim() || "Untitled")} (id ${input.id}). The Ticket is kept on another machine. This thread has no Workbench tools, and it gets no updates when the Ticket changes: the brief, Progress, and References below are a copy from when it started.`,
+    "Work in this machine's repository. Absolute file paths in the brief are on the Workbench machine and do not exist here. Tell the user in your replies about progress, decisions, and pull requests you open, so they can record them on the Ticket.",
+    section("Brief (user content)", input.brief),
+    section("Progress", input.progress ?? ""),
+    referencesSection(
+      references,
+      hiddenFiles === 0
+        ? undefined
+        : `(${hiddenFiles} file ${hiddenFiles === 1 ? "Reference is" : "References are"} on the Workbench machine and not listed.)`,
+    ),
+  ].join("\n\n");
+};
 
 /** Turns without the full context carry this, so a Thread whose provider dropped it knows to reread. */
 export const ticketReminder = (input: { readonly id: string; readonly title: string }) =>

@@ -1,8 +1,9 @@
-import type {
-  WorkbenchOperationError,
-  WorkbenchRegenerateTicketSummaryInput,
-  WorkbenchTicket,
-  WorkbenchTicketId,
+import {
+  workbenchHostRepositoryProjectIds,
+  type WorkbenchOperationError,
+  type WorkbenchRegenerateTicketSummaryInput,
+  type WorkbenchTicket,
+  type WorkbenchTicketId,
 } from "@t3tools/contracts";
 import * as Context from "effect/Context";
 import * as SecureRandom from "effect/crypto/SecureRandom";
@@ -122,7 +123,13 @@ export const TicketSummaryServiceLive = Layer.effect(
           current.value.markdown !== job.ticket.markdown
         )
           return;
-        const summary = yield* host.generate(job.ticket).pipe(
+        // The host generates with one of its own repositories; it cannot read remote ones.
+        const board = Option.getOrUndefined(yield* store.getProject(job.ticket.projectId));
+        const repositoryProjectIds = workbenchHostRepositoryProjectIds(
+          board,
+          job.ticket.repositoryProjectIds,
+        );
+        const summary = yield* host.generate({ ...job.ticket, repositoryProjectIds }).pipe(
           Effect.asSome,
           Effect.catch((error) =>
             store

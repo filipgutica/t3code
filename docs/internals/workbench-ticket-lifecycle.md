@@ -1,6 +1,6 @@
 # Ticket execution and workspace lifecycle
 
-A Workbench Ticket owns planning state and an ordered set of native T3 Project references, its repositories. Each Thread works in one of them, chosen when the Thread is created. A Ticket Workspace owns the Git worktrees prepared for those repositories. An Assignment links the Ticket to a native T3 Thread; Workbench does not copy the Thread or its provider session. These records share one server environment. See the [Workbench contracts](../../packages/contracts/src/workbench.ts) and [repository scope validation](../../packages/workbench/src/WorkbenchStore.ts).
+A Workbench Ticket owns planning state and an ordered set of native T3 Project references, its repositories. Each Thread works in one of them, chosen when the Thread is created. A Ticket Workspace owns the Git worktrees prepared for those repositories. An Assignment links the Ticket to a native T3 Thread; Workbench does not copy the Thread or its provider session. The Board's host environment stores these records. A repository and the Threads that work in it may live on another connected environment; the host prepares worktrees, plans, and runs its reactors only for its own repositories and Threads. See [Remote environments](workbench-data-model.md#remote-environments-v28). See the [Workbench contracts](../../packages/contracts/src/workbench.ts) and [repository scope validation](../../packages/workbench/src/WorkbenchStore.ts).
 
 ## Starting work
 

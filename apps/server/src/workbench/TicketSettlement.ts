@@ -20,7 +20,7 @@ import { WorkbenchStore } from "./WorkbenchStore.ts";
 type SettlementWorkbenchSnapshot = {
   readonly tickets: ReadonlyArray<Pick<WorkbenchTicket, "id" | "status" | "archivedAt">>;
   readonly assignments: ReadonlyArray<
-    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt" | "environmentId">
   >;
 };
 
@@ -44,10 +44,13 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
       .filter((ticket) => ticket.status === "done" && ticket.archivedAt == null)
       .map((ticket) => ticket.id),
   );
+  // A remote Assignment's ID names a Thread on another machine, never one of these.
+  const isHostAssignment = (assignment: SettlementWorkbenchSnapshot["assignments"][number]) =>
+    assignment.supersededAt === null && assignment.environmentId === undefined;
   const threadIds = new Set(
     assignments
       .filter(
-        (assignment) => assignment.supersededAt === null && doneTicketIds.has(assignment.ticketId),
+        (assignment) => isHostAssignment(assignment) && doneTicketIds.has(assignment.ticketId),
       )
       .map((assignment) => assignment.threadId),
   );
@@ -65,7 +68,7 @@ export const settleDoneTicketThreads = Effect.fn("Workbench.settleDoneTicketThre
     const currentAssignment = current.assignments.find(
       (assignment) =>
         assignment.threadId === thread.id &&
-        assignment.supersededAt === null &&
+        isHostAssignment(assignment) &&
         doneTicketIds.has(assignment.ticketId),
     );
     if (

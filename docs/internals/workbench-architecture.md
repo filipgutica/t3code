@@ -1,6 +1,6 @@
 # Workbench architecture
 
-Workbench is a planning layer inside a T3 Code environment. It owns Boards, Tickets, repository scope, Ticket worktrees, Assignments, and References. T3 Code remains the owner of Projects, Threads, provider execution, Git, and checkpoints. Workbench records refer to native Project and Thread IDs instead of copying those records. A Board belongs to one environment; boards that span environments are not part of this model.
+Workbench is a planning layer inside a T3 Code environment. It owns Boards, Tickets, repository scope, Ticket worktrees, Assignments, and References. T3 Code remains the owner of Projects, Threads, provider execution, Git, and checkpoints. Workbench records refer to native Project and Thread IDs instead of copying those records. A Board belongs to one host environment, which stores it and serves its Workbench requests. Its linked Projects, and the Threads assigned to its Tickets, may live on other environments the client has connected. The host stores those references without reading them; the client reaches them through its own connections. See [Remote environments](workbench-data-model.md#remote-environments-v28).
 
 ## Module boundaries
 

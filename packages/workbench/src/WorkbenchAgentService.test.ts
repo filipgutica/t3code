@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -79,6 +80,7 @@ const makeTestLayer = ({
       Layer.succeed(
         WorkbenchNativeAccess,
         WorkbenchNativeAccess.of({
+          hostEnvironmentId: EnvironmentId.make("environment-host"),
           executionSequence: Effect.succeed(0),
           startedExecutionRunIds: Effect.succeed([]),
           hasPendingThreadWork: () => Effect.succeed(false),
@@ -597,5 +599,58 @@ describe("WorkbenchAgentService", () => {
           ),
         );
       }),
+  );
+
+  it.effect("names the machine of a repository it can't start a Thread in", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const agent = yield* WorkbenchAgentService;
+      const remote = ProjectId.make("agent-laptop");
+      yield* store.createProject({
+        id: workspaceId,
+        title: "Agent workspace",
+        linkedProjectIds: [first, remote],
+        remoteProjects: {
+          [remote]: {
+            environmentId: EnvironmentId.make("laptop"),
+            environmentLabel: "Laptop",
+            projectTitle: "Mobile app",
+          },
+        },
+        createdAt,
+      });
+      const ticket = yield* store.createTicket({
+        id: WorkbenchTicketId.make("agent-remote-ticket"),
+        projectId: workspaceId,
+        title: "Ship on both machines",
+        markdown: "",
+        repositoryProjectIds: [remote, first],
+        createdAt,
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("agent-remote-assignment"),
+        ticketId: ticket.id,
+        threadId: worker,
+        createdAt,
+      });
+
+      const refused = yield* Effect.flip(
+        agent.startThread({
+          threadId: worker,
+          repositoryProjectId: remote,
+          message: "Build the mobile screen",
+          runtimeMode: "full-access",
+          interactionMode: "default",
+        }),
+      );
+      expect(refused).toMatchObject({
+        code: "repository_not_linked",
+        message: expect.stringContaining("Mobile app is on Laptop"),
+      });
+      const read = yield* agent.read(worker);
+      expect(read.repositories).toContainEqual(
+        expect.objectContaining({ projectId: remote, name: "Mobile app (on Laptop)" }),
+      );
+    }).pipe(Effect.provide(testLayer)),
   );
 });

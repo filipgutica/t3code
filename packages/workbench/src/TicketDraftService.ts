@@ -1,6 +1,9 @@
 import {
   WorkbenchAssignmentId,
   WorkbenchOperationError,
+  workbenchHostRepositoryProjectIds,
+  type WorkbenchSnapshot,
+  type WorkbenchTicket,
   type WorkbenchTicketDraft,
   type WorkbenchTicketDraftActionInput,
   type WorkbenchBeginTicketDraftInput,
@@ -86,12 +89,37 @@ const make = Effect.gen(function* () {
     });
     return draft;
   });
+  // Planning and Start work run on this host, in the first repository that lives here.
+  const firstHostRepository = (
+    snapshot: WorkbenchSnapshot,
+    ticket: Pick<WorkbenchTicket, "projectId" | "repositoryProjectIds">,
+  ) =>
+    workbenchHostRepositoryProjectIds(
+      snapshot.projects.find((project) => project.id === ticket.projectId),
+      ticket.repositoryProjectIds,
+    )[0];
+  const noHostRepository = () =>
+    new WorkbenchOperationError({
+      code: "repository_not_linked",
+      message:
+        "This Ticket has no repository on this machine, so work can't start here. Start a Thread on the other machine from the Ticket instead.",
+    });
   const requirePromotableFields = Effect.fn("TicketDraftService.requirePromotableFields")(
     function* (draft: WorkbenchTicketDraft) {
       if (!draft.fields.title.trim() || draft.fields.repositoryProjectIds.length === 0) {
         return yield* new WorkbenchOperationError({
           code: "ticket_draft_invalid",
           message: "Add a title and select the ticket's repositories before creating it.",
+        });
+      }
+      const board = Option.getOrUndefined(yield* store.getProject(draft.projectId));
+      if (
+        workbenchHostRepositoryProjectIds(board, draft.fields.repositoryProjectIds).length === 0
+      ) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_draft_invalid",
+          message:
+            "Select a repository on this machine too: planning continues here until Start work.",
         });
       }
     },
@@ -128,14 +156,15 @@ const make = Effect.gen(function* () {
           ),
         );
     }
-    const savedTicket = (yield* store.getSnapshot).tickets.find((ticket) => ticket.id === draft.id);
+    const savedSnapshot = yield* store.getSnapshot;
+    const savedTicket = savedSnapshot.tickets.find((ticket) => ticket.id === draft.id);
     if (!savedTicket)
       return yield* new WorkbenchOperationError({
         code: "ticket_not_found",
         message: "The saved ticket is no longer available.",
       });
-    // Planning continues in the first repository until Start work picks one.
-    const planningProjectId = savedTicket.repositoryProjectIds[0];
+    // Planning continues in the first host repository until Start work picks one.
+    const planningProjectId = firstHostRepository(savedSnapshot, savedTicket);
     if (planningProjectId === undefined)
       return yield* new WorkbenchOperationError({
         code: "ticket_draft_invalid",
@@ -178,6 +207,12 @@ const make = Effect.gen(function* () {
     yield* requireRevision(draft, input.expectedRevision);
     yield* host.requireIdle(draft.threadId);
     if (draft.phase !== "starting") {
+      // Refuse before leaving planning, so a Ticket scoped only to other machines stays plannable.
+      const snapshot = yield* store.getSnapshot;
+      const planned = snapshot.tickets.find((candidate) => candidate.id === draft.id);
+      if (planned !== undefined && firstHostRepository(snapshot, planned) === undefined) {
+        return yield* noHostRepository();
+      }
       draft = yield* store.transitionTicketDraft({
         ...input,
         from: ["planning"],
@@ -185,9 +220,8 @@ const make = Effect.gen(function* () {
       });
     }
     // Use the live ticket: its repository scope can change after promotion.
-    const ticket = (yield* store.getSnapshot).tickets.find(
-      (candidate) => candidate.id === draft.id,
-    );
+    const snapshot = yield* store.getSnapshot;
+    const ticket = snapshot.tickets.find((candidate) => candidate.id === draft.id);
     if (!ticket)
       return yield* new WorkbenchOperationError({
         code: "ticket_not_found",
@@ -204,12 +238,13 @@ const make = Effect.gen(function* () {
         code: "assignment_changed",
         message: "The ticket's planning Thread is no longer linked.",
       });
-    const projectId = ticket.repositoryProjectIds[0];
-    if (projectId === undefined)
+    if (ticket.repositoryProjectIds.length === 0)
       return yield* new WorkbenchOperationError({
         code: "repository_not_linked",
         message: "Link a repository to this ticket before starting work.",
       });
+    const projectId = firstHostRepository(snapshot, ticket);
+    if (projectId === undefined) return yield* noHostRepository();
     const workspace = yield* workspaces.prepare({
       ticketId: draft.id,
       requestedAt: yield* currentAt,

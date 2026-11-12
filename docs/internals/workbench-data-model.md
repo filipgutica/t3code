@@ -41,7 +41,7 @@ Workbench uses SQL transactions for related local changes, such as Ticket and re
 The key application invariants are:
 
 - A Ticket's repositories belong to its Board's linked Projects.
-- An Assignment references a live native Thread whose Project is one of the Ticket's repositories when it is created. Historical Assignment rows remain after replacement.
+- An Assignment references a live native Thread whose Project is one of the Ticket's repositories when it is created. Historical Assignment rows remain after replacement. A remote Assignment is the exception; see [Remote environments](#remote-environments-v28).
 - A repository cannot leave a Ticket while a current Assignment's unarchived Thread works in it. The check reads native Threads inside the Ticket write, so it covers users and agents alike.
 
 These rules are enforced by [WorkbenchStore](../../packages/workbench/src/WorkbenchStore.ts), rather than by foreign keys to native systems.
@@ -63,6 +63,23 @@ Migration 23 adds `workbench_tickets.progress`, a checklist only agents write, a
 Migration 25 adds `workbench_tickets.review_base_title` and `review_base_markdown`, the title and brief before the first unreviewed agent or Ask for change edit, and `updated_by_ask_for_change`. A draft keeps `reviewBase` and `updatedByAskForChange` in its `payload_json`; absent keys read as no review. Ticket and draft writes name their writer (agent, Ask for change, or user) instead of inferring a user from a missing Thread, and [documentReview](../../packages/workbench/src/documentReview.ts) decides the base. Snapshots carry only `reviewPending`; the Ticket read carries the base. Accept and Undo bump the revision so revision-keyed reads refetch, and Undo records no Thread. Migration 26 adds `accepted_base_title` and `accepted_base_markdown` (a draft's `acceptedBase`): Accept moves the base there so the accepted change can be shown again. Any content change clears it, so it never becomes the next review's base and an Undo cannot revert an accepted change. Snapshots carry only `acceptedChange`; the client reads the base when it is shown. Promoting a draft drops its base, so the new Ticket starts with no review. Ask for change generates outside any transaction and then writes against the revision it read, so a write during generation fails it instead of being overwritten.
 
 Migration 27 adds `workbench_tickets.content_updated_at` (a draft's `contentUpdatedAt`), written with provenance whenever the title or brief changes, so a review can say when its edit happened. It stays NULL for Tickets not changed since. Snapshots carry it because clients show it before reading the base.
+
+## Remote environments (v28)
+
+A Board lives on one host, but a linked Project can live on another environment that the client has connected. The host never contacts that environment, so it stores these references unverified; the client checks them before it writes. Migration 28 adds the columns in place, because rebuilding these tables cascade-deletes their children.
+
+| Column                                                       | Meaning                                                                                          |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `workbench_project_links.environment_id`                     | The Project's environment. NULL means the host; a client that sends the host's own ID gets NULL. |
+| `workbench_project_links.environment_label`, `project_title` | Names to show while that environment is offline.                                                 |
+| `workbench_assignments.environment_id`, `project_id`         | Set together, only for a Thread on another environment.                                          |
+
+The environment belongs to the link alone. Ticket repositories, a draft's anchor, and its scope keep bare Project IDs and find their environment through the Board's links. A Board therefore holds one link per Project ID: an update that adds an ID it already links keeps the existing link, so the client must not offer a remote Project whose ID matches one (copied dev data can share IDs). These rules hold in [WorkbenchStore](../../packages/workbench/src/WorkbenchStore.ts) and its callers:
+
+- A Board keeps at least one host Project, because planning runs on the host. Its first host link is a draft's anchor, and promotion and Start work use the first host repository in scope.
+- A remote Assignment's Project must be one of the Ticket's repositories, linked from the same environment. Its Thread is never read.
+- A current remote Assignment counts as live: it blocks Workspace release and keeps its Project in the Ticket's scope until it is unassigned.
+- Worktree preparation, recaps, execution status, settlement, Thread creation by agents, and the sibling roster include only host Threads and repositories. The roster counts remote Threads instead of listing them.
 
 ## Retired tracker data
 

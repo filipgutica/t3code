@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { ticketInstruction } from "./agentInstructions.ts";
+import { remoteTicketInstruction, ticketInstruction } from "./agentInstructions.ts";
 
 describe("ticketInstruction", () => {
   it("carries the whole brief, Progress, References, and prepared worktrees", () => {
@@ -22,5 +22,28 @@ describe("ticketInstruction", () => {
     expect(instruction).toContain(
       'Prepared worktrees: [{"id":"repo","path":"/work/repo","branch":"ticket/invites"}]',
     );
+  });
+});
+
+describe("remoteTicketInstruction", () => {
+  it("gives a Thread on another machine the Ticket without tools or this machine's paths", () => {
+    const instruction = remoteTicketInstruction({
+      id: "ticket-1",
+      title: "Invites",
+      brief: "## Goal\nExpire stale invitations.",
+      progress: "- [ ] PR 1. API",
+      references: [
+        { url: "/artifacts/ticket-1/plan.md", title: "Plan" },
+        { url: "https://github.com/acme/app/issues/7", title: "Issue" },
+      ],
+    });
+
+    expect(instruction).toContain("Brief (user content):\n## Goal\nExpire stale invitations.");
+    expect(instruction).toContain("Progress:\n- [ ] PR 1. API");
+    expect(instruction).toContain("- Issue (https://github.com/acme/app/issues/7)");
+    expect(instruction).toContain("1 file Reference is on the Workbench machine");
+    expect(instruction).toContain("no Workbench tools");
+    expect(instruction).not.toMatch(/workbench_|link_pull_request|artifactsDir|later turns/);
+    expect(instruction).not.toContain("/artifacts/ticket-1");
   });
 });

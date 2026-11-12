@@ -1,10 +1,12 @@
 import {
+  EnvironmentId,
   RunId,
   WorkbenchAssignment,
   WorkbenchAssignmentId,
   WorkbenchOperationError,
   WorkbenchProject,
   WorkbenchProjectId,
+  WorkbenchRemoteProject,
   WorkbenchSnapshot,
   WorkbenchTicket,
   WorkbenchTicketGeneratedSummary,
@@ -71,7 +73,41 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   projectId: WorkbenchProjectId,
   linkedProjectId: ProjectId,
   position: Schema.Number,
+  // NULL on host links; see WorkbenchRemoteProject.
+  environmentId: Schema.NullOr(EnvironmentId),
+  environmentLabel: Schema.NullOr(Schema.String),
+  projectTitle: Schema.NullOr(Schema.String),
 });
+type WorkbenchProjectLinkRow = typeof WorkbenchProjectLinkRow.Type;
+
+/** A Board's `remoteProjects`, omitted when every link is on this host. */
+const remoteProjectsField = (links: ReadonlyArray<WorkbenchProjectLinkRow>) => {
+  const remoteProjects: Record<ProjectId, WorkbenchRemoteProject> = {};
+  for (const link of links) {
+    if (link.environmentId === null) continue;
+    remoteProjects[link.linkedProjectId] = {
+      environmentId: link.environmentId,
+      environmentLabel: link.environmentLabel ?? link.environmentId,
+      projectTitle: link.projectTitle ?? link.linkedProjectId,
+    };
+  }
+  return Object.keys(remoteProjects).length === 0 ? {} : { remoteProjects };
+};
+
+const WorkbenchAssignmentRow = Schema.Struct({
+  ...WorkbenchAssignment.fields,
+  environmentId: Schema.NullOr(EnvironmentId),
+  projectId: Schema.NullOr(ProjectId),
+});
+type WorkbenchAssignmentRow = typeof WorkbenchAssignmentRow.Type;
+const assignmentFromRow = ({
+  environmentId,
+  projectId,
+  ...assignment
+}: WorkbenchAssignmentRow): WorkbenchAssignment =>
+  environmentId === null || projectId === null
+    ? assignment
+    : { ...assignment, environmentId, projectId };
 
 const WorkbenchTicketRepositoryRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
@@ -395,6 +431,8 @@ export interface WorkbenchThreadRoster {
   readonly siblings: ReadonlyArray<{
     readonly threadId: ThreadId;
     readonly recap: WorkbenchStoredThreadRecap | null;
+    /** Set for a Thread on another environment, which this host cannot read or message. */
+    readonly environmentId?: EnvironmentId;
   }>;
 }
 
@@ -662,7 +700,7 @@ interface WorkbenchStoreShape extends Omit<
   readonly upsertThreadRecap: (
     input: WorkbenchStoredThreadRecap & { readonly threadId: ThreadId },
   ) => Effect.Effect<void, WorkbenchOperationError>;
-  /** Current Threads of Tickets, which are the Threads that get recaps. */
+  /** Current host Threads of Tickets, which are the Threads that get recaps. */
   readonly listTicketThreadIds: Effect.Effect<ReadonlyArray<ThreadId>, WorkbenchOperationError>;
   /** Branch selected for new worktrees, when this Ticket Workspace has one. */
   readonly getTicketWorkspaceGeneratedBranchName: (
@@ -715,6 +753,7 @@ const ThreadRosterRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
   title: Schema.String,
   threadId: Schema.NullOr(ThreadId),
+  environmentId: Schema.NullOr(EnvironmentId),
   runId: Schema.NullOr(RunId),
   text: Schema.NullOr(Schema.String),
   updatedAt: Schema.NullOr(IsoDateTime),
@@ -723,6 +762,11 @@ const recapFromRosterRow = (row: typeof ThreadRosterRow.Type): WorkbenchStoredTh
   row.runId === null || row.text === null || row.updatedAt === null
     ? null
     : { runId: row.runId, text: row.text, updatedAt: row.updatedAt };
+
+interface RemoteAssignment {
+  readonly environmentId: EnvironmentId;
+  readonly projectId: ProjectId;
+}
 
 const persistenceError = (_cause: unknown) =>
   new WorkbenchOperationError({
@@ -802,7 +846,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         workbench_project_id AS "projectId",
         t3_project_id AS "linkedProjectId",
-        position
+        position,
+        environment_id AS "environmentId",
+        environment_label AS "environmentLabel",
+        project_title AS "projectTitle"
       FROM workbench_project_links
       ORDER BY workbench_project_id ASC, position ASC
     `,
@@ -883,14 +930,16 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
   const listAssignmentRows = SqlSchema.findAll({
     Request: Schema.Void,
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: () => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId",
+        project_id AS "projectId"
       FROM workbench_assignments
       WHERE ticket_id IN (
         SELECT ticket_id
@@ -979,12 +1028,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
         LIMIT 1
       ),
       member AS (
-        SELECT assignment.thread_id, assignment.created_at
+        SELECT assignment.thread_id, assignment.created_at, assignment.environment_id
         FROM workbench_assignments AS assignment
         INNER JOIN ticket ON ticket.ticket_id = assignment.ticket_id
         WHERE assignment.superseded_at IS NULL
         UNION ALL
-        SELECT draft.thread_id, NULL
+        SELECT draft.thread_id, NULL, NULL
         FROM workbench_ticket_drafts AS draft
         INNER JOIN ticket ON ticket.ticket_id = draft.draft_id
         WHERE draft.phase = 'working' AND NOT EXISTS (${retiredDraftThread})
@@ -993,6 +1042,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
         ticket.ticket_id AS "ticketId",
         ticket.title AS "title",
         member.thread_id AS "threadId",
+        member.environment_id AS "environmentId",
         recap.run_id AS "runId",
         recap.text AS "text",
         recap.updated_at AS "updatedAt"
@@ -1007,7 +1057,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     execute: (threadId) =>
       rosterRows(sql`
         SELECT ticket_id FROM workbench_assignments
-        WHERE thread_id = ${threadId} AND superseded_at IS NULL
+        WHERE thread_id = ${threadId} AND superseded_at IS NULL AND environment_id IS NULL
         UNION
         SELECT draft.draft_id FROM workbench_ticket_drafts AS draft
         WHERE draft.thread_id = ${threadId}
@@ -1046,7 +1096,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
     for (const row of rows) {
       if (row.threadId === null || seen.has(row.threadId)) continue;
       seen.add(row.threadId);
-      members.push({ threadId: row.threadId, recap: recapFromRosterRow(row) });
+      members.push({
+        threadId: row.threadId,
+        recap: recapFromRosterRow(row),
+        ...(row.environmentId === null ? {} : { environmentId: row.environmentId }),
+      });
     }
     return Option.some({
       ticket: {
@@ -1091,6 +1145,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
       WHERE assignment.thread_id = ${threadId}
         AND assignment.superseded_at IS NULL
+        AND assignment.environment_id IS NULL
         AND ticket.deleted_at IS NULL
       UNION ALL
       SELECT 'draft', draft_id, 1
@@ -1257,6 +1312,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
       WHERE ticket.deleted_at IS NULL
         AND assignment.superseded_at IS NULL
+        AND assignment.environment_id IS NULL
       ORDER BY assignment.thread_id ASC
     `,
   });
@@ -1398,13 +1454,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
           Effect.gen(function* () {
             const project = yield* findProject({ id: projectId });
             if (Option.isNone(project)) return Option.none<WorkbenchProject>();
-            const links = yield* listProjectLinkRows();
+            const links = (yield* listProjectLinkRows()).filter(
+              (link) => link.projectId === projectId,
+            );
             return Option.some(
               WorkbenchProject.make({
                 ...project.value,
-                linkedProjectIds: links
-                  .filter((link) => link.projectId === projectId)
-                  .map((link) => link.linkedProjectId),
+                linkedProjectIds: links.map((link) => link.linkedProjectId),
+                ...remoteProjectsField(links),
               }),
             );
           }),
@@ -1481,7 +1538,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         workbench_project_id AS "projectId",
         t3_project_id AS "linkedProjectId",
-        position
+        position,
+        environment_id AS "environmentId",
+        environment_label AS "environmentLabel",
+        project_title AS "projectTitle"
       FROM workbench_project_links
       WHERE workbench_project_id = ${projectId}
         AND t3_project_id = ${linkedProjectId}
@@ -1615,14 +1675,16 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
   const listActiveAssignmentsByTicket = SqlSchema.findAll({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: ({ ticketId }) => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId",
+        project_id AS "projectId"
       FROM workbench_assignments
       WHERE ticket_id = ${ticketId}
         AND superseded_at IS NULL
@@ -1662,21 +1724,25 @@ const makeWorkbenchStore = Effect.gen(function* () {
     // transaction. The native adapter uses the same SqlClient connection.
     const assignments = yield* listActiveAssignmentsByTicket({ ticketId });
     for (const assignment of assignments) {
+      // The host cannot read a remote Thread, so its Assignment counts as live until unassigned.
+      if (assignment.environmentId !== null) return Option.some(assignment);
       const thread = yield* native.findThread(assignment.threadId);
       if (Option.isSome(thread)) return Option.some(assignment);
     }
-    return Option.none<WorkbenchAssignment>();
+    return Option.none<WorkbenchAssignmentRow>();
   });
   const listLinkedAssignmentsByTicket = SqlSchema.findAll({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: ({ ticketId }) => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId",
+        project_id AS "projectId"
       FROM workbench_assignments
       WHERE ticket_id = ${ticketId}
       ORDER BY created_at ASC, assignment_id ASC
@@ -1689,10 +1755,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
     // native archived Thread remains live until it is explicitly deleted.
     const assignments = yield* listLinkedAssignmentsByTicket({ ticketId });
     for (const assignment of assignments) {
+      // Only a current remote Assignment holds; superseded ones are history the host cannot check.
+      if (assignment.environmentId !== null) {
+        if (assignment.supersededAt === null) return Option.some(assignment);
+        continue;
+      }
       const thread = yield* native.findThread(assignment.threadId);
       if (Option.isSome(thread)) return Option.some(assignment);
     }
-    return Option.none<WorkbenchAssignment>();
+    return Option.none<WorkbenchAssignmentRow>();
   });
   const supersedeAssignmentRow = SqlSchema.findOneOption({
     Request: Schema.Struct({
@@ -1821,13 +1892,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listThreadRecapRows(),
           listReferenceRows(),
         ]);
-        const linksByProject = new Map<
-          string,
-          Array<(typeof WorkbenchProjectLinkRow.Type)["linkedProjectId"]>
-        >();
+        const linksByProject = new Map<string, Array<WorkbenchProjectLinkRow>>();
         for (const link of linkRows) {
           const links = linksByProject.get(link.projectId) ?? [];
-          links.push(link.linkedProjectId);
+          links.push(link);
           linksByProject.set(link.projectId, links);
         }
         const repositoriesByTicket = new Map<string, Array<ProjectId>>();
@@ -1850,10 +1918,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
             Effect.provideService(WorkbenchNativeAccess, native),
             Effect.provideService(SqlClient.SqlClient, sql),
           ),
-          projects: projectRows.map((project) => ({
-            ...project,
-            linkedProjectIds: linksByProject.get(project.id) ?? [],
-          })),
+          projects: projectRows.map((project) => {
+            const links = linksByProject.get(project.id) ?? [];
+            return {
+              ...project,
+              linkedProjectIds: links.map((link) => link.linkedProjectId),
+              ...remoteProjectsField(links),
+            };
+          }),
           tickets: ticketRows.map((ticket) => {
             // The Board needs only the counts and review flag; the Ticket read carries the rest.
             const {
@@ -1870,7 +1942,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ...(compact && ticket.archivedAt !== null ? { markdownOmitted: true } : {}),
             };
           }),
-          assignments,
+          assignments: assignments.map(assignmentFromRow),
           reservedThreadIds: reservedThreadRows.map((row) => row.id),
           ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
             hydrateTicketWorkspace({
@@ -1956,16 +2028,22 @@ const makeWorkbenchStore = Effect.gen(function* () {
 
   const validateTicketWorkspaceClaim = Effect.fn("WorkbenchStore.validateTicketWorkspaceClaim")(
     function* (input: WorkbenchClaimTicketWorkspaceInput) {
-      yield* requireActiveTicket({
+      const ticket = yield* requireActiveTicket({
         ticketId: input.ticketId,
         archivedMessage: "Archived Tickets cannot prepare worktrees.",
       });
       const ticketRepositories = yield* listTicketRepositoryRowsByTicket({
         ticketId: input.ticketId,
       });
-      const expectedProjectIds = ticketRepositories.map(
-        (repository) => repository.repositoryProjectId,
+      // Worktrees exist only for repositories on this host.
+      const remote = new Set(
+        (yield* listProjectLinkRows())
+          .filter((link) => link.projectId === ticket.projectId && link.environmentId !== null)
+          .map((link) => link.linkedProjectId),
       );
+      const expectedProjectIds = ticketRepositories
+        .map((repository) => repository.repositoryProjectId)
+        .filter((projectId) => !remote.has(projectId));
       const suppliedProjectIds = input.repositories.map((repository) => repository.projectId);
       const repositoryScopeMatches =
         new Set(suppliedProjectIds).size === suppliedProjectIds.length &&
@@ -2528,12 +2606,60 @@ const makeWorkbenchStore = Effect.gen(function* () {
         .pipe(Effect.mapError(workbenchStoreError));
     });
 
+  /** A link's remote metadata, or null for a host link; the host's own environment is a host link. */
+  const remoteLink = (
+    remoteProjects: WorkbenchCreateProjectInput["remoteProjects"],
+    linkedProjectId: ProjectId,
+  ) => {
+    const remote = remoteProjects?.[linkedProjectId];
+    return remote === undefined || remote.environmentId === native.hostEnvironmentId
+      ? null
+      : remote;
+  };
+  const insertProjectLink = (link: {
+    readonly projectId: WorkbenchProjectId;
+    readonly linkedProjectId: ProjectId;
+    readonly position: number;
+    readonly remote: WorkbenchRemoteProject | null;
+  }) => sql`
+    INSERT INTO workbench_project_links (
+      workbench_project_id, t3_project_id, position, environment_id, environment_label, project_title
+    ) VALUES (
+      ${link.projectId}, ${link.linkedProjectId}, ${link.position},
+      ${link.remote?.environmentId ?? null}, ${link.remote?.environmentLabel ?? null},
+      ${link.remote?.projectTitle ?? null}
+    )
+  `;
+  const linkRow = (link: Parameters<typeof insertProjectLink>[0]): WorkbenchProjectLinkRow => ({
+    projectId: link.projectId,
+    linkedProjectId: link.linkedProjectId,
+    position: link.position,
+    environmentId: link.remote?.environmentId ?? null,
+    environmentLabel: link.remote?.environmentLabel ?? null,
+    projectTitle: link.remote?.projectTitle ?? null,
+  });
+
   const createProject: WorkbenchStoreShape["createProject"] = Effect.fn(
     "WorkbenchStore.createProject",
   )(function* (input) {
     const linkedProjectIds = [...new Set(input.linkedProjectIds)];
-    for (const linkedProjectId of linkedProjectIds) {
-      yield* validateLinkedProject({ linkedProjectId });
+    const links = linkedProjectIds.map((linkedProjectId, position) => ({
+      projectId: input.id,
+      linkedProjectId,
+      position,
+      remote: remoteLink(input.remoteProjects, linkedProjectId),
+    }));
+    // Planning runs on the host, so a Board keeps a Project there. Links are never removed.
+    if (links.every((link) => link.remote !== null)) {
+      return yield* new WorkbenchOperationError({
+        code: "linked_project_not_found",
+        message: "A Board needs at least one Project on this machine.",
+      });
+    }
+    // The host cannot read another environment's Projects; the client checks them before writing.
+    for (const link of links) {
+      if (link.remote === null)
+        yield* validateLinkedProject({ linkedProjectId: link.linkedProjectId });
     }
 
     yield* sql
@@ -2543,22 +2669,16 @@ const makeWorkbenchStore = Effect.gen(function* () {
           INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
           VALUES (${input.id}, ${input.title}, ${input.createdAt}, ${input.createdAt})
         `;
-          for (const [position, linkedProjectId] of linkedProjectIds.entries()) {
-            yield* sql`
-            INSERT INTO workbench_project_links (
-              workbench_project_id,
-              t3_project_id,
-              position
-            ) VALUES (${input.id}, ${linkedProjectId}, ${position})
-          `;
-          }
+          for (const link of links) yield* insertProjectLink(link);
         }),
       )
       .pipe(Effect.mapError(persistenceError));
 
+    const { remoteProjects: _remoteProjects, ...project } = input;
     return WorkbenchProject.make({
-      ...input,
+      ...project,
       linkedProjectIds,
+      ...remoteProjectsField(links.map(linkRow)),
       archivedAt: null,
       revision: 0,
       updatedAt: input.createdAt,
@@ -2672,7 +2792,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
     const existingIds = new Set(currentLinks.map((link) => link.id));
     const validatedRoots = new Map<ProjectId, string>();
     for (const linkedProjectId of linkedProjectIds) {
-      if (!existingIds.has(linkedProjectId)) {
+      if (
+        !existingIds.has(linkedProjectId) &&
+        remoteLink(input.remoteProjects, linkedProjectId) === null
+      ) {
         const project = yield* validateLinkedProject({ linkedProjectId });
         validatedRoots.set(linkedProjectId, project.workspaceRoot);
       }
@@ -2713,6 +2836,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (linkedProjectId) => !existingProjectIdSet.has(linkedProjectId),
           );
           for (const linkedProjectId of additions) {
+            if (remoteLink(input.remoteProjects, linkedProjectId) !== null) continue;
             const project = yield* findT3Project({ linkedProjectId });
             if (Option.isNone(project)) {
               return yield* new WorkbenchOperationError({
@@ -2737,21 +2861,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (position, link) => Math.max(position, link.position + 1),
             0,
           );
-          for (const [offset, linkedProjectId] of additions.entries()) {
-            yield* sql`
-              INSERT INTO workbench_project_links (
-                workbench_project_id,
-                t3_project_id,
-                position
-              ) VALUES (${input.id}, ${linkedProjectId}, ${nextPosition + offset})
-            `;
-          }
+          const addedLinks = additions.map((linkedProjectId, offset) => ({
+            projectId: input.id,
+            linkedProjectId,
+            position: nextPosition + offset,
+            remote: remoteLink(input.remoteProjects, linkedProjectId),
+          }));
+          for (const link of addedLinks) yield* insertProjectLink(link);
 
           return WorkbenchProject.make({
             ...current.value,
             title: input.title,
             revision: current.value.revision + 1,
             linkedProjectIds: [...existingProjectIds, ...additions],
+            ...remoteProjectsField([...currentLinks, ...addedLinks.map(linkRow)]),
             updatedAt: input.updatedAt,
           });
         }),
@@ -2949,14 +3072,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.listActiveThreadProjectIds",
   )(function* (ticketId) {
     // A planning Thread moves to the live scope at Start work, so it does not pin one.
-    const assignments = yield* sql<{ readonly threadId: ThreadId }>`
-          SELECT a.thread_id AS "threadId" FROM workbench_assignments a
+    const assignments = yield* sql<{
+      readonly threadId: ThreadId;
+      readonly remoteProjectId: ProjectId | null;
+    }>`
+          SELECT a.thread_id AS "threadId", a.project_id AS "remoteProjectId"
+          FROM workbench_assignments a
           WHERE a.ticket_id = ${ticketId} AND a.superseded_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d
               WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
         `;
     const projectIds = new Set<ProjectId>();
-    for (const { threadId } of assignments) {
+    for (const { threadId, remoteProjectId } of assignments) {
+      // A remote Thread holds its repository until it is unassigned; the host cannot read it.
+      if (remoteProjectId !== null) {
+        projectIds.add(remoteProjectId);
+        continue;
+      }
       const thread = yield* native.findThread(threadId);
       if (Option.isSome(thread) && thread.value.archivedAt == null) {
         projectIds.add(thread.value.projectId);
@@ -2969,6 +3101,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const requireRemovedRepositoriesIdle = Effect.fn("WorkbenchStore.requireRemovedRepositoriesIdle")(
     function* (input: {
       readonly ticketId: WorkbenchTicketId;
+      readonly boardId: WorkbenchProjectId;
       readonly current: ReadonlyArray<ProjectId>;
       readonly requested: ReadonlyArray<ProjectId> | undefined;
     }) {
@@ -2978,6 +3111,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
         (id) => input.current.includes(id) && !requested.includes(id),
       );
       if (inUse === undefined) return;
+      const link = Option.getOrNull(
+        yield* findProjectLink({ projectId: input.boardId, linkedProjectId: inUse }),
+      );
+      if (link?.environmentId != null) {
+        return yield* new WorkbenchOperationError({
+          code: "ticket_repository_scope_locked",
+          message: `${link.projectTitle ?? inUse} can't be removed while a Thread on ${link.environmentLabel ?? "another machine"} works in it. Unassign that Thread first.`,
+        });
+      }
       const project = yield* native.findProject(inUse);
       const name = Option.isSome(project) ? project.value.title : inUse;
       return yield* new WorkbenchOperationError({
@@ -3045,6 +3187,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           }
           yield* requireRemovedRepositoriesIdle({
             ticketId: input.id,
+            boardId: current.projectId,
             current: currentRepositoryProjectIds,
             requested: input.repositoryProjectIds,
           });
@@ -3291,6 +3434,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           JOIN workbench_tickets t ON t.ticket_id = a.ticket_id
             JOIN workbench_projects p ON p.project_id = t.workbench_project_id
           WHERE a.thread_id = ${run.threadId} AND a.superseded_at IS NULL
+            AND a.environment_id IS NULL
             AND p.deleted_at IS NULL AND p.archived_at IS NULL AND p.execution_after_sequence < ${input.sequence} AND t.deleted_at IS NULL AND t.archived_at IS NULL AND t.status = 'todo'
             AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
             AND a.execution_after_sequence < ${input.sequence}
@@ -3680,14 +3824,35 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const requireAssignableThread = Effect.fn("WorkbenchStore.requireAssignableThread")(function* ({
     ticketId,
     threadId,
+    remote = null,
   }: {
     ticketId: WorkbenchTicketId;
     threadId: ThreadId;
+    remote?: RemoteAssignment | null;
   }) {
     const ticket = yield* requireActiveTicket({
       ticketId,
       archivedMessage: "Archived Workbench Tickets cannot receive Agent Threads.",
     });
+    if (remote !== null) {
+      // The host cannot read a remote Thread; its Project must be a repository linked from there.
+      const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
+      const link = yield* findProjectLink({
+        projectId: ticket.projectId,
+        linkedProjectId: remote.projectId,
+      });
+      if (
+        !repositories.some((repository) => repository.repositoryProjectId === remote.projectId) ||
+        Option.isNone(link) ||
+        link.value.environmentId !== remote.environmentId
+      ) {
+        return yield* new WorkbenchOperationError({
+          code: "thread_project_mismatch",
+          message: "The Thread works in a repository this Ticket does not link from that machine.",
+        });
+      }
+      return ticket;
+    }
     const nativeThread = yield* findNativeThread({ threadId }).pipe(
       Effect.mapError(persistenceError),
     );
@@ -3702,7 +3867,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
       repositories.length > 0
         ? repositories.map((repository) => repository.repositoryProjectId)
         : [ticket.anchorProjectId];
-    if (!repositoryProjectIds.includes(nativeThread.value.projectId)) {
+    const hostLink = yield* findProjectLink({
+      projectId: ticket.projectId,
+      linkedProjectId: nativeThread.value.projectId,
+    });
+    if (
+      !repositoryProjectIds.includes(nativeThread.value.projectId) ||
+      (Option.isSome(hostLink) && hostLink.value.environmentId !== null)
+    ) {
       return yield* new WorkbenchOperationError({
         code: "thread_project_mismatch",
         message: "The native T3 Thread works in a repository this Ticket does not link.",
@@ -3714,6 +3886,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
   const createAssignment: WorkbenchStoreShape["createAssignment"] = Effect.fn(
     "WorkbenchStore.createAssignment",
   )(function* (input) {
+    const remote =
+      input.environmentId === undefined ||
+      input.projectId === undefined ||
+      input.environmentId === native.hostEnvironmentId
+        ? null
+        : { environmentId: input.environmentId, projectId: input.projectId };
     return yield* sql
       .withTransaction(
         Effect.gen(function* () {
@@ -3743,12 +3921,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
           yield* requireAssignableThread({
             ticketId: input.ticketId,
             threadId: input.threadId,
+            remote,
           });
           yield* sql`
-            INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at, execution_after_sequence)
-            VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt}, ${yield* native.executionSequence})
+            INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at,
+              execution_after_sequence, environment_id, project_id)
+            VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt},
+              ${yield* native.executionSequence}, ${remote?.environmentId ?? null},
+              ${remote?.projectId ?? null})
           `;
-          return WorkbenchAssignment.make({ ...input, supersededAt: null });
+          return WorkbenchAssignment.make({
+            id: input.id,
+            ticketId: input.ticketId,
+            threadId: input.threadId,
+            ...remote,
+            createdAt: input.createdAt,
+            supersededAt: null,
+          });
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));

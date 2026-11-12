@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   ModelSelection,
   ProjectId,
   ProviderInstanceId,
@@ -42,6 +43,7 @@ const selection = {
 const storeLayer = WorkbenchStoreLive.pipe(
   Layer.provideMerge(
     Layer.succeed(WorkbenchNativeAccess, {
+      hostEnvironmentId: EnvironmentId.make("environment-host"),
       findProject: (id) => Effect.succeedSome({ id, title: id, workspaceRoot: `/repos/${id}` }),
       isRepository: () => Effect.succeed(true),
       findThread: () => Effect.succeedNone,

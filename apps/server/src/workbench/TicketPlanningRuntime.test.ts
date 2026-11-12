@@ -26,6 +26,7 @@ import * as Stream from "effect/Stream";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as NodeSqliteClient from "@t3tools/shared/nodeSqliteClient";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
+import { hostEnvironmentId } from "./testing/hostEnvironment.ts";
 
 import { ServerConfig } from "../config.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
@@ -65,7 +66,15 @@ const thread: OrchestrationV2AppThread = {
   settledOverride: null,
   lastVisitedAt: null,
 };
-const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
+type RemoteRepository = {
+  readonly id: ProjectId;
+  readonly title: string;
+  readonly environmentLabel: string;
+};
+const draft = (
+  phase: WorkbenchTicketDraft["phase"],
+  planningRemoteRepositories: Array<RemoteRepository> = [],
+) => ({
   id: WorkbenchTicketId.make("draft"),
   projectId: WorkbenchProjectId.make("tools"),
   threadId,
@@ -81,6 +90,7 @@ const draft = (phase: WorkbenchTicketDraft["phase"]) => ({
   createdAt: DateTime.formatIso(now),
   updatedAt: DateTime.formatIso(now),
   planningRepositoryProjectIds: [first, second],
+  planningRemoteRepositories,
   workArea:
     phase === "working"
       ? {
@@ -209,6 +219,7 @@ const policyLayer = (
     : UNSAVED_PHASES.includes(phase)
       ? "draft"
       : "ticket",
+  remoteRepositories: Array<RemoteRepository> = [],
 ) =>
   TicketPlanningRuntime.layerRuntimePolicyDecorator.pipe(
     Layer.provide(TicketContextService.layer),
@@ -216,6 +227,7 @@ const policyLayer = (
       Layer.mergeAll(
         NodeSqliteClient.layer({ filename: ":memory:" }),
         Layer.mock(WorkbenchNativeAccess)({
+          hostEnvironmentId,
           contextMarker: () => Effect.succeed(0),
           findStartingRun: () => Effect.succeedNone,
         }),
@@ -226,7 +238,8 @@ const policyLayer = (
         Layer.mock(WorkbenchStore)({
           listReferences: () => Effect.succeed([]),
           getThreadContext: () => Effect.succeed({ seen: Option.none(), pending: [] }),
-          getTicketDraftForThread: () => Effect.succeed(phase === null ? null : draft(phase)),
+          getTicketDraftForThread: () =>
+            Effect.succeed(phase === null ? null : draft(phase, remoteRepositories)),
           getThreadRoster: () => readRoster,
           resolveThreadOwner: () =>
             Effect.succeed(
@@ -319,6 +332,21 @@ it.effect.each(["codex", "claudeAgent"] as const)(
       }),
       Effect.provide(policyLayer("draft", driver)),
     ),
+);
+it.effect("lists a repository on another machine by its machine, without a path", () =>
+  resolve.pipe(
+    Effect.map((policy) => {
+      const instructions = policy.instructions ?? "";
+      assert.include(instructions, '{"id":"repo:laptop","name":"Mobile app","machine":"Laptop"}');
+      assert.include(instructions, "you can't inspect its files");
+      assert.include(instructions, "/repo/repo:first");
+    }),
+    Effect.provide(
+      policyLayer("draft", "codex", false, Effect.succeedNone, "draft", [
+        { id: ProjectId.make("repo:laptop"), title: "Mobile app", environmentLabel: "Laptop" },
+      ]),
+    ),
+  ),
 );
 it.effect("tells an assigned Thread its Ticket, tools, artifacts folder, and brief", () =>
   resolve.pipe(
