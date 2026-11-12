@@ -3,10 +3,11 @@ import type {
   ModelSelection,
   ProjectId,
   ServerProvider,
+  WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { ProviderInstanceId, workbenchHostRepositoryProjectIds } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useState, type FormEvent } from "react";
 
@@ -182,6 +183,8 @@ type WorkbenchStartThreadDialogRequest = {
   readonly ticket: WorkbenchTicket;
   readonly projects: ReadonlyArray<Project>;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
+  /** The Ticket's Board, whose repositories on other machines the Thread cannot work in. */
+  readonly board: Pick<WorkbenchProject, "remoteProjects"> | undefined;
   readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
   /** Preferred repository for the new Thread; see `resolveWorkbenchThreadRepository`. */
   readonly repositoryProjectId: ProjectId | undefined;
@@ -199,6 +202,7 @@ type WorkbenchStartThreadDialogRequest = {
 const resolveThreadRepositoryChoice = ({
   ticket,
   workspace,
+  board,
   projects,
   draft,
   picked,
@@ -206,6 +210,7 @@ const resolveThreadRepositoryChoice = ({
 }: {
   ticket: WorkbenchTicket;
   workspace: WorkbenchTicketWorkspace | undefined;
+  board: Pick<WorkbenchProject, "remoteProjects"> | undefined;
   projects: readonly Project[];
   draft: WorkbenchRepositoryScope;
   picked: ProjectId | undefined;
@@ -222,28 +227,35 @@ const resolveThreadRepositoryChoice = ({
   const repositoryScope = {
     repositoryProjectIds: adding ? [...ticketRepositoryIds, picked] : ticketRepositoryIds,
   };
+  // Create saves the whole scope, but the Thread and its worktree stay on the Board host.
+  const hostScope = {
+    repositoryProjectIds: workbenchHostRepositoryProjectIds(
+      board,
+      repositoryScope.repositoryProjectIds,
+    ),
+  };
+  const hostTicketRepositoryIds = workbenchHostRepositoryProjectIds(board, ticketRepositoryIds);
   const repositoryProjectId =
-    resolveWorkbenchThreadRepository({ ticket: repositoryScope, preferred: picked ?? preferred }) ??
-    null;
+    resolveWorkbenchThreadRepository({ ticket: hostScope, preferred: picked ?? preferred }) ?? null;
   return {
-    ticketRepositoryIds,
+    ticketRepositoryIds: hostTicketRepositoryIds,
     repositoryScope,
     repositoryProjectId,
     workspaceReady:
-      isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
+      isWorkbenchTicketWorkspaceReady({ ticket, workspace, board }) &&
       isWorkbenchRepositoryScopeEqual(ticket, repositoryScope),
     workspaceLocked: workspace?.status === "preparing" || workspace?.status === "releasing",
-    scopeValid: isWorkbenchRepositoryScopeValid({ scope: repositoryScope, projects }),
+    scopeValid: isWorkbenchRepositoryScopeValid({ scope: hostScope, projects }),
     note: {
       title: getWorkbenchRepositoryTitle(projects, repositoryProjectId),
       adding,
       prepared: repositoryProjectId !== null && isPrepared(repositoryProjectId),
       // "Last used" explains a default only when the Ticket offered a choice.
-      lastUsed: ticketRepositoryIds.length > 1 && repositoryProjectId === preferred,
+      lastUsed: hostTicketRepositoryIds.length > 1 && repositoryProjectId === preferred,
       ticketScopeChanged: !isWorkbenchRepositoryScopeEqual(ticket, {
         repositoryProjectIds: ticketRepositoryIds,
       }),
-      unavailable: repositoryScope.repositoryProjectIds.some(
+      unavailable: hostScope.repositoryProjectIds.some(
         (id) => !projects.some((project) => project.id === id),
       ),
       // Create re-prepares every repository, so any failed checkout can block the Thread.
@@ -287,6 +299,7 @@ export function WorkbenchStartThreadDialog({
     ticket,
     projects,
     workspace,
+    board,
     initialRepositoryScope,
     repositoryProjectId: preferredRepositoryProjectId,
     additional = false,
@@ -306,6 +319,7 @@ export function WorkbenchStartThreadDialog({
   } = resolveThreadRepositoryChoice({
     ticket,
     workspace,
+    board,
     projects,
     draft: initialRepositoryScope ?? getWorkbenchRepositoryScope(ticket),
     picked: pickedRepositoryProjectId,

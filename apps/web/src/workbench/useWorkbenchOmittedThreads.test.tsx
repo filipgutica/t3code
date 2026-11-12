@@ -56,22 +56,24 @@ const olderSettled = { before: "2026-10-01T00:00:00.000Z", asOfSequence: 1, coun
 let renderer: ReactTestRenderer | null = null;
 let result: ReturnType<typeof useWorkbenchOmittedThreads>;
 
-function Harness({ threadIds }: { readonly threadIds: ReadonlyArray<ThreadId> }) {
-  const value = useWorkbenchOmittedThreads(
-    environmentId,
-    threadIds.map((threadId) => ({ threadId })),
-  );
+type Assigned = { readonly threadId: ThreadId; readonly environmentId?: EnvironmentId };
+
+function Harness({ assignments }: { readonly assignments: ReadonlyArray<Assigned> }) {
+  const value = useWorkbenchOmittedThreads(environmentId, assignments);
   useLayoutEffect(() => {
     result = value;
   });
   return null;
 }
 
-async function render(threadIds: ReadonlyArray<ThreadId>) {
+async function render(assigned: ReadonlyArray<ThreadId | Assigned>) {
+  const assignments = assigned.map((entry) =>
+    typeof entry === "string" ? { threadId: entry } : entry,
+  );
   await act(async () => {
     renderer = create(
       <RegistryContext.Provider value={appAtomRegistry}>
-        <Harness threadIds={threadIds} />
+        <Harness assignments={assignments} />
       </RegistryContext.Provider>,
     );
   });
@@ -136,4 +138,17 @@ it("reads nothing when the shell omitted no Threads", async () => {
   await render([kept, omitted]);
   expect(threadFamilies.mount).not.toHaveBeenCalled();
   expect(result.status).toBe("ready");
+});
+
+it("reads a remote Assignment's omitted Thread from its own environment", async () => {
+  const remoteEnvironmentId = EnvironmentId.make("environment-remote");
+  await render([kept, { threadId: omitted, environmentId: remoteEnvironmentId }]);
+  expect(threadFamilies.mount).toHaveBeenCalledExactlyOnceWith(
+    appAtomRegistry,
+    remoteEnvironmentId,
+    omitted,
+  );
+  // The host has nothing left to read; only the remote environment waits.
+  expect(result.status).toBe("ready");
+  expect(result.statusByEnvironment.get(remoteEnvironmentId)).toBe("pending");
 });

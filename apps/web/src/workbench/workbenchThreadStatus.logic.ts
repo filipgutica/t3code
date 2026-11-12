@@ -8,6 +8,7 @@ import {
   resolveThreadLastVisitedAt,
 } from "../components/Sidebar.logic";
 import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchThreadExecutionStatus.logic";
+import { getWorkbenchAssignmentEnvironmentId } from "./workbench.logic";
 
 type ExecutionThread = Pick<
   EnvironmentThreadShell,
@@ -104,7 +105,7 @@ export function sortWorkbenchTicketThreads<Entry extends WorkbenchTicketThreadSt
   );
 }
 
-/** Every live, current Thread on each Ticket in the owning environment, most urgent first. */
+/** Every live, current Thread on each Ticket in the environment that owns it, most urgent first. */
 export function getWorkbenchTicketThreadStatuses({
   environmentId,
   assignments,
@@ -112,7 +113,7 @@ export function getWorkbenchTicketThreadStatuses({
 }: {
   readonly environmentId: EnvironmentId | null;
   readonly assignments: ReadonlyArray<
-    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt" | "environmentId">
   >;
   readonly threadsById: ReadonlyMap<EnvironmentThreadShell["id"], AssignedExecutionThread>;
 }): ReadonlyMap<WorkbenchTicketId, ReadonlyArray<WorkbenchTicketThreadStatus>> {
@@ -124,7 +125,12 @@ export function getWorkbenchTicketThreadStatuses({
   for (const assignment of assignments) {
     if (assignment.supersededAt !== null) continue;
     const thread = threadsById.get(assignment.threadId);
-    if (!thread || thread.environmentId !== environmentId || thread.archivedAt !== null) continue;
+    if (
+      !thread ||
+      thread.environmentId !== getWorkbenchAssignmentEnvironmentId(assignment, environmentId) ||
+      thread.archivedAt !== null
+    )
+      continue;
     const threads = byTicket.get(assignment.ticketId) ?? new Map();
     threads.set(thread.id, {
       threadId: thread.id,

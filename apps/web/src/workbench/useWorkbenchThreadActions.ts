@@ -20,7 +20,8 @@ import { failureMessage, reportWorkbenchCommandFailure } from "./workbenchPageCo
 import { openWorkbenchAssignedThread as openAssignedThreadWithRestore } from "./openWorkbenchAssignedThread";
 import { useStartWorkbenchTicket } from "./useStartWorkbenchTicket";
 import type { StartWorkbenchTicketOptions } from "./startWorkbenchTicket";
-import { isWorkbenchThreadArchived } from "./workbench.logic";
+import { getWorkbenchThreadLookupState, isWorkbenchThreadArchived } from "./workbench.logic";
+import type { WorkbenchAttachableThread } from "./WorkbenchAttachThreadDialog";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { showWorkbenchPageChatThread } from "./workbenchFloatingChatState";
 import {
@@ -63,8 +64,19 @@ const getWorkbenchThreadStartOptions = ({
       assignment.threadId !== request.previousThreadId &&
       existingThreadIds.has(assignment.threadId),
   );
+  // A replacement is checked against the Assignment it replaces, not the Ticket's primary one.
+  const assignment =
+    request.assignment ??
+    (request.mode === "replace"
+      ? assignments.find(
+          (candidate) =>
+            candidate.ticketId === request.ticket.id &&
+            candidate.threadId === request.previousThreadId &&
+            candidate.supersededAt === null,
+        )
+      : undefined);
   return {
-    ...(request.assignment ? { assignment: request.assignment } : {}),
+    ...(assignment ? { assignment } : {}),
     modelSelection,
     ...(repositoryScope ? { repositoryScope } : {}),
     ...(repositoryProjectId ? { repositoryProjectId } : {}),
@@ -109,6 +121,8 @@ export function useWorkbenchThreadActions({
     assignmentsByTicket,
     existingThreadIds,
     threadLookupReady,
+    remoteEnvironmentStates,
+    liveEnvironmentIds,
     refreshArchivedThreads,
     refreshThreadLookup,
     refreshWorkbenchSnapshot,
@@ -128,8 +142,16 @@ export function useWorkbenchThreadActions({
   );
   const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
 
-  const openAssignedThread = async (threadId: ThreadId) => {
+  /** A Board's Thread ids are unique, and its maps hold each Thread from its own environment. */
+  const getThreadEnvironmentId = (threadId: ThreadId, hostEnvironmentId: EnvironmentId) =>
+    (threadsById.get(threadId) ?? archivedThreadsById.get(threadId))?.environmentId ??
+    hostEnvironmentId;
+
+  /** `knownEnvironmentId` names the Thread's machine before the lookup has its shell. */
+  const openAssignedThread = async (threadId: ThreadId, knownEnvironmentId?: EnvironmentId) => {
     if (environmentId === null) return;
+    const threadEnvironmentId =
+      knownEnvironmentId ?? getThreadEnvironmentId(threadId, environmentId);
     const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
     if (archived && !canOperate) return;
     if (archived) {
@@ -139,14 +161,14 @@ export function useWorkbenchThreadActions({
     const result = await (async () => {
       try {
         return await openAssignedThreadWithRestore(
-          { environmentId, threadId, archived },
+          { environmentId: threadEnvironmentId, threadId, archived },
           {
             unarchive: unarchiveThread,
             refreshArchived: refreshArchivedThreads,
             navigate: () =>
               navigate({
                 to: "/$environmentId/$threadId",
-                params: { environmentId, threadId },
+                params: { environmentId: threadEnvironmentId, threadId },
               }),
           },
         );
@@ -182,6 +204,8 @@ export function useWorkbenchThreadActions({
     assignmentsByTicket,
     existingThreadIds,
     threadLookupReady,
+    remoteEnvironmentStates,
+    boards: snapshot?.projects ?? [],
     onRefreshThreadLookup: refreshThreadLookup,
     onOpenAssignedThread: openAssignedThread,
     onPendingChange: setPendingAction,
@@ -203,7 +227,11 @@ export function useWorkbenchThreadActions({
     );
     if (
       draft &&
-      isWorkbenchTicketWorkspaceReady({ ticket, workspace }) &&
+      isWorkbenchTicketWorkspaceReady({
+        ticket,
+        workspace,
+        board: snapshot?.projects.find((board) => board.id === ticket.projectId),
+      }) &&
       !isWorkbenchRepositoryScopeEqual(ticket, draft.value)
     ) {
       setError("Save or cancel repository edits before creating another Thread.");
@@ -226,7 +254,13 @@ export function useWorkbenchThreadActions({
               candidate.threadId === threadId &&
               candidate.supersededAt === null,
           );
-    if (assignment && (!threadLookupReady || existingThreadIds.has(assignment.threadId))) {
+    // Opening checks the Thread again; only a confirmed missing one leads to a replacement.
+    if (
+      assignment &&
+      (getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }) !==
+        "ready" ||
+        existingThreadIds.has(assignment.threadId))
+    ) {
       void openTicketThread(ticket, { assignment });
       return;
     }
@@ -272,8 +306,9 @@ export function useWorkbenchThreadActions({
     if (environmentId === null || pendingAction !== null) return;
     setPendingAction(`delete-thread:${threadId}`);
     setError(null);
+    const threadEnvironmentId = getThreadEnvironmentId(threadId, environmentId);
     return (async () => {
-      const result = await confirmAndDeleteThread(scopeThreadRef(environmentId, threadId), {
+      const result = await confirmAndDeleteThread(scopeThreadRef(threadEnvironmentId, threadId), {
         preserveWorktree: true,
       });
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
@@ -286,8 +321,15 @@ export function useWorkbenchThreadActions({
     });
   };
 
-  const attachExistingThread = async (threadId: ThreadId) => {
+  const attachExistingThread = async (thread: WorkbenchAttachableThread) => {
     if (environmentId === null || attachThreadTicket === null || pendingAction !== null) return;
+    const threadId = thread.id;
+    const remote = thread.environmentId !== environmentId;
+    // The dialog listed it while connected; the host stores remote refs without checking them.
+    if (remote && !liveEnvironmentIds.has(thread.environmentId)) {
+      setError("That Thread's machine is not connected. Reconnect it and try again.");
+      return;
+    }
     setPendingAction(`attach-thread:${attachThreadTicket.id}`);
     setError(null);
     const result = await attachAssignment({
@@ -296,6 +338,7 @@ export function useWorkbenchThreadActions({
         id: WorkbenchAssignmentId.make(randomUUID()),
         ticketId: attachThreadTicket.id,
         threadId,
+        ...(remote ? { environmentId: thread.environmentId, projectId: thread.projectId } : {}),
         createdAt: new Date().toISOString(),
       },
     });
@@ -305,7 +348,9 @@ export function useWorkbenchThreadActions({
       return;
     }
     setAttachThreadTicket(null);
+    // The page's chat talks to the Board host, so a Thread on another machine opens on its page.
     if (
+      remote ||
       !showWorkbenchPageChatThread({
         environmentId,
         ticketId: attachThreadTicket.id,
@@ -313,7 +358,7 @@ export function useWorkbenchThreadActions({
         threadId,
       })
     ) {
-      await openAssignedThread(threadId);
+      await openAssignedThread(threadId, thread.environmentId);
     }
   };
 

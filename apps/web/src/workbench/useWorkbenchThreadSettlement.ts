@@ -10,22 +10,33 @@ import { useState } from "react";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
 import { useThreadActions } from "../hooks/useThreadActions";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { serverEnvironment } from "../state/server";
 
-/** Settles or un-settles one Thread at a time with the native actions, as sidebar rows do. */
+/**
+ * Settles or un-settles one Thread at a time with the native actions, as sidebar rows do. Each
+ * Thread settles on its own environment, which may be another machine than the Board host.
+ */
 export function useWorkbenchThreadSettlement(environmentId: EnvironmentId) {
   const { settleThread, unsettleThread } = useThreadActions();
   const [settlementPendingThreadId, setSettlementPendingThreadId] = useState<ThreadId | null>(null);
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const toggleThreadSettlement = async (thread: EnvironmentThreadShell) => {
-    if (!supportsSettlement || settlementPendingThreadId !== null) return;
+    const threadServerConfig =
+      thread.environmentId === environmentId
+        ? serverConfig
+        : appAtomRegistry.get(serverEnvironment.configValueAtom(thread.environmentId));
+    if (
+      threadServerConfig?.environment.capabilities.threadSettlement !== true ||
+      settlementPendingThreadId !== null
+    )
+      return;
     const wasSettled = thread.settledOverride === "settled";
+    const threadRef = scopeThreadRef(thread.environmentId, thread.id);
     setSettlementPendingThreadId(thread.id);
     return (async () => {
-      const result = wasSettled
-        ? await unsettleThread(scopeThreadRef(environmentId, thread.id))
-        : await settleThread(scopeThreadRef(environmentId, thread.id));
+      const result = wasSettled ? await unsettleThread(threadRef) : await settleThread(threadRef);
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         toastManager.add(

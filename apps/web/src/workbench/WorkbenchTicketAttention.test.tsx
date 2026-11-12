@@ -126,6 +126,33 @@ it.each(["Checks failed", "Changes requested", "1 unresolved thread"])(
   },
 );
 
+it("opens a remote Thread's PR and its Thread on that Thread's machine", async () => {
+  const otherMachine = EnvironmentId.make("other-machine");
+  const remoteSource = {
+    type: "pull-request",
+    row: { ...row, pullRequest: { ...row.pullRequest, environmentId: otherMachine } },
+  } as const;
+  mocks.signals = [{ kind: "failed-checks", source: remoteSource, unresolvedReviewThreads: [] }];
+  await act(async () =>
+    root.render(
+      <WorkbenchTicketAttentionBadge
+        environmentId={environmentId}
+        ticketId={ticketId}
+        ticketTitle="Settings"
+      />,
+    ),
+  );
+  await act(async () => button("Settings needs attention").click());
+  await act(async () => button("Checks failed").click());
+  const selection = mocks.openPullRequest.mock.lastCall?.[0];
+  expect(selection?.environmentId).toBe(otherMachine);
+  await act(async () => selection?.linkedThread.onOpen());
+  expect(mocks.navigate).toHaveBeenCalledExactlyOnceWith({
+    to: "/$environmentId/$threadId",
+    params: { environmentId: otherMachine, threadId },
+  });
+});
+
 it.each([
   { chat: "no", chatTicketId: null, shows: false },
   { chat: "another Ticket's", chatTicketId: WorkbenchTicketId.make("other"), shows: false },

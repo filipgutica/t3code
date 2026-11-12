@@ -1,3 +1,5 @@
+import { RegistryContext } from "@effect/atom-react";
+import { AtomRegistry } from "effect/reactivity";
 import { makeThreadFixture } from "../test-fixtures";
 import { act, type ReactNode } from "react";
 import { create, type ReactTestRenderer } from "react-test-renderer";
@@ -15,22 +17,35 @@ import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell
 import { Select } from "../components/ui/select";
 import { WorkbenchLinkPullRequest } from "./WorkbenchLinkPullRequest";
 
+// Environments by what they allow; each test starts with the Ticket's environment allowing all.
 const observed = vi.hoisted(() => ({
-  mode: "multiple",
-  phase: "connected",
-  canLinkAny: true,
+  connected: [] as string[],
+  supported: [] as string[],
+  withGitRemote: [] as string[],
 }));
 vi.mock("./WorkbenchPullRequestPicker", () => ({
   WorkbenchPullRequestPicker: ({ thread }: { thread: EnvironmentThreadShell }) => (
     <div data-picker-thread={thread.id} />
   ),
 }));
-vi.mock("../hooks/usePullRequestLinking", () => ({
-  usePullRequestLinking: () => ({ mode: observed.mode, canLinkAny: observed.canLinkAny }),
-}));
 vi.mock("../state/environments", () => ({
-  useEnvironment: () => ({ connection: { phase: observed.phase } }),
+  useConnectedEnvironmentIds: () => observed.connected,
 }));
+vi.mock("../state/entities", () => ({
+  useProjects: () =>
+    observed.withGitRemote.map((environmentId) => ({
+      environmentId,
+      repositoryIdentity: { provider: "github" },
+    })),
+}));
+vi.mock("../state/server", async () => {
+  const { Atom } = await import("effect/reactivity");
+  return {
+    environmentServerConfigsAtom: Atom.make(
+      () => new Map(observed.supported.map((id) => [id, { environment: { capabilities: {} } }])),
+    ),
+  };
+});
 vi.mock("../components/ui/dialog", () => {
   const Container = ({ children }: { children?: ReactNode }) => <div>{children}</div>;
   return {
@@ -104,6 +119,11 @@ const props = {
   assignments: [assignment("first")],
   threadsById: new Map([[one.id, one]]),
 };
+// A fresh registry reads this test's environments rather than an earlier test's.
+const createWithRegistry = (element: ReactNode) =>
+  create(
+    <RegistryContext.Provider value={AtomRegistry.make()}>{element}</RegistryContext.Provider>,
+  );
 const button = (renderer: ReactTestRenderer, text: string) =>
   renderer.root.findAllByType("button").find((node) => node.children.includes(text))!;
 const pickerThreads = (renderer: ReactTestRenderer) =>
@@ -115,9 +135,9 @@ describe("Ticket PR linking", () => {
   let renderer: ReactTestRenderer;
   beforeEach(() => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-    observed.mode = "multiple";
-    observed.phase = "connected";
-    observed.canLinkAny = true;
+    observed.connected = [environmentId];
+    observed.supported = [environmentId];
+    observed.withGitRemote = [environmentId];
   });
   afterEach(() => {
     act(() => renderer?.unmount());
@@ -125,7 +145,7 @@ describe("Ticket PR linking", () => {
   });
   it("opens the PR picker for the sole eligible Thread in the Ticket's environment", () => {
     act(() => {
-      renderer = create(
+      renderer = createWithRegistry(
         <WorkbenchLinkPullRequest
           {...props}
           assignments={[
@@ -148,7 +168,7 @@ describe("Ticket PR linking", () => {
   });
   it("requires an explicit Thread choice when multiple live Threads are eligible", () => {
     act(() => {
-      renderer = create(
+      renderer = createWithRegistry(
         <WorkbenchLinkPullRequest
           {...props}
           assignments={[assignment("first"), assignment("second")]}
@@ -171,12 +191,39 @@ describe("Ticket PR linking", () => {
     act(() => button(renderer, "Continue").props.onClick());
     expect(pickerThreads(renderer)).toEqual([two.id]);
   });
+  it("links on a Thread's own machine when the Ticket's environment cannot", () => {
+    const remote = EnvironmentId.make("remote");
+    observed.connected = [environmentId, remote];
+    observed.supported = [remote];
+    observed.withGitRemote = [remote];
+    const remoteThread = { ...thread("remote-thread"), environmentId: remote };
+    act(() => {
+      renderer = createWithRegistry(
+        <WorkbenchLinkPullRequest
+          {...props}
+          assignments={[
+            assignment("first"),
+            { ...assignment("remote-thread"), environmentId: remote },
+          ]}
+          threadsById={
+            new Map([
+              [one.id, one],
+              [remoteThread.id, remoteThread],
+            ])
+          }
+        />,
+      );
+    });
+    expect(button(renderer, "Link PR").props.disabled).toBe(false);
+    act(() => button(renderer, "Link PR").props.onClick());
+    expect(pickerThreads(renderer)).toEqual([remoteThread.id]);
+  });
   it.each(["missing", "archived", "settled", "foreign", "unsupported", "offline", "no-host"])(
     "explains why linking is unavailable for %s",
     (reason) => {
-      if (reason === "unsupported") observed.mode = "unsupported";
-      if (reason === "offline") observed.phase = "offline";
-      if (reason === "no-host") observed.canLinkAny = false;
+      if (reason === "unsupported") observed.supported = [];
+      if (reason === "offline") observed.connected = [];
+      if (reason === "no-host") observed.withGitRemote = [];
       const target =
         reason === "archived"
           ? { ...one, archivedAt: "2026-09-27T00:00:00.000Z" }
@@ -186,7 +233,7 @@ describe("Ticket PR linking", () => {
               ? { ...one, environmentId: EnvironmentId.make("remote") }
               : one;
       act(() => {
-        renderer = create(
+        renderer = createWithRegistry(
           <WorkbenchLinkPullRequest
             {...props}
             threadsById={reason === "missing" ? new Map() : new Map([[one.id, target]])}

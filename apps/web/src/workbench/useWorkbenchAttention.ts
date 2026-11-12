@@ -72,8 +72,10 @@ const useWorkbenchThreadNotifications = ({
       const requests = new Map<ThreadId, PendingThreadRequests>();
       if (environmentId === null) return requests;
       for (const id of pendingThreadIds) {
+        // A Thread on another machine keeps its requests there.
+        const threadEnvironmentId = threadsById.get(id)?.environmentId ?? environmentId;
         const pending = get(
-          environmentThreadDetails.pendingRequestsAtom(scopeThreadRef(environmentId, id)),
+          environmentThreadDetails.pendingRequestsAtom(scopeThreadRef(threadEnvironmentId, id)),
         );
         if (pending !== null) requests.set(id, pending);
       }
@@ -121,7 +123,12 @@ const getTicketThreadAttention = ({
     if (notification && !isOpen) {
       const signal: WorkbenchAttentionSignal = {
         ...notification,
-        source: { type: "thread", threadId: thread.id, threadTitle: thread.title },
+        source: {
+          type: "thread",
+          threadId: thread.id,
+          threadTitle: thread.title,
+          ...(assignment.environmentId ? { environmentId: assignment.environmentId } : {}),
+        },
       };
       signals.push(signal);
       reasons.add(getWorkbenchAttentionSignalLabel(signal));

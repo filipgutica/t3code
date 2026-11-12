@@ -5,6 +5,8 @@ import type {
   WorkbenchAssignment,
   WorkbenchTicketId,
 } from "@t3tools/contracts";
+import { useAtomValue } from "@effect/atom-react";
+import { threadPullRequestLinkMode } from "@t3tools/client-runtime/thread-pull-request-compatibility";
 import { InfoIcon } from "lucide-react";
 import { useId, useRef, useState, type RefObject } from "react";
 
@@ -25,10 +27,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { usePullRequestLinking } from "../hooks/usePullRequestLinking";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../components/ui/tooltip";
-import { useEnvironment } from "../state/environments";
+import { useProjects } from "../state/entities";
+import { useConnectedEnvironmentIds } from "../state/environments";
+import { environmentServerConfigsAtom } from "../state/server";
 import { WorkbenchPullRequestPicker } from "./WorkbenchPullRequestPicker";
+import { getWorkbenchAssignmentEnvironmentId } from "./workbench.logic";
 
 export function WorkbenchLinkPullRequest({
   environmentId,
@@ -41,20 +45,27 @@ export function WorkbenchLinkPullRequest({
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
   readonly threadsById: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
 }) {
-  const linking = usePullRequestLinking(environmentId);
-  const environment = useEnvironment(environmentId);
+  const linkUnavailableReason = usePullRequestLinkUnavailableReason();
   const descriptionId = useId();
   const linkButtonRef = useRef<HTMLButtonElement>(null);
   const [choosing, setChoosing] = useState(false);
   const [linkingThreadId, setLinkingThreadId] = useState<ThreadId | null>(null);
-  const threads = getEligibleThreads({ assignments, threadsById, environmentId, ticketId });
+  const liveThreads = [
+    ...getEligibleThreads({ assignments, threadsById, environmentId, ticketId }).values(),
+  ];
+  // Each Thread links on its own machine, so one machine's limits do not block another's Thread.
+  const threads = new Map(
+    liveThreads
+      .filter((thread) => linkUnavailableReason(thread.environmentId) === null)
+      .map((thread) => [thread.id, thread]),
+  );
   const eligibleThreads = [...threads.values()];
-  const unavailable = getUnavailableReason({
-    connected: environment?.connection.phase === "connected",
-    unsupported: linking.mode === "unsupported",
-    hasThreads: eligibleThreads.length > 0,
-    canLinkAny: linking.canLinkAny,
-  });
+  const unavailable =
+    eligibleThreads.length > 0
+      ? null
+      : liveThreads.length > 0
+        ? linkUnavailableReason(liveThreads[0]!.environmentId)
+        : "Create or attach a live Thread to this Ticket. PR links belong to Threads.";
   const linkingThread =
     unavailable === null && linkingThreadId !== null ? threads.get(linkingThreadId) : undefined;
   const openPicker = (threadId: ThreadId) => {
@@ -211,7 +222,8 @@ function getEligibleThreads({
     if (
       assignment.ticketId === ticketId &&
       assignment.supersededAt === null &&
-      thread?.environmentId === environmentId &&
+      // The picker links on the Thread's own environment, which may be another machine.
+      thread?.environmentId === getWorkbenchAssignmentEnvironmentId(assignment, environmentId) &&
       thread.archivedAt === null &&
       thread.settledOverride !== "settled"
     )
@@ -220,22 +232,28 @@ function getEligibleThreads({
   return threads;
 }
 
-function getUnavailableReason({
-  connected,
-  unsupported,
-  hasThreads,
-  canLinkAny,
-}: {
-  connected: boolean;
-  unsupported: boolean;
-  hasThreads: boolean;
-  canLinkAny: boolean;
-}) {
-  if (!connected) return "Connect to this environment to link a PR.";
-  if (unsupported) return "This environment does not support PR linking.";
-  if (!hasThreads)
-    return "Create or attach a live Thread to this Ticket. PR links belong to Threads.";
-  if (!canLinkAny)
-    return "Add a project with a supported Git remote to this environment before linking a PR.";
-  return null;
+/** Why a Thread's machine cannot link a PR, or null; `usePullRequestLinking`'s checks per machine. */
+function usePullRequestLinkUnavailableReason() {
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const serverConfigs = useAtomValue(environmentServerConfigsAtom);
+  const projects = useProjects();
+  return (environmentId: EnvironmentId) => {
+    if (!connectedEnvironmentIds.includes(environmentId)) {
+      return "Connect to this environment to link a PR.";
+    }
+    const capabilities = serverConfigs.get(environmentId)?.environment.capabilities;
+    if (threadPullRequestLinkMode(capabilities) === "unsupported") {
+      return "This environment does not support PR linking.";
+    }
+    if (
+      !projects.some(
+        (project) =>
+          project.environmentId === environmentId &&
+          project.repositoryIdentity?.provider !== undefined,
+      )
+    ) {
+      return "Add a project with a supported Git remote to this environment before linking a PR.";
+    }
+    return null;
+  };
 }

@@ -8,7 +8,7 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { getAssignmentsForTicket } from "./workbench.logic";
+import { getAssignmentsForTicket, isWorkbenchHostAssignment } from "./workbench.logic";
 import {
   getTicketIssue,
   getTicketReferences,
@@ -121,8 +121,9 @@ export const getWorkbenchBoardChatThreads = ({
       ticket ? undefined : (thread) => getConversationDraftTitle(draft, thread.title),
     );
   }
+  const hostAssignments = assignments.filter(isWorkbenchHostAssignment);
   for (const ticket of boardTickets) {
-    for (const assignment of getAssignmentsForTicket(assignments, ticket.id)) {
+    for (const assignment of getAssignmentsForTicket(hostAssignments, ticket.id)) {
       const thread =
         threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
       if (assignment.supersededAt !== null && thread?.settledOverride !== "settled") continue;
@@ -188,9 +189,12 @@ export function resolveWorkbenchFloatingChat({
   };
 }
 
-type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status" | "unread">;
+type WorkbenchStatusThread = Pick<WorkbenchFloatingChatThread, "threadId" | "status" | "unread"> & {
+  /** On a machine this client cannot reach, so its status is unknown rather than idle. */
+  readonly offline?: boolean;
+};
 
-type WorkbenchThreadSectionId = "unread" | "idle" | "working" | "settled";
+type WorkbenchThreadSectionId = "unread" | "idle" | "working" | "offline" | "settled";
 
 // Like an inbox: anything that needs the user is unread until they act on it.
 const SECTION_BY_STATUS = {
@@ -207,6 +211,7 @@ const SECTION_LABELS = {
   unread: "Unread",
   idle: "Idle",
   working: "Working",
+  offline: "Offline",
   settled: "Settled",
 } as const satisfies Record<WorkbenchThreadSectionId, string>;
 
@@ -218,8 +223,9 @@ export interface WorkbenchThreadStatusSection<Thread extends WorkbenchStatusThre
 }
 
 /**
- * Threads as an inbox: unread replies and requests, then idle, working, and settled Threads.
- * Unread and Idle start open, as does the section holding the showing Thread; empty ones drop.
+ * Threads as an inbox: unread replies and requests, then idle, working, offline, and settled
+ * Threads. Unread, Idle, and Offline start open, as does the section holding the showing Thread;
+ * empty ones drop.
  */
 export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusThread>({
   active,
@@ -231,10 +237,16 @@ export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusT
   readonly showingThreadId: ThreadId | null;
 }): ReadonlyArray<WorkbenchThreadStatusSection<Thread>> => {
   const sectionOf = (thread: Thread): WorkbenchThreadSectionId =>
-    thread.status ? SECTION_BY_STATUS[thread.status.kind] : thread.unread ? "unread" : "idle";
+    thread.offline
+      ? "offline"
+      : thread.status
+        ? SECTION_BY_STATUS[thread.status.kind]
+        : thread.unread
+          ? "unread"
+          : "idle";
   const threadsIn = (id: WorkbenchThreadSectionId) =>
     id === "settled" ? settled : active.filter((thread) => sectionOf(thread) === id);
-  return (["unread", "idle", "working", "settled"] as const).flatMap((id) => {
+  return (["unread", "idle", "working", "offline", "settled"] as const).flatMap((id) => {
     const threads = threadsIn(id);
     if (threads.length === 0) return [];
     return [
@@ -245,6 +257,7 @@ export const getWorkbenchThreadStatusSections = <Thread extends WorkbenchStatusT
         openByDefault:
           id === "unread" ||
           id === "idle" ||
+          id === "offline" ||
           threads.some((thread) => thread.threadId === showingThreadId),
       },
     ];
