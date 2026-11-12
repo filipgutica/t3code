@@ -21,7 +21,7 @@ import { page, userEvent } from "vite-plus/test/browser";
 
 import { fakeTimers, render } from "../../test/render";
 import { useComposerDraftStore } from "../composerDraftStore";
-import { makeThreadFixture } from "../test-fixtures";
+import { makeThreadFixture, type ThreadFixtureOverrides } from "../test-fixtures";
 import { WorkbenchPageView } from "./WorkbenchPageView";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
@@ -162,12 +162,13 @@ const draft = (id: string, threadId: string, title: string): WorkbenchTicketDraf
   createdAt,
   updatedAt: createdAt,
 });
-const liveThread = (id: string) =>
+const liveThread = (id: string, overrides: ThreadFixtureOverrides = {}) =>
   makeThreadFixture({
     id: ThreadId.make(id),
     projectId: repositoryId,
     environmentId,
     title: `Thread ${id}`,
+    ...overrides,
   });
 
 type BeginInput = { readonly id: WorkbenchTicketId; readonly threadId: ThreadId };
@@ -180,6 +181,7 @@ function Harness(props: {
   readonly repositories?: boolean;
   readonly archived?: boolean;
   readonly missingThreadIds?: ReadonlyArray<ThreadId>;
+  readonly settledThreadIds?: ReadonlyArray<string>;
   readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
   readonly onNewTicketThread?: (ticket: WorkbenchTicket) => void;
@@ -243,7 +245,12 @@ function Harness(props: {
         new Map(
           threadIds
             .filter((id) => !props.missingThreadIds?.includes(ThreadId.make(id)))
-            .map((id) => [ThreadId.make(id), liveThread(id)]),
+            .map((id) => [
+              ThreadId.make(id),
+              props.settledThreadIds?.includes(id)
+                ? liveThread(id, { settledOverride: "settled", settledAt: createdAt })
+                : liveThread(id),
+            ]),
         )
       }
       archivedThreadsById={new Map()}
@@ -866,6 +873,25 @@ it("opens an old draft URL in the Board chat despite a previous Thread pick", as
     .element(screen.getByRole("textbox", { name: "Composer for second" }))
     .not.toBeInTheDocument();
   expect(mocks.begin).not.toHaveBeenCalled();
+});
+
+it("opens a settled draft's own Thread instead of another active Thread", async () => {
+  const { onSnapshot } = await setup();
+  const requested = draft("settled-draft", "settled-thread", "");
+  await using screen = await render(
+    <Harness
+      initialDrafts={[requested]}
+      requestedDraftId={requested.id}
+      settledThreadIds={["settled-thread"]}
+      onSnapshot={onSnapshot}
+    />,
+  );
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for settled-thread" }))
+    .toBeVisible();
+  await expect
+    .element(screen.getByRole("textbox", { name: "Composer for first" }))
+    .not.toBeInTheDocument();
 });
 
 it("requires a repository choice in the card before creating the Ticket", async () => {

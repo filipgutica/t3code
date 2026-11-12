@@ -233,7 +233,12 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const resolvedChat = resolveWorkbenchFloatingChat({
     ...threads,
     primaryThreadId: null,
-    pick: requestedDraft ? { threadId: requestedDraft.threadId, settledAt: null } : pick,
+    pick: requestedDraft
+      ? {
+          threadId: requestedDraft.threadId,
+          settledAt: props.threadsById.get(requestedDraft.threadId)?.settledAt ?? null,
+        }
+      : pick,
   });
   const chat = { ...resolvedChat, selected: startingDraft ? null : resolvedChat.selected };
   useRefreshOnThreadActivity(
