@@ -110,6 +110,7 @@ const mount = () =>
           ticket,
           projects,
           workspace: undefined,
+          board: undefined,
           initialRepositoryScope: undefined,
           repositoryProjectId: undefined,
         }}

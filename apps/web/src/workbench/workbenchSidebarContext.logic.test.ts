@@ -64,6 +64,7 @@ describe("Workbench sidebar ticket context", () => {
       threads: [],
       projects: [],
       workbenchProjects,
+      environmentLabels: new Map(),
       referencesByTicket: new Map(),
     };
     expect(getWorkbenchSidebarTicketDetails(inputs).get(ticketId)?.readOnly).toBe(readOnly);
@@ -93,6 +94,7 @@ describe("Workbench sidebar ticket context", () => {
         { id: projectId, environmentId: EnvironmentId.make("remote"), title: "Remote repo" },
       ],
       workbenchProjects: [],
+      environmentLabels: new Map(),
       referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.repositories).toEqual(["Local repo"]);
@@ -100,6 +102,48 @@ describe("Workbench sidebar ticket context", () => {
     expect(details?.threads.map(({ threadId: id }) => id)).toEqual([threadId]);
     expect(details?.attentionLabel).toBe("Blocked");
     expect(details?.statusLabel).toBe("In Progress");
+  });
+
+  it("reads a remote Thread and repository from their own machine", () => {
+    const remote = EnvironmentId.make("remote");
+    const remoteProjectId = ProjectId.make("remote-repo");
+    const remoteThreadId = ThreadId.make("remote-thread");
+    const details = getWorkbenchSidebarTicketDetails({
+      environmentId,
+      tickets: [{ ...ticket, repositoryProjectIds: [projectId, remoteProjectId] }],
+      assignments: [
+        {
+          ticketId,
+          threadId: remoteThreadId,
+          supersededAt: null,
+          environmentId: remote,
+        },
+      ],
+      threads: [
+        { ...thread, id: remoteThreadId, environmentId: remote, projectId: remoteProjectId },
+      ],
+      projects: [
+        { id: projectId, environmentId, title: "Local repo" },
+        { id: remoteProjectId, environmentId: remote, title: "Live remote repo" },
+      ],
+      workbenchProjects: [
+        {
+          id: workspaceId,
+          archivedAt: null,
+          remoteProjects: {
+            [remoteProjectId]: {
+              environmentId: remote,
+              environmentLabel: "Stored label",
+              projectTitle: "Stored repo",
+            },
+          },
+        },
+      ],
+      environmentLabels: new Map([[remote, "Build box"]]),
+      referencesByTicket: new Map(),
+    }).get(ticketId);
+    expect(details?.repositories).toEqual(["Local repo", "Live remote repo · Build box"]);
+    expect(details?.threads.map(({ threadId: id }) => id)).toEqual([remoteThreadId]);
   });
 
   it("labels the row with the first issue Reference in list order", () => {
@@ -117,6 +161,7 @@ describe("Workbench sidebar ticket context", () => {
       threads: [],
       projects: [],
       workbenchProjects: [],
+      environmentLabels: new Map(),
       referencesByTicket: new Map([
         [
           ticketId,
@@ -139,6 +184,7 @@ describe("Workbench sidebar ticket context", () => {
       threads: [],
       projects: [],
       workbenchProjects: [],
+      environmentLabels: new Map(),
       referencesByTicket: new Map(),
     }).get(ticketId);
     expect(details?.pullRequests).toEqual([]);
@@ -170,6 +216,7 @@ describe("Workbench sidebar ticket context", () => {
       threads: [working, { ...thread, id: historicalId, hasPendingApprovals: true }],
       projects: [],
       workbenchProjects: [],
+      environmentLabels: new Map(),
       referencesByTicket: new Map(),
     };
     const details = getWorkbenchSidebarTicketDetails(inputs).get(ticketId);

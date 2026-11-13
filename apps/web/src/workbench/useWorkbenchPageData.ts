@@ -5,12 +5,14 @@ import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
 import { useProjects } from "../state/entities";
+import { useEnvironmentIdentities } from "../state/environments";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentQuery } from "../state/query";
 
 import { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import { workbenchEnvironment } from "./state";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
+import { getWorkbenchRemoteRepositories } from "./workbenchRemote.logic";
 import {
   idleWorkbenchSnapshotReconciliation,
   workbenchSnapshotReconciliation,
@@ -32,8 +34,15 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   );
   const refreshWorkbenchSnapshot = query.refresh;
   const projects = allProjects.filter((project) => project.environmentId === environmentId);
-  const repositoriesById = new Map(projects.map((project) => [project.id, project]));
   const snapshot = query.data;
+  const environmentLabels = new Map(
+    useEnvironmentIdentities().map(({ environmentId: id, label }) => [id, label]),
+  );
+  const remoteRepositoriesByBoard = getWorkbenchRemoteRepositories({
+    boards: snapshot?.projects ?? [],
+    projects: allProjects,
+    environmentLabels,
+  });
   const snapshotProjects = snapshot?.projects ?? null;
   const optimisticStatus = useOptimisticWorkbenchStatus({
     environmentId,
@@ -47,7 +56,8 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   return {
     canOperate,
     projects,
-    repositoriesById,
+    remoteRepositoriesByBoard,
+    environmentLabels,
     providers,
     keybindings,
     availableEditors,

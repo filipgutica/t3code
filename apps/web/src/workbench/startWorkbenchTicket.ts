@@ -1,24 +1,29 @@
 import type { CreateThreadInput, DeleteThreadInput } from "@t3tools/client-runtime/operations";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import type { AtomCommandResult } from "@t3tools/client-runtime/state/runtime";
-import type {
-  EnvironmentId,
-  ModelSelection,
-  RuntimeMode,
-  ProjectId,
-  ThreadId,
-  WorkbenchAssignment,
-  WorkbenchAssignmentId,
-  WorkbenchCreateAssignmentInput,
-  WorkbenchReplaceAssignmentInput,
-  WorkbenchPrepareTicketWorkspaceInput,
-  WorkbenchTicket,
-  WorkbenchTicketWorkspace,
-  WorkbenchUpdateTicketInput,
+import {
+  workbenchHostRepositoryProjectIds,
+  type EnvironmentId,
+  type ModelSelection,
+  type RuntimeMode,
+  type ProjectId,
+  type ThreadId,
+  type WorkbenchAssignment,
+  type WorkbenchAssignmentId,
+  type WorkbenchCreateAssignmentInput,
+  type WorkbenchProject,
+  type WorkbenchReplaceAssignmentInput,
+  type WorkbenchPrepareTicketWorkspaceInput,
+  type WorkbenchTicket,
+  type WorkbenchTicketWorkspace,
+  type WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
 
 import { DEFAULT_INTERACTION_MODE } from "../types";
-import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
+import {
+  resolveWorkbenchTicketThreadTarget,
+  type WorkbenchThreadLookupState,
+} from "./workbench.logic";
 import {
   isWorkbenchRepositoryScopeEqual,
   resolveWorkbenchThreadRepository,
@@ -39,7 +44,10 @@ interface StartWorkbenchTicketInput {
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
-  readonly threadLookupReady: boolean;
+  /** Whether the assigned Thread's own environment can confirm it is gone. */
+  readonly threadLookupState: WorkbenchThreadLookupState;
+  /** The Ticket's Board; its repositories on other machines get no Thread or worktree here. */
+  readonly board: Pick<WorkbenchProject, "remoteProjects"> | undefined;
 }
 
 export type WorkbenchTicketStartStage =
@@ -142,15 +150,22 @@ export type StartWorkbenchTicketResult =
 const openExistingWorkbenchThread = async ({
   input,
   dependencies,
+  mode,
 }: {
   input: StartWorkbenchTicketInput;
   dependencies: StartWorkbenchTicketDependencies;
+  mode: StartWorkbenchTicketOptions["mode"];
 }): Promise<StartWorkbenchTicketResult | null> => {
+  if (mode === "additional") return null;
+  // The replaced Thread's machine may have gone offline since the dialog opened.
+  if (mode === "replace") {
+    return input.threadLookupState === "ready" ? null : { state: "thread-status-unavailable" };
+  }
   dependencies.onStage?.("checking-thread");
   const target = resolveWorkbenchTicketThreadTarget(
     input.assignment,
     input.existingThreadIds,
-    input.threadLookupReady,
+    input.threadLookupState,
   );
   if (target.state === "open") {
     dependencies.onStage?.("opening-thread");
@@ -169,11 +184,11 @@ const openExistingWorkbenchThread = async ({
 };
 
 const getPreparedRepository = ({
-  ticket,
+  hostRepositoryProjectIds,
   workspace,
   projectId,
 }: {
-  ticket: WorkbenchTicket;
+  hostRepositoryProjectIds: ReadonlyArray<ProjectId>;
   workspace: WorkbenchTicketWorkspace;
   projectId: ProjectId;
 }) => {
@@ -182,7 +197,7 @@ const getPreparedRepository = ({
       (repository) => repository.projectId === id && repository.status === "ready",
     );
   const checkout = readyCheckout(projectId);
-  if (!checkout || !ticket.repositoryProjectIds.every(readyCheckout)) {
+  if (!checkout || !hostRepositoryProjectIds.every(readyCheckout)) {
     throw new Error(
       "The prepared worktrees do not match the reviewed repositories. Review the repositories and try again.",
     );
@@ -223,10 +238,12 @@ export async function coordinateWorkbenchTicketStart(
   dependencies: StartWorkbenchTicketDependencies,
   options: StartWorkbenchTicketOptions = {},
 ): Promise<StartWorkbenchTicketResult> {
-  if (options.mode === undefined) {
-    const existing = await openExistingWorkbenchThread({ input: originalInput, dependencies });
-    if (existing !== null) return existing;
-  }
+  const existing = await openExistingWorkbenchThread({
+    input: originalInput,
+    dependencies,
+    mode: options.mode,
+  });
+  if (existing !== null) return existing;
 
   const saved = await saveReviewedRepositoryScope({
     input: originalInput,
@@ -237,8 +254,12 @@ export async function coordinateWorkbenchTicketStart(
   const input = { ...originalInput, ticket: saved.ticket };
 
   // Resolved against the saved Ticket, which may no longer link the preferred repository.
+  const hostRepositoryProjectIds = workbenchHostRepositoryProjectIds(
+    input.board,
+    input.ticket.repositoryProjectIds,
+  );
   const repositoryProjectId = resolveWorkbenchThreadRepository({
-    ticket: input.ticket,
+    ticket: { repositoryProjectIds: hostRepositoryProjectIds },
     preferred: options.repositoryProjectId,
   });
   const project = input.projects.find((candidate) => candidate.id === repositoryProjectId);
@@ -258,7 +279,7 @@ export async function coordinateWorkbenchTicketStart(
     return { state: "failed", stage: "workspace", failure: workspaceResult, ticket: input.ticket };
   }
   const checkout = getPreparedRepository({
-    ticket: input.ticket,
+    hostRepositoryProjectIds,
     workspace: workspaceResult.value,
     projectId: project.id,
   });

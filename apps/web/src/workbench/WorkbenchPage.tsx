@@ -2,6 +2,7 @@ import { usePrimaryEnvironmentId } from "../state/environments";
 import { useWorkbenchPageTicketWorkflow } from "./useWorkbenchPageTicketWorkflow";
 
 import { WorkbenchPageView } from "./WorkbenchPageView";
+import { WorkbenchRemoteRefsContext } from "./WorkbenchRemoteRefs";
 import { useWorkbenchPageDialogs } from "./useWorkbenchPageDialogs";
 
 import { getWorkbenchBoardData } from "./workbenchBoardData";
@@ -74,21 +75,33 @@ export function WorkbenchPage({
         pending={pendingAction !== null}
         error={error}
       />
-      <WorkbenchPageView
-        workspaceActions={workspaceActions}
-        environmentId={environmentId}
-        createWorkspace={createWorkspace}
-        createTicket={createTicket}
-        error={error}
-        pendingAction={pendingAction}
-        setError={setError}
-        pageData={pageData}
-        selection={selection}
-        dialogs={dialogs}
-        boardData={boardData}
-        ticketActions={ticketActions}
-        threadActions={threadActions}
-      />
+      <WorkbenchRemoteRefsContext
+        value={{
+          // The selected Board's links; another Board's are not this Ticket's to scope.
+          repositories:
+            (selection.selectedProject &&
+              pageData.remoteRepositoriesByBoard.get(selection.selectedProject.id)) ??
+            new Map(),
+          environmentStates: pageData.remoteEnvironmentStates,
+          environmentLabels: pageData.environmentLabels,
+        }}
+      >
+        <WorkbenchPageView
+          workspaceActions={workspaceActions}
+          environmentId={environmentId}
+          createWorkspace={createWorkspace}
+          createTicket={createTicket}
+          error={error}
+          pendingAction={pendingAction}
+          setError={setError}
+          pageData={pageData}
+          selection={selection}
+          dialogs={dialogs}
+          boardData={boardData}
+          ticketActions={ticketActions}
+          threadActions={threadActions}
+        />
+      </WorkbenchRemoteRefsContext>
     </>
   );
 }

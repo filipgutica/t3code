@@ -117,6 +117,13 @@ const assignment: WorkbenchAssignment = {
   supersededAt: null,
   createdAt,
 };
+const attachable = {
+  id: assignment.threadId,
+  environmentId,
+  title: "Linked Thread",
+  projectId,
+  branch: null,
+};
 const readyWorkspace: WorkbenchTicketWorkspace = {
   ticketId: ticket.id,
   attemptId: WorkbenchTicketWorkspaceAttemptId.make("attempt"),
@@ -155,6 +162,8 @@ type HarnessInput = {
   environmentId: EnvironmentId | null;
   existingThreadIds: ReadonlySet<ThreadId>;
   repositoryScopeDraft: WorkbenchRepositoryScopeDraft | null;
+  liveEnvironmentIds?: ReadonlySet<EnvironmentId>;
+  remoteEnvironmentStates?: Map<EnvironmentId, "ready" | "checking" | "offline">;
 };
 function pageData(input: HarnessInput): HookInput["pageData"] {
   const query = {
@@ -177,7 +186,6 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
     referencesByTicket: new Map(),
     snapshotProjects: input.snapshot.projects,
     projects,
-    repositoriesById: new Map(projects.map((project) => [project.id, project])),
     providers: [],
     keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
     availableEditors: [],
@@ -222,6 +230,10 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
     threadLookupError: null,
     refreshArchivedThreads: refresh.archived,
     refreshThreadLookup: vi.fn(),
+    remoteEnvironmentStates: input.remoteEnvironmentStates ?? new Map(),
+    remoteRepositoriesByBoard: new Map(),
+    environmentLabels: new Map(),
+    liveEnvironmentIds: input.liveEnvironmentIds ?? new Set(),
   };
 }
 
@@ -342,7 +354,7 @@ describe("linked Thread failure recovery", () => {
       AsyncResult.failure(Cause.fail(new Error("Assignment could not be saved."))),
     );
     await act(async () => actions.setAttachThreadTicket(ticket));
-    await act(async () => actions.attachExistingThread(assignment.threadId));
+    await act(async () => actions.attachExistingThread(attachable));
     expect(actions.attachThreadTicket?.id).toBe(ticket.id);
     expect(error).toBe("Assignment could not be saved.");
     expect(pending).toBeNull();
@@ -355,7 +367,7 @@ describe("linked Thread failure recovery", () => {
         tickets: [{ ...ticket, id: WorkbenchTicketId.make("other-selected-ticket") }, ticket],
       },
     });
-    await act(async () => actions.attachExistingThread(assignment.threadId));
+    await act(async () => actions.attachExistingThread(attachable));
     expect(commands.createAssignment).toHaveBeenCalledTimes(2);
     expect(commands.createAssignment).toHaveBeenLastCalledWith({
       environmentId,
@@ -385,10 +397,43 @@ describe("linked Thread failure recovery", () => {
     const { router } = await mount();
     commands.createAssignment.mockResolvedValueOnce(AsyncResult.success(assignment));
     await act(async () => actions.setAttachThreadTicket(ticket));
-    await act(async () => actions.attachExistingThread(assignment.threadId));
+    await act(async () => actions.attachExistingThread(attachable));
     expect(showThread).toHaveBeenCalledExactlyOnceWith(assignment.threadId);
     expect(router.state.location.pathname).toBe("/workbench");
     expect(actions.attachThreadTicket).toBeNull();
+  });
+
+  it("links a Thread on another machine with its machine and opens it there", async () => {
+    const showThread = vi.fn();
+    useWorkbenchFloatingChatStore.setState({
+      pageChat: { environmentId, kind: "ticket", ticketId: ticket.id, showThread },
+    });
+    const { router, update } = await mount();
+    const remoteThread = {
+      ...attachable,
+      id: ThreadId.make("remote-linked"),
+      environmentId: EnvironmentId.make("other-machine"),
+      projectId: otherProjectId,
+    };
+    await act(async () => actions.setAttachThreadTicket(ticket));
+    // The machine went offline after the dialog listed its Thread.
+    await act(async () => actions.attachExistingThread(remoteThread));
+    expect(commands.createAssignment).not.toHaveBeenCalled();
+    expect(error).toContain("not connected");
+    await update({ liveEnvironmentIds: new Set([remoteThread.environmentId]) });
+    commands.createAssignment.mockResolvedValueOnce(AsyncResult.success(assignment));
+    await act(async () => actions.attachExistingThread(remoteThread));
+    expect(commands.createAssignment).toHaveBeenLastCalledWith({
+      environmentId,
+      input: expect.objectContaining({
+        threadId: remoteThread.id,
+        environmentId: remoteThread.environmentId,
+        projectId: otherProjectId,
+      }),
+    });
+    // The page's chat talks to the Board host, so the Thread opens on its own machine.
+    expect(showThread).not.toHaveBeenCalled();
+    expect(router.state.location.pathname).toBe("/other-machine/remote-linked");
   });
 
   it("reports an unlink failure and releases pending state so another action remains usable", async () => {
@@ -478,6 +523,27 @@ describe("Thread repository review", () => {
       expectNoStartEffects();
     },
   );
+
+  it("does not replace a Thread whose machine went offline after the dialog opened", async () => {
+    const remote = EnvironmentId.make("other-machine");
+    const remoteAssignment = {
+      ...assignment,
+      threadId: ThreadId.make("remote-missing"),
+      environmentId: remote,
+      projectId,
+    };
+    const { update } = await mount({
+      snapshot: { ...snapshot, assignments: [remoteAssignment] },
+      remoteEnvironmentStates: new Map([[remote, "ready"]]),
+    });
+    await act(async () =>
+      actions.requestReplacementThread({ ticket, previousThreadId: remoteAssignment.threadId }),
+    );
+    expect(actions.startThreadRequest?.mode).toBe("replace");
+    await update({ remoteEnvironmentStates: new Map([[remote, "offline"]]) });
+    await confirm();
+    expectNoStartEffects();
+  });
 
   it("opens a linked native Thread from an archived Workspace without creating a replacement", async () => {
     const { router } = await mount({

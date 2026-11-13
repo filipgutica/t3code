@@ -14,18 +14,27 @@ import { appAtomRegistry } from "../rpc/atomRegistry";
 import { environmentShell, environmentSnapshotAtom } from "../state/shell";
 import { threadFamilies } from "../state/threads";
 
-import { getWorkbenchOmittedThreadIds, getWorkbenchOmittedThreadsStatus } from "./workbench.logic";
+import {
+  getWorkbenchAssignmentEnvironmentId,
+  getWorkbenchOmittedThreadIds,
+  getWorkbenchOmittedThreadsStatus,
+} from "./workbench.logic";
 
-const NO_OMITTED_THREADS = Atom.make("[]").pipe(Atom.withLabel("workbench-omitted-threads:none"));
+type OmittedThreadsStatus = "ready" | "pending" | "failed";
+/** Assigned Thread ids grouped by the environment that owns them, in a stable order. */
+type ThreadIdsByEnvironment = ReadonlyArray<readonly [EnvironmentId, ReadonlyArray<ThreadId>]>;
 
 // A string result re-renders callers only when the omitted set changes, not on every shell delta.
 const omittedThreadIdsAtom = Atom.family((key: string) => {
-  const [environmentId, threadIds] = JSON.parse(key) as [EnvironmentId, ThreadId[]];
+  const groups = JSON.parse(key) as ThreadIdsByEnvironment;
   return Atom.make((get) =>
     JSON.stringify(
-      getWorkbenchOmittedThreadIds({
-        threadIds,
-        shell: get(environmentSnapshotAtom(environmentId)),
+      groups.flatMap(([environmentId, threadIds]) => {
+        const omitted = getWorkbenchOmittedThreadIds({
+          threadIds,
+          shell: get(environmentSnapshotAtom(environmentId)),
+        });
+        return omitted.length === 0 ? [] : [[environmentId, omitted]];
       }),
     ),
   ).pipe(Atom.withLabel(`workbench-omitted-threads:${key}`));
@@ -33,77 +42,98 @@ const omittedThreadIdsAtom = Atom.family((key: string) => {
 
 const NO_REMOVALS: ReadonlyMap<ThreadId, number> = new Map();
 
-type OmittedThreadsStatus = "ready" | "pending" | "failed";
-
+// Encoded as a string for the same reason as the omitted ids above.
 const omittedThreadsReadAtom = Atom.family((key: string) => {
-  const [environmentId, threadIds] = JSON.parse(key) as [EnvironmentId | null, ThreadId[]];
-  return Atom.make((get): OmittedThreadsStatus => {
-    if (environmentId === null || threadIds.length === 0) return "ready";
-    const reads = new Map<ThreadId, OrchestrationV2ThreadFamily | "failed">();
-    for (const threadId of threadIds) {
-      const read = get(threadFamilies.familyAtom(environmentId, threadId));
-      const family = Option.getOrNull(AsyncResult.value(read));
-      const status = threadFamilyRead(read);
-      if (status === "failed") reads.set(threadId, "failed");
-      else if (status === "settled" && family !== null) reads.set(threadId, family);
+  const groups = JSON.parse(key) as ThreadIdsByEnvironment;
+  return Atom.make((get) => {
+    const statuses: Array<[EnvironmentId, OmittedThreadsStatus]> = [];
+    for (const [environmentId, threadIds] of groups) {
+      const reads = new Map<ThreadId, OrchestrationV2ThreadFamily | "failed">();
+      for (const threadId of threadIds) {
+        const read = get(threadFamilies.familyAtom(environmentId, threadId));
+        const family = Option.getOrNull(AsyncResult.value(read));
+        const status = threadFamilyRead(read);
+        if (status === "failed") reads.set(threadId, "failed");
+        else if (status === "settled" && family !== null) reads.set(threadId, family);
+      }
+      const shellState = Option.getOrNull(
+        AsyncResult.value(get(environmentShell.stateAtom(environmentId))),
+      );
+      const merged = get(threadFamilies.snapshotAtom(environmentId));
+      statuses.push([
+        environmentId,
+        getWorkbenchOmittedThreadsStatus({
+          threadIds,
+          reads,
+          mergedThreadIds: new Set(merged?.threads.map((thread) => thread.id)),
+          removedAt: shellState?.removedAt ?? NO_REMOVALS,
+        }),
+      ]);
     }
-    const shellState = Option.getOrNull(
-      AsyncResult.value(get(environmentShell.stateAtom(environmentId))),
-    );
-    const merged = get(threadFamilies.snapshotAtom(environmentId));
-    return getWorkbenchOmittedThreadsStatus({
-      threadIds,
-      reads,
-      mergedThreadIds: new Set(merged?.threads.map((thread) => thread.id)),
-      removedAt: shellState?.removedAt ?? NO_REMOVALS,
-    });
+    return JSON.stringify(statuses);
   }).pipe(Atom.withLabel(`workbench-omitted-threads-read:${key}`));
 });
 
 /**
  * Keeps assigned Threads the shell left out as older settled in the Thread rows, and reports
- * whether they have all been read and merged, so callers do not show one as deleted. A failed
- * read stays failed until `retry` reads it again.
+ * whether they have all been read and merged, so callers do not show one as deleted. Each
+ * Assignment is read from its own environment; `status` is the host's. A failed read stays failed
+ * until `retry` reads it again.
  */
 export function useWorkbenchOmittedThreads(
-  environmentId: EnvironmentId | null,
-  assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId">>,
-): { readonly status: OmittedThreadsStatus; readonly retry: () => void } {
-  const assignedKey = JSON.stringify([
-    environmentId,
-    [...new Set(assignments.map((assignment) => assignment.threadId))].toSorted(),
-  ]);
-  const omittedThreadIds = useAtomValue(
-    environmentId === null ? NO_OMITTED_THREADS : omittedThreadIdsAtom(assignedKey),
+  hostEnvironmentId: EnvironmentId | null,
+  assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId" | "environmentId">>,
+): {
+  readonly status: OmittedThreadsStatus;
+  readonly statusByEnvironment: ReadonlyMap<EnvironmentId, OmittedThreadsStatus>;
+  readonly retry: () => void;
+} {
+  const assigned = new Map<EnvironmentId, Set<ThreadId>>();
+  if (hostEnvironmentId !== null) {
+    for (const assignment of assignments) {
+      const environmentId = getWorkbenchAssignmentEnvironmentId(assignment, hostEnvironmentId);
+      const threadIds = assigned.get(environmentId) ?? new Set();
+      threadIds.add(assignment.threadId);
+      assigned.set(environmentId, threadIds);
+    }
+  }
+  const assignedKey = JSON.stringify(
+    [...assigned]
+      .map(([environmentId, threadIds]) => [environmentId, [...threadIds].toSorted()] as const)
+      .toSorted(([left], [right]) => left.localeCompare(right)),
   );
-  const omittedKey = `[${JSON.stringify(environmentId)},${omittedThreadIds}]`;
+  const omittedKey = useAtomValue(omittedThreadIdsAtom(assignedKey));
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds native Thread-family subscriptions for assigned records omitted from the shell and releases every lease on unmount
   useEffect(() => {
-    const [mountedEnvironmentId, threadIds] = JSON.parse(omittedKey) as [
-      EnvironmentId | null,
-      ThreadId[],
-    ];
-    if (mountedEnvironmentId === null) return;
-    const releases = threadIds.map((threadId) =>
-      threadFamilies.mount(appAtomRegistry, mountedEnvironmentId, threadId),
+    const releases = (JSON.parse(omittedKey) as ThreadIdsByEnvironment).flatMap(
+      ([environmentId, threadIds]) =>
+        threadIds.map((threadId) => threadFamilies.mount(appAtomRegistry, environmentId, threadId)),
     );
     return () => {
       for (const release of releases) release();
     };
   }, [omittedKey]);
-  const status = useAtomValue(omittedThreadsReadAtom(omittedKey));
+  const statusByEnvironment = new Map(
+    JSON.parse(useAtomValue(omittedThreadsReadAtom(omittedKey))) as Array<
+      [EnvironmentId, OmittedThreadsStatus]
+    >,
+  );
   const retry = () => {
-    const [retryEnvironmentId, threadIds] = JSON.parse(omittedKey) as [
-      EnvironmentId | null,
-      ThreadId[],
-    ];
-    if (retryEnvironmentId === null) return;
-    for (const threadId of threadIds) {
-      const read = appAtomRegistry.get(threadFamilies.familyAtom(retryEnvironmentId, threadId));
-      if (threadFamilyRead(read) === "failed") {
-        threadFamilies.refresh(appAtomRegistry, retryEnvironmentId, threadId);
+    for (const [environmentId, threadIds] of JSON.parse(omittedKey) as ThreadIdsByEnvironment) {
+      for (const threadId of threadIds) {
+        const read = appAtomRegistry.get(threadFamilies.familyAtom(environmentId, threadId));
+        if (threadFamilyRead(read) === "failed") {
+          threadFamilies.refresh(appAtomRegistry, environmentId, threadId);
+        }
       }
     }
   };
-  return { status, retry };
+  return {
+    status:
+      hostEnvironmentId === null
+        ? "ready"
+        : (statusByEnvironment.get(hostEnvironmentId) ?? "ready"),
+    statusByEnvironment,
+    retry,
+  };
 }

@@ -155,28 +155,34 @@ function AttentionItems({
   const navigate = useNavigate();
   const openPullRequest = useOpenWorkbenchPullRequest();
   const threadAction = useWorkbenchThreadOpenLabel({ environmentId, ticketId });
-  const openThread = (threadId: ThreadId) => {
+  /** `threadEnvironmentId` is set for a Thread on another machine, which opens on its own page. */
+  const openThread = (threadId: ThreadId, threadEnvironmentId?: EnvironmentId) => {
     onNavigate?.();
     if (onOpenThread) onOpenThread(threadId);
-    else if (!showWorkbenchPageChatThread({ environmentId, ticketId, threadId }))
+    else if (
+      threadEnvironmentId !== undefined ||
+      !showWorkbenchPageChatThread({ environmentId, ticketId, threadId })
+    )
       void navigate({
         to: "/$environmentId/$threadId",
-        params: { environmentId, threadId },
+        params: { environmentId: threadEnvironmentId ?? environmentId, threadId },
       });
   };
   const openSignal = (signal: WorkbenchAttentionSignal) => {
     if (signal.source.type === "thread") {
-      openThread(signal.source.threadId);
+      openThread(signal.source.threadId, signal.source.environmentId);
       return;
     }
     const { row } = signal.source;
+    // Set for a remote Thread's PR, which is read and opened on that Thread's machine.
+    const remoteEnvironmentId = row.pullRequest.environmentId;
     const host = sourceControlClients.parseChangeRequestUrl(row.pullRequest.url)?.link.host;
     onNavigate?.();
     const panelThread = onShowPullRequestOwner?.(row)
       ? scopeThreadRef(environmentId, row.threadId)
       : undefined;
     openPullRequest?.({
-      environmentId,
+      environmentId: remoteEnvironmentId ?? environmentId,
       reference: {
         projectId: row.pullRequest.projectId,
         repository: row.pullRequest.repository,
@@ -188,7 +194,7 @@ function AttentionItems({
       linkedThread: {
         threadId: row.threadId,
         title: row.threadTitle,
-        onOpen: () => openThread(row.threadId),
+        onOpen: () => openThread(row.threadId, remoteEnvironmentId),
       },
       ...(panelThread ? { panelThread } : {}),
     });

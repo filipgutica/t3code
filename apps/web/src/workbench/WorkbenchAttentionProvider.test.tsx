@@ -25,7 +25,7 @@ vi.mock("../state/environments", () => ({
   usePrimaryEnvironmentId: () => EnvironmentId.make("local"),
 }));
 const shells: EnvironmentThreadShell[] = [];
-vi.mock("../state/entities", () => ({ useThreadShells: () => shells }));
+vi.mock("./useWorkbenchThreadShells", () => ({ useWorkbenchThreadShells: () => shells }));
 const snapshot = {
   projects: [{ id: WorkbenchProjectId.make("workspace"), archivedAt: null as string | null }],
   tickets: [] as {
@@ -39,6 +39,10 @@ vi.mock("../state/query", () => ({
   useEnvironmentQuery: () => ({ data: state.ready ? snapshot : null }),
 }));
 vi.mock("./state", () => ({ workbenchEnvironment: { snapshot: () => null } }));
+vi.mock("./useWorkbenchThreadOwner", () => ({
+  useWorkbenchThreadOwner: (threadRef: { environmentId: string } | null) =>
+    threadRef?.environmentId ?? null,
+}));
 vi.mock("./WorkbenchAttentionQueries", () => ({ useWorkbenchAttentionQueries: () => new Map() }));
 vi.mock("../state/threads", () => ({ environmentThreadDetails: {} }));
 

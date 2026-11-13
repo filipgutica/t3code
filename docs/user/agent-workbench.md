@@ -15,7 +15,8 @@ synthetic. The planning conversation and prepared Git worktrees are real.
 </picture>
 
 Workbench is available in the web and desktop clients. Each T3 environment has
-its own Workspaces and Tickets. There is no dedicated Workbench mobile interface
+its own Workspaces and Tickets, which can include Projects from
+[other machines](#repositories-on-other-machines). There is no dedicated Workbench mobile interface
 yet. For a visual tour, open the [Workbench site](https://filipgutica.github.io/t3code/).
 
 ## Create a Workspace
@@ -357,6 +358,28 @@ under `userdata/workbench-artifacts` in the T3 data directory. Agents save plans
 requirements, mockups, and diagrams there and add current sources as References.
 Deleting the Ticket or discarding a draft keeps the folder. Keep audit output,
 test results, and evidence logs in that folder or the PR.
+
+## Repositories on other machines
+
+A Workspace stays on the machine where you created it. If this client also has
+a saved connection to another T3 machine, you can add that machine's Projects to
+the Workspace, include them in a Ticket, and use **Link existing Thread** to
+attach a Thread that already runs there. Its row shows the Thread's live status
+and opens it on that machine.
+
+- Keep at least one Project from the Workspace's own machine. Planning and
+  **Start work** run there.
+- A Thread on another machine has no Workbench tools and does not see Ticket
+  changes, so record its progress on the Ticket yourself. Its work does not move
+  the Ticket's status.
+- While that machine is not connected, its Threads show **Offline**. You can
+  still unlink them.
+- File References, the artifacts folder, and prepared worktrees stay on the
+  Workspace's machine.
+- A repository keeps its place on a Ticket while a linked Thread on another
+  machine works in it. Unlink that Thread to remove the repository.
+- A Project cannot be added when the Workspace already has a Project with the
+  same ID, or when a Project on this machine has it. Copied data can cause this.
 
 ## Troubleshooting
 

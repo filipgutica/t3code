@@ -24,6 +24,7 @@ import {
   type WorkbenchAssignment,
   type WorkbenchCreateTicketInput,
   type WorkbenchParsedReferenceUrl,
+  type WorkbenchProject,
   type WorkbenchReference,
   type WorkbenchTicket,
   WorkbenchTicketId,
@@ -130,12 +131,26 @@ import { useUiStateStore } from "../uiStateStore";
 import { randomUUID } from "../lib/utils";
 import { formatRelativeTimeLabel } from "../timestampFormat";
 import type { Project } from "../types";
+import { useWorkbenchRemoteRefs } from "./WorkbenchRemoteRefs";
 import {
+  formatWorkbenchRemoteRepositoryTitle,
+  getWorkbenchAssignmentMachineLabel,
+  getWorkbenchBoardLinkedOptionKeys,
+  getWorkbenchBoardProjectSelection,
+  getWorkbenchBoardProjectUnavailableReason,
+  getWorkbenchBoardSelectionGap,
+  workbenchBoardProjectOptionKey,
+  type WorkbenchBoardProjectOption,
+} from "./workbenchRemote.logic";
+import {
+  getWorkbenchThreadLookupState,
   getWorkbenchThreadPresentation,
+  type WorkbenchThreadLookupState,
   getActiveAssignmentsByTicket,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketThreadSections,
+  isWorkbenchHostAssignment,
   isWorkbenchThreadArchived,
   WORKBENCH_TICKET_STATUS_LABELS,
   WORKBENCH_TICKET_TEMPLATE,
@@ -194,6 +209,7 @@ const NO_TICKET_WORKTREES: ReadonlyArray<WorkbenchTicketWorktree> = [];
 export function WorkbenchWorkspaceDialog({
   open,
   projects,
+  otherMachineProjects = [],
   pending,
   disabled,
   error,
@@ -202,24 +218,46 @@ export function WorkbenchWorkspaceDialog({
   initialWorkspace,
 }: {
   readonly open: boolean;
+  /** Projects on the Board host. */
   readonly projects: ReadonlyArray<Project>;
+  /** Projects on other connected machines, with each machine's native label. */
+  readonly otherMachineProjects?: ReadonlyArray<{
+    readonly project: Project;
+    readonly environmentLabel: string;
+  }>;
   readonly pending: boolean;
   readonly disabled?: boolean;
   readonly error: string | null;
   readonly onOpenChange: (open: boolean) => void;
-  readonly initialWorkspace?: {
-    readonly title: string;
-    readonly linkedProjectIds: ReadonlyArray<ProjectId>;
-  };
-  readonly onSave: (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => Promise<boolean>;
+  readonly initialWorkspace?: Pick<
+    WorkbenchProject,
+    "title" | "linkedProjectIds" | "remoteProjects"
+  >;
+  readonly onSave: (
+    title: string,
+    selection: ReturnType<typeof getWorkbenchBoardProjectSelection>,
+  ) => Promise<boolean>;
 }) {
+  const options: ReadonlyArray<WorkbenchBoardProjectOption & { readonly workspaceRoot: string }> = [
+    ...projects.map((project) => ({ project, environmentLabel: null })),
+    ...otherMachineProjects,
+  ].map(({ project, environmentLabel }) => ({
+    id: project.id,
+    environmentId: project.environmentId,
+    title: project.title,
+    environmentLabel,
+    workspaceRoot: project.workspaceRoot,
+  }));
   const [title, setTitle] = useState(initialWorkspace?.title ?? "");
-  const [linkedProjectIds, setLinkedProjectIds] = useState<ReadonlyArray<ProjectId>>(
-    initialWorkspace?.linkedProjectIds ?? [],
+  const initialKeys = getWorkbenchBoardLinkedOptionKeys(options, initialWorkspace);
+  const [addedKeys, setAddedKeys] = useState<ReadonlySet<string>>(new Set());
+  const linkedKeys = new Set([...initialKeys, ...addedKeys]);
+  const selection = getWorkbenchBoardProjectSelection(
+    options.filter((option) => linkedKeys.has(workbenchBoardProjectOptionKey(option))),
   );
   const saveLabel = pending ? "Saving…" : "Save changes";
-  const cannotSave =
-    disabled || pending || title.trim().length === 0 || linkedProjectIds.length === 0;
+  const selectionGap = getWorkbenchBoardSelectionGap(selection, initialWorkspace === undefined);
+  const cannotSave = disabled || pending || title.trim().length === 0 || selectionGap !== null;
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
     onOpenChange(nextOpen);
@@ -228,7 +266,7 @@ export function WorkbenchWorkspaceDialog({
     event.preventDefault();
     if (cannotSave) return;
     void (async () => {
-      if (!(await onSave(title.trim(), linkedProjectIds))) return;
+      if (!(await onSave(title.trim(), selection))) return;
       onOpenChange(false);
     })();
   };
@@ -259,11 +297,13 @@ export function WorkbenchWorkspaceDialog({
               />
             </div>
             <WorkbenchWorkspaceRepositories
-              projects={projects}
+              options={options}
               pending={pending}
-              {...(initialWorkspace === undefined ? {} : { initialWorkspace })}
-              linkedProjectIds={linkedProjectIds}
-              setLinkedProjectIds={setLinkedProjectIds}
+              editing={initialWorkspace !== undefined}
+              initialKeys={initialKeys}
+              linkedKeys={linkedKeys}
+              setAddedKeys={setAddedKeys}
+              needsHostProject={selectionGap === "host-project"}
             />
           </form>
         </DialogPanel>
@@ -633,6 +673,8 @@ function WorkbenchTicketDetailController({
     archivedThreadsById,
     threadLookupReady,
   } = context;
+  const { environmentStates: remoteEnvironmentStates, repositories: remoteRepositories } =
+    useWorkbenchRemoteRefs();
   const {
     workspaceTitle,
     ticket,
@@ -694,11 +736,13 @@ function WorkbenchTicketDetailController({
     settledAssignments,
     associatedPullRequests,
     assignment,
+    chatAssignments,
   } = getWorkbenchDetailAssignments({
     assignments,
     threadsById,
     archivedThreadsById,
     threadLookupReady,
+    remoteEnvironmentStates,
     ticket,
   });
   const {
@@ -714,6 +758,7 @@ function WorkbenchTicketDetailController({
     archivedThreadsById,
     ticket,
     threadLookupReady,
+    remoteEnvironmentStates,
   });
   const {
     draft,
@@ -739,7 +784,7 @@ function WorkbenchTicketDetailController({
   const agentTitle = getWorkbenchAgentTitle({
     displayedThread,
     assignment,
-    threadLookupReady,
+    threadState: thread.state,
     settledCount: settledAssignments.length,
   });
   const {
@@ -757,6 +802,7 @@ function WorkbenchTicketDetailController({
     preparationPending,
     preparationFailed,
     linkedProjects,
+    remoteRepositoryIds: new Set(remoteRepositories.keys()),
   });
   useWorkbenchCheckoutStatusRefresh({
     environmentId,
@@ -781,7 +827,9 @@ function WorkbenchTicketDetailController({
       pageChat?.kind === "ticket" &&
       pageChat.ticketId === ticket.id &&
       threadsById.has(threadId) &&
-      [...activeAssignments, ...settledAssignments].some((entry) => entry.threadId === threadId);
+      [...chatAssignments.active, ...chatAssignments.settled].some(
+        (entry) => entry.threadId === threadId,
+      );
     if (inChat) pageChat.showThread(threadId);
     return inChat;
   };
@@ -1150,9 +1198,9 @@ function WorkbenchTicketDetailController({
         environmentId={environmentId}
         ticket={actionableTicket}
         ticketKey={getTicketIssue(references)?.label}
-        activeAssignments={activeAssignments}
-        settledAssignments={settledAssignments}
-        primaryAssignment={assignment}
+        activeAssignments={chatAssignments.active}
+        settledAssignments={chatAssignments.settled}
+        primaryAssignment={chatAssignments.primary}
         threadsById={threadsById}
         archivedThreadsById={archivedThreadsById}
         onOpenThread={onOpenAssignedThread}
@@ -1224,7 +1272,12 @@ function WorkbenchTicketRepositoryIdentity({
   readonly entry: WorkbenchTicketRepositoryEntry;
   readonly checkoutCount: number;
 }) {
-  const repositoryTitle = entry.repository?.title ?? "Repository unavailable";
+  const remoteRepository = useWorkbenchRemoteRefs().repositories.get(entry.id);
+  const repositoryTitle =
+    entry.repository?.title ??
+    (remoteRepository
+      ? formatWorkbenchRemoteRepositoryTitle(remoteRepository)
+      : "Repository unavailable");
   return (
     <div className="min-w-0 flex-1">
       <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -1243,7 +1296,10 @@ function WorkbenchTicketRepositoryIdentity({
             </span>
           </span>
         )}
-        <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
+        {/* Worktrees are prepared only on the Board host. */}
+        {remoteRepository ? null : (
+          <WorkbenchTicketRepositoryStatus repository={entry.workspaceRepository} />
+        )}
         {checkoutCount > 1 ? (
           <span className="text-xs text-muted-foreground">{checkoutCount} worktrees</span>
         ) : null}
@@ -1326,11 +1382,13 @@ function WorkbenchThreadRowIcon({
 
 /** The row's state, then its time or run status, which the quick action replaces on hover or focus. */
 function WorkbenchThreadRowTrailing({
+  thread,
   executionStatus,
   quickAction,
   recencyLabel,
   stateLabel,
 }: {
+  readonly thread: EnvironmentThreadShell | undefined;
   readonly executionStatus: WorkbenchThreadExecutionStatusData | null | undefined;
   readonly quickAction: ReactNode;
   readonly recencyLabel: string | null;
@@ -1346,6 +1404,7 @@ function WorkbenchThreadRowTrailing({
   ) : null;
   return (
     <span className="relative z-10 flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
+      <WorkbenchThreadRowMachineLabel thread={thread} />
       {!executionStatus && stateLabel ? <span>{stateLabel}</span> : null}
       {time && quickAction ? (
         <span className="relative flex items-center">
@@ -1505,6 +1564,7 @@ function WorkbenchThreadRow({
         </span>
       </button>
       <WorkbenchThreadRowTrailing
+        thread={thread}
         executionStatus={executionStatus}
         quickAction={quickAction}
         recencyLabel={recencyLabel}
@@ -2087,9 +2147,22 @@ function WorkbenchTicketThreadsPanel({
     historicalAssignments,
   } = records;
   const [sectionToggles, setSectionToggles] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const { environmentStates: remoteEnvironmentStates } = useWorkbenchRemoteRefs();
+  const isOffline = (rowAssignment: WorkbenchAssignment) =>
+    getWorkbenchThreadLookupState({
+      assignment: rowAssignment,
+      threadLookupReady,
+      remoteEnvironmentStates,
+    }) === "offline";
+  // Offline Threads are still open; they are listed under Offline.
   const openThreadCount = new Set(
     activeAssignments
-      .filter(({ threadId }) => threadsById.has(threadId) || archivedThreadsById.has(threadId))
+      .filter(
+        (activeAssignment) =>
+          threadsById.has(activeAssignment.threadId) ||
+          archivedThreadsById.has(activeAssignment.threadId) ||
+          isOffline(activeAssignment),
+      )
       .map(({ threadId }) => threadId),
   ).size;
   const localVisits = useUiStateStore((state) => state.threadLastVisitedAtById);
@@ -2110,12 +2183,14 @@ function WorkbenchTicketThreadsPanel({
     active: listedAssignments.map((activeAssignment) => ({
       threadId: activeAssignment.threadId,
       ...liveStatus(activeAssignment.threadId),
+      offline: isOffline(activeAssignment),
       assignment: activeAssignment,
     })),
     settled: settledAssignments.map((settledAssignment) => ({
       threadId: settledAssignment.threadId,
       status: null,
       unread: false,
+      offline: false,
       assignment: settledAssignment,
     })),
     showingThreadId: assignment?.threadId ?? null,
@@ -2566,6 +2641,7 @@ function WorkbenchTicketWorkspaceReviewActions({
 }) {
   const { pending, preparationPending, workspaceIsPreparing, workspacePreparationActionLabel } =
     presentation;
+  const repositoryOptions = useWorkbenchBoardRepositoryOptions(linkedProjects);
   return (
     <>
       <Button
@@ -2581,7 +2657,7 @@ function WorkbenchTicketWorkspaceReviewActions({
         aria-busy={pending || preparationPending || workspaceIsPreparing}
         disabled={
           disabled ||
-          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
+          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: repositoryOptions })
         }
         onClick={() => {
           void actions.onSaveRepositories();
@@ -2612,10 +2688,11 @@ function WorkbenchTicketWorkspaceRepositoryEditor({
   readonly disabled: boolean;
   readonly children: ReactNode;
 }) {
+  const repositoryOptions = useWorkbenchBoardRepositoryOptions(linkedProjects);
   return (
     <div className="space-y-3">
       <WorkbenchRepositoryScopeFields
-        projects={linkedProjects}
+        projects={repositoryOptions}
         value={draft.value}
         savedScope={getWorkbenchRepositoryScope(draft.ticket)}
         workspace={ticketWorkspace}
@@ -3155,6 +3232,12 @@ function WorkbenchTicketActiveThreadRow({
     onReplaceThread,
   } = actions;
   const { ticket } = records;
+  const remoteRefs = useWorkbenchRemoteRefs();
+  const threadLookupState = getWorkbenchThreadLookupState({
+    assignment: activeAssignment,
+    threadLookupReady,
+    remoteEnvironmentStates: remoteRefs.environmentStates,
+  });
   const {
     archivedActiveThread,
     displayedActiveThread,
@@ -3167,7 +3250,7 @@ function WorkbenchTicketActiveThreadRow({
     threadsById,
     archivedThreadsById,
     ticket,
-    threadLookupReady,
+    threadLookupState,
   });
   const rowPresentation = getWorkbenchActiveThreadRowPresentation({
     displayedActiveThread,
@@ -3175,7 +3258,11 @@ function WorkbenchTicketActiveThreadRow({
     activeThreadState,
     activeThreadModel,
     activeThreadRecency,
-    threadLookupReady,
+    missingTitle: getWorkbenchMissingThreadTitle({
+      assignment: activeAssignment,
+      threadLookupState,
+      remoteRefs,
+    }),
   });
   const mutationDisabled = pending || threadMutationsDisabled || isArchived;
   return (
@@ -3214,7 +3301,7 @@ function WorkbenchTicketActiveThreadRow({
               title={displayedActiveThread.title}
             />
           ) : undefined
-        ) : threadLookupReady ? (
+        ) : threadLookupState === "ready" ? (
           <Button
             aria-label={`Create replacement Thread for ${ticket.title}`}
             disabled={mutationDisabled}
@@ -3225,9 +3312,59 @@ function WorkbenchTicketActiveThreadRow({
           >
             Create replacement Thread
           </Button>
-        ) : undefined
+        ) : (
+          <WorkbenchUnreachableThreadUnlink
+            assignment={activeAssignment}
+            label={`Unlink ${rowPresentation.title} from ${ticket.title}`}
+            disabled={mutationDisabled}
+            onUnlinkThread={onUnlinkThread}
+          />
+        )
       }
     />
+  );
+}
+
+/** The machine of a loaded Thread that runs off the Board host; an unloaded one names it in its title. */
+function WorkbenchThreadRowMachineLabel({
+  thread,
+}: {
+  thread: EnvironmentThreadShell | undefined;
+}) {
+  const { repositories, environmentStates, environmentLabels } = useWorkbenchRemoteRefs();
+  // The page reads a state for each machine its remote Assignments name.
+  if (thread === undefined || !environmentStates.has(thread.environmentId)) return null;
+  return (
+    <span className="max-w-32 truncate">
+      {getWorkbenchAssignmentMachineLabel({ assignment: thread, repositories, environmentLabels })}
+    </span>
+  );
+}
+
+/** A Thread on a machine this client cannot reach can still leave the Ticket. */
+function WorkbenchUnreachableThreadUnlink({
+  assignment,
+  label,
+  disabled,
+  onUnlinkThread,
+}: {
+  assignment: WorkbenchAssignment;
+  label: string;
+  disabled: boolean;
+  onUnlinkThread: (threadId: ThreadId) => void;
+}) {
+  if (assignment.environmentId === undefined) return null;
+  return (
+    <Button
+      aria-label={label}
+      disabled={disabled}
+      onClick={() => onUnlinkThread(assignment.threadId)}
+      size="xs"
+      type="button"
+      variant="ghost"
+    >
+      Unlink
+    </Button>
   );
 }
 
@@ -3288,10 +3425,21 @@ function WorkbenchTicketHistoricalThreadRow({
       archivedThreadsById,
       ticket,
     });
+  const remoteRefs = useWorkbenchRemoteRefs();
+  const threadLookupState = getWorkbenchThreadLookupState({
+    assignment: historicalAssignment,
+    threadLookupReady,
+    remoteEnvironmentStates: remoteRefs.environmentStates,
+  });
   const rowPresentation = getWorkbenchHistoricalThreadRowPresentation({
     displayedHistoricalThread,
     historicalAgentState,
-    threadLookupReady,
+    threadLookupState,
+    missingTitle: getWorkbenchMissingThreadTitle({
+      assignment: historicalAssignment,
+      threadLookupState,
+      remoteRefs,
+    }),
   });
   const mutationDisabled = pending || threadMutationsDisabled || isArchived;
   return (
@@ -3320,16 +3468,25 @@ function WorkbenchTicketHistoricalThreadRow({
           : undefined
       }
       quickAction={
-        displayedHistoricalThread && supportsSettlement ? (
-          <WorkbenchThreadSettlementButton
-            archived={historicalArchivedThread !== undefined}
-            disabled={mutationDisabled || historicalArchivedThread !== undefined}
-            onClick={() => void toggleThreadSettlement(displayedHistoricalThread)}
-            pending={settlementPendingThreadId === displayedHistoricalThread.id}
-            settled={displayedHistoricalThread.settledOverride === "settled"}
-            title={displayedHistoricalThread.title}
+        displayedHistoricalThread ? (
+          supportsSettlement ? (
+            <WorkbenchThreadSettlementButton
+              archived={historicalArchivedThread !== undefined}
+              disabled={mutationDisabled || historicalArchivedThread !== undefined}
+              onClick={() => void toggleThreadSettlement(displayedHistoricalThread)}
+              pending={settlementPendingThreadId === displayedHistoricalThread.id}
+              settled={displayedHistoricalThread.settledOverride === "settled"}
+              title={displayedHistoricalThread.title}
+            />
+          ) : undefined
+        ) : (
+          <WorkbenchUnreachableThreadUnlink
+            assignment={historicalAssignment}
+            label={`Unlink ${rowPresentation.title} from ${ticket.title}`}
+            disabled={mutationDisabled}
+            onUnlinkThread={onUnlinkThread}
           />
-        ) : undefined
+        )
       }
     />
   );
@@ -3470,54 +3627,70 @@ export function WorkbenchCreateTicketRepositories({
 }
 
 function WorkbenchWorkspaceRepositories({
-  projects,
+  options,
   pending,
-  initialWorkspace,
-  linkedProjectIds,
-  setLinkedProjectIds,
-}: Pick<
-  Parameters<typeof WorkbenchWorkspaceDialog>[0],
-  "projects" | "pending" | "initialWorkspace"
-> & {
-  linkedProjectIds: ReadonlyArray<ProjectId>;
-  setLinkedProjectIds: Dispatch<SetStateAction<ReadonlyArray<ProjectId>>>;
+  editing,
+  initialKeys,
+  linkedKeys,
+  setAddedKeys,
+  needsHostProject,
+}: {
+  options: ReadonlyArray<WorkbenchBoardProjectOption & { readonly workspaceRoot: string }>;
+  pending: boolean;
+  editing: boolean;
+  initialKeys: ReadonlySet<string>;
+  linkedKeys: ReadonlySet<string>;
+  setAddedKeys: Dispatch<SetStateAction<ReadonlySet<string>>>;
+  needsHostProject: boolean;
 }) {
   return (
     <fieldset className="space-y-2">
       <legend className="text-sm font-medium">Linked repositories</legend>
       <p className="text-xs text-muted-foreground">
-        {initialWorkspace
+        {editing
           ? "Already-linked repositories stay selected. Add a directory as a T3 Project first if it is not listed here."
-          : "Tickets can target any selected T3 Project."}
+          : "Tickets can target any selected T3 Project, on this machine or another connected one."}
       </p>
-      {projects.length > 0 ? (
+      {options.length > 0 ? (
         <div className="max-h-60 space-y-1 overflow-y-auto rounded-lg border border-border p-1">
-          {projects.map((project) => {
-            const inputId = `workbench-project-${project.id}`;
+          {options.map((option) => {
+            const key = workbenchBoardProjectOptionKey(option);
+            const inputId = `workbench-project-${key}`;
+            const unavailable = getWorkbenchBoardProjectUnavailableReason({
+              option,
+              options,
+              selectedKeys: linkedKeys,
+            });
             return (
               <label
-                key={project.id}
+                key={key}
                 htmlFor={inputId}
                 className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 hover:bg-accent"
               >
                 <Checkbox
                   id={inputId}
                   className="mt-0.5"
-                  checked={linkedProjectIds.includes(project.id)}
-                  disabled={pending || initialWorkspace?.linkedProjectIds.includes(project.id)}
+                  checked={linkedKeys.has(key)}
+                  disabled={pending || initialKeys.has(key) || unavailable !== null}
                   onCheckedChange={(checked) =>
-                    setLinkedProjectIds((current) =>
-                      checked
-                        ? [...current, project.id]
-                        : current.filter((id) => id !== project.id),
-                    )
+                    setAddedKeys((current) => {
+                      const next = new Set(current);
+                      if (checked) next.add(key);
+                      else next.delete(key);
+                      return next;
+                    })
                   }
                 />
                 <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{project.title}</span>
+                  <span className="block truncate text-sm font-medium">{option.title}</span>
                   <span className="block truncate font-mono text-xs text-muted-foreground">
-                    {project.workspaceRoot}
+                    {option.environmentLabel === null
+                      ? option.workspaceRoot
+                      : `${option.environmentLabel} · ${option.workspaceRoot}`}
                   </span>
+                  {unavailable ? (
+                    <span className="block text-xs text-muted-foreground">{unavailable}</span>
+                  ) : null}
                 </span>
               </label>
             );
@@ -3525,11 +3698,16 @@ function WorkbenchWorkspaceRepositories({
         </div>
       ) : (
         <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-          {initialWorkspace
+          {editing
             ? "No T3 Projects are available to add. Existing repository links are preserved."
             : "Create a T3 Project before creating a Board."}
         </div>
       )}
+      {needsHostProject ? (
+        <p role="status" className="text-xs text-muted-foreground">
+          Select at least one Project on this machine. Ticket planning runs here.
+        </p>
+      ) : null}
     </fieldset>
   );
 }
@@ -3676,11 +3854,11 @@ function getWorkbenchActiveThreadRow({
   activeAssignment,
   threadsById,
   archivedThreadsById,
-  threadLookupReady,
+  threadLookupState,
 }: Pick<
   WorkbenchTicketActiveThreadRowProps,
-  "activeAssignment" | "threadsById" | "archivedThreadsById" | "ticket" | "threadLookupReady"
->) {
+  "activeAssignment" | "threadsById" | "archivedThreadsById" | "ticket"
+> & { threadLookupState: WorkbenchThreadLookupState }) {
   const liveThread = threadsById.get(activeAssignment.threadId);
   const archivedActiveThread = isWorkbenchThreadArchived(
     activeAssignment.threadId,
@@ -3696,7 +3874,7 @@ function getWorkbenchActiveThreadRow({
     liveThread !== undefined,
     null,
     archivedActiveThread !== undefined,
-    threadLookupReady,
+    threadLookupState,
   ).stateLabel;
   const activeThreadModel = getWorkbenchThreadModelLabel(displayedActiveThread);
   const activeThreadRecency = displayedActiveThread
@@ -3807,15 +3985,19 @@ function getWorkbenchDetailAssignments({
   threadsById,
   archivedThreadsById,
   threadLookupReady,
+  remoteEnvironmentStates,
   ticket,
 }: Pick<
   WorkbenchTicketDetailProps,
   "assignments" | "threadsById" | "archivedThreadsById" | "threadLookupReady" | "ticket"
->) {
+> & {
+  remoteEnvironmentStates: ReadonlyMap<EnvironmentId, WorkbenchThreadLookupState>;
+}) {
   const visibleAssignments = assignments.filter(
     (assignment) =>
       assignment.supersededAt === null ||
-      !threadLookupReady ||
+      getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }) !==
+        "ready" ||
       threadsById.has(assignment.threadId) ||
       archivedThreadsById.has(assignment.threadId),
   );
@@ -3848,6 +4030,12 @@ function getWorkbenchDetailAssignments({
     settledAssignments,
     associatedPullRequests,
     assignment,
+    // The floating chat talks to the Board host; a Thread on another machine opens on its own page.
+    chatAssignments: {
+      active: activeAssignments.filter(isWorkbenchHostAssignment),
+      settled: settledAssignments.filter(isWorkbenchHostAssignment),
+      primary: assignment && isWorkbenchHostAssignment(assignment) ? assignment : undefined,
+    },
   };
 }
 
@@ -3857,20 +4045,26 @@ function getWorkbenchDetailWorkspace({
   preparationPending,
   preparationFailed,
   linkedProjects,
+  remoteRepositoryIds,
 }: Pick<
   WorkbenchTicketDetailProps,
   "ticket" | "ticketWorkspace" | "preparationPending" | "preparationFailed" | "linkedProjects"
->) {
+> & {
+  /** Repositories on other machines, which get no worktrees on the Board host. */
+  remoteRepositoryIds: ReadonlySet<ProjectId>;
+}) {
   const repositoryScopeLocked =
     preparationPending ||
     ticketWorkspace?.status === "preparing" ||
     ticketWorkspace?.status === "releasing";
   const selectedRepositoryProjectIds = ticket.repositoryProjectIds;
-  const workspaceHasSelectedRepositories = selectedRepositoryProjectIds.every((projectId) =>
-    ticketWorkspace?.repositories.some(
-      (repository) => repository.projectId === projectId && repository.status === "ready",
-    ),
-  );
+  const workspaceHasSelectedRepositories = selectedRepositoryProjectIds
+    .filter((projectId) => !remoteRepositoryIds.has(projectId))
+    .every((projectId) =>
+      ticketWorkspace?.repositories.some(
+        (repository) => repository.projectId === projectId && repository.status === "ready",
+      ),
+    );
   const selectedRepositoryProjectIdSet = new Set(selectedRepositoryProjectIds);
   const workspaceIsReady = ticketWorkspace?.status === "ready" && workspaceHasSelectedRepositories;
   const workspaceIsPreparing = preparationPending || ticketWorkspace?.status === "preparing";
@@ -3953,10 +4147,14 @@ function getWorkbenchDetailThread({
   threadsById,
   archivedThreadsById,
   threadLookupReady,
+  remoteEnvironmentStates,
 }: Pick<
   WorkbenchTicketDetailProps,
-  "threadsById" | "archivedThreadsById" | "ticket" | "threadLookupReady"
-> & { assignment: WorkbenchAssignment | undefined }) {
+  "threadsById" | "archivedThreadsById" | "threadLookupReady" | "ticket"
+> & {
+  assignment: WorkbenchAssignment | undefined;
+  remoteEnvironmentStates: ReadonlyMap<EnvironmentId, WorkbenchThreadLookupState>;
+}) {
   const nativeThread = assignment ? threadsById.get(assignment.threadId) : undefined;
   const archivedThread =
     assignment && isWorkbenchThreadArchived(assignment.threadId, threadsById, archivedThreadsById)
@@ -3969,7 +4167,9 @@ function getWorkbenchDetailThread({
     nativeThread !== undefined,
     nativeStatus?.presentation.label ?? null,
     archivedThread !== undefined,
-    threadLookupReady,
+    assignment === undefined
+      ? "ready"
+      : getWorkbenchThreadLookupState({ assignment, threadLookupReady, remoteEnvironmentStates }),
   );
   return {
     nativeThread,
@@ -4068,13 +4268,46 @@ function WorkbenchTicketThreadCreationActions({
   );
 }
 
+/** The Board's repositories a Ticket can scope: this machine's, then those on other machines. */
+function useWorkbenchBoardRepositoryOptions(
+  linkedProjects: ReadonlyArray<Project>,
+): ReadonlyArray<Pick<Project, "id" | "title">> {
+  const { repositories } = useWorkbenchRemoteRefs();
+  return [
+    ...linkedProjects,
+    ...[...repositories.values()].map((repository) => ({
+      id: repository.id,
+      title: formatWorkbenchRemoteRepositoryTitle(repository),
+    })),
+  ];
+}
+
+/** The row title of an assigned Thread that is not loaded: deleted, unchecked, or out of reach. */
+function getWorkbenchMissingThreadTitle({
+  assignment,
+  threadLookupState,
+  remoteRefs,
+}: {
+  assignment: WorkbenchAssignment;
+  threadLookupState: WorkbenchThreadLookupState;
+  remoteRefs: ReturnType<typeof useWorkbenchRemoteRefs>;
+}) {
+  if (threadLookupState === "ready") return "Thread deleted";
+  if (assignment.environmentId === undefined) return "Checking Thread…";
+  return `Thread on ${getWorkbenchAssignmentMachineLabel({
+    assignment,
+    repositories: remoteRefs.repositories,
+    environmentLabels: remoteRefs.environmentLabels,
+  })}`;
+}
+
 function getWorkbenchActiveThreadRowPresentation({
   displayedActiveThread,
   activeAgentState,
   activeThreadState,
   activeThreadModel,
   activeThreadRecency,
-  threadLookupReady,
+  missingTitle,
 }: Pick<
   ReturnType<typeof getWorkbenchActiveThreadRow>,
   | "displayedActiveThread"
@@ -4082,7 +4315,7 @@ function getWorkbenchActiveThreadRowPresentation({
   | "activeThreadState"
   | "activeThreadModel"
   | "activeThreadRecency"
-> & { threadLookupReady: boolean }) {
+> & { missingTitle: string }) {
   return {
     modelLabel: activeThreadModel,
     recencyLabel: activeThreadRecency,
@@ -4092,21 +4325,21 @@ function getWorkbenchActiveThreadRowPresentation({
         ? null
         : activeThreadState,
     executionStatus: activeAgentState,
-    title:
-      displayedActiveThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…"),
+    title: displayedActiveThread?.title ?? missingTitle,
   };
 }
 
 function getWorkbenchHistoricalThreadRowPresentation({
   displayedHistoricalThread,
   historicalAgentState,
-  threadLookupReady,
+  threadLookupState,
+  missingTitle,
 }: Pick<
   ReturnType<typeof getWorkbenchHistoricalThreadRow>,
   "displayedHistoricalThread" | "historicalAgentState"
-> & { threadLookupReady: boolean }) {
+> & { threadLookupState: WorkbenchThreadLookupState; missingTitle: string }) {
   return {
-    ariaLabel: `${displayedHistoricalThread?.archivedAt ? "Restore and open" : displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? (threadLookupReady ? "Thread deleted" : "Checking Thread…")}`,
+    ariaLabel: `${displayedHistoricalThread?.archivedAt ? "Restore and open" : displayedHistoricalThread ? "Open" : "Checking"} ${displayedHistoricalThread?.title ?? missingTitle}`,
     modelLabel: getWorkbenchThreadModelLabel(displayedHistoricalThread),
     recencyLabel: displayedHistoricalThread
       ? getWorkbenchThreadRecencyLabel(displayedHistoricalThread)
@@ -4115,13 +4348,13 @@ function getWorkbenchHistoricalThreadRowPresentation({
       ? displayedHistoricalThread.archivedAt
         ? "Archived"
         : "Historical"
-      : threadLookupReady
+      : threadLookupState === "ready"
         ? "Thread deleted"
-        : "Checking…",
+        : threadLookupState === "offline"
+          ? "Offline"
+          : "Checking…",
     executionStatus: historicalAgentState,
-    title:
-      displayedHistoricalThread?.title ??
-      (threadLookupReady ? "Thread deleted" : "Checking Thread…"),
+    title: displayedHistoricalThread?.title ?? missingTitle,
   };
 }
 
@@ -4337,15 +4570,16 @@ function WorkbenchTicketResetConfirmation({
 function getWorkbenchAgentTitle({
   displayedThread,
   assignment,
-  threadLookupReady,
+  threadState,
   settledCount,
 }: {
   displayedThread: EnvironmentThreadShell | undefined;
   assignment: WorkbenchAssignment | undefined;
-  threadLookupReady: boolean;
+  threadState: ReturnType<typeof getWorkbenchThreadPresentation>["state"];
   settledCount: number;
 }) {
   if (displayedThread) return displayedThread.title;
-  if (assignment && !threadLookupReady) return "Checking Thread…";
+  if (assignment && threadState === "checking") return "Checking Thread…";
+  if (assignment && threadState === "offline") return "Thread on another machine";
   return settledCount > 0 ? "No active Threads" : "No Threads yet";
 }

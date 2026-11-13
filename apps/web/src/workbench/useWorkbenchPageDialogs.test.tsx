@@ -154,10 +154,13 @@ describe("ticket planning conversation navigation", () => {
     try {
       await settle();
       await act(async () => {
-        expect(await latestDialogs.saveWorkspace("Edited", [ProjectId.make("repo")])).toBe(false);
-        expect(await latestDialogs.submitProject("Workspace", [ProjectId.make("repo")])).toBe(
-          false,
-        );
+        const selection = {
+          linkedProjectIds: [ProjectId.make("repo")],
+          remoteProjects: {},
+          hasHostProject: true,
+        };
+        expect(await latestDialogs.saveWorkspace("Edited", selection)).toBe(false);
+        expect(await latestDialogs.submitProject("Workspace", selection)).toBe(false);
         latestDialogs.openTicketDialog();
         latestDialogs.openTicketConversation();
       });
@@ -165,6 +168,31 @@ describe("ticket planning conversation navigation", () => {
       expect(latestDialogs.ticketDialogOpen).toBe(false);
       expect(mounted.root.findByType("button").props["data-open"]).toBe(false);
       expect(router.state.location.href).toBe(workspaceEntry);
+    } finally {
+      await unmount();
+    }
+  });
+
+  it("renames a Board whose saved Projects are not available to pick", async () => {
+    const { settle, unmount } = await mount(workspaceEntry);
+    try {
+      await settle();
+      command.mockResolvedValueOnce({ _tag: "Success" });
+      await act(async () => {
+        await latestDialogs.saveWorkspace("Renamed", {
+          linkedProjectIds: [],
+          remoteProjects: {},
+          hasHostProject: false,
+        });
+      });
+      expect(command).toHaveBeenCalledWith(
+        expect.objectContaining({
+          input: expect.objectContaining({
+            title: "Renamed",
+            linkedProjectIds: [ProjectId.make("repo")],
+          }),
+        }),
+      );
     } finally {
       await unmount();
     }

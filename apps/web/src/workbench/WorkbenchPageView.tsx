@@ -8,7 +8,12 @@ import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
-import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  type WorkbenchProjectId,
+  type WorkbenchTicket,
+  type WorkbenchTicketId,
+} from "@t3tools/contracts";
 import type { ReactNode } from "react";
 
 import {
@@ -70,6 +75,13 @@ import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import { getTicketReferences } from "./workbenchReferences.logic";
+import {
+  getWorkbenchAttachableThreads,
+  getWorkbenchBoardRepositoriesById,
+} from "./workbenchRemote.logic";
+import { useProjects, useThreadShells } from "../state/entities";
+import { getWorkbenchReachableThreads } from "./workbench.logic";
+import { useConnectedEnvironmentIds } from "../state/environments";
 import {
   getPlanningTicketDraft,
   getUnsavedConversationDrafts,
@@ -538,7 +550,6 @@ function WorkbenchPageBoard(
     pendingAction,
   } = props;
   const {
-    repositoriesById,
     snapshot,
     optimisticStatus,
     threadsById,
@@ -591,7 +602,10 @@ function WorkbenchPageBoard(
             />
           }
           selectedTicketId={null}
-          repositoriesById={repositoriesById}
+          repositoriesById={getWorkbenchBoardRepositoriesById({
+            hostProjects: pageData.projects,
+            remoteRepositories: pageData.remoteRepositoriesByBoard.get(selectedProject.id),
+          })}
           repositoryProjectIds={selectedProject.linkedProjectIds}
           repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
@@ -751,10 +765,17 @@ function WorkbenchPageWorkspace(
 function WorkbenchPageWorkspaceDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "createWorkspace" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    | "createWorkspace"
+    | "dialogs"
+    | "environmentId"
+    | "error"
+    | "pageData"
+    | "pendingAction"
+    | "selection"
   >,
 ) {
-  const { pageData, selection, dialogs, createWorkspace, error, pendingAction } = props;
+  const { pageData, selection, dialogs, createWorkspace, environmentId, error, pendingAction } =
+    props;
   const { projects, query } = pageData;
   const { selectedProject, handleWorkspaceDialogOpenChange } = selection;
 
@@ -764,7 +785,9 @@ function WorkbenchPageWorkspaceDialogs(
   return (
     <>
       {createWorkspace ? (
-        <WorkbenchWorkspaceDialog
+        <WorkbenchBoardDialog
+          hostEnvironmentId={environmentId}
+          environmentLabels={pageData.environmentLabels}
           open={createWorkspace}
           projects={projects}
           pending={pending}
@@ -775,7 +798,9 @@ function WorkbenchPageWorkspaceDialogs(
         />
       ) : null}
       {editWorkspaceOpen && selectedProject && selectedProject.archivedAt == null ? (
-        <WorkbenchWorkspaceDialog
+        <WorkbenchBoardDialog
+          hostEnvironmentId={environmentId}
+          environmentLabels={pageData.environmentLabels}
           key={selectedProject.id}
           open
           projects={projects}
@@ -791,6 +816,68 @@ function WorkbenchPageWorkspaceDialogs(
   );
 }
 
+/** Offers Projects from other connected machines; mounted only while the dialog is open. */
+function WorkbenchBoardDialog({
+  hostEnvironmentId,
+  environmentLabels,
+  ...props
+}: Omit<Parameters<typeof WorkbenchWorkspaceDialog>[0], "otherMachineProjects"> & {
+  readonly hostEnvironmentId: EnvironmentId | null;
+  readonly environmentLabels: ReadonlyMap<EnvironmentId, string>;
+}) {
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
+  const otherMachineProjects = useProjects().flatMap((project) => {
+    const environmentLabel = environmentLabels.get(project.environmentId);
+    return project.environmentId === hostEnvironmentId ||
+      environmentLabel === undefined ||
+      !connectedEnvironmentIds.includes(project.environmentId)
+      ? []
+      : [{ project, environmentLabel }];
+  });
+  return <WorkbenchWorkspaceDialog {...props} otherMachineProjects={otherMachineProjects} />;
+}
+
+/** Lists Threads from every connected machine; mounted only while the dialog is open. */
+function WorkbenchPageAttachThreadDialog({
+  hostEnvironmentId,
+  pageData,
+  ticket,
+  ...props
+}: Omit<Parameters<typeof WorkbenchAttachThreadDialog>[0], "projects" | "threads"> & {
+  readonly hostEnvironmentId: EnvironmentId;
+  readonly pageData: WorkbenchPageViewProps["pageData"];
+  readonly ticket: WorkbenchTicket;
+}) {
+  const remoteRepositories = pageData.remoteRepositoriesByBoard.get(ticket.projectId);
+  const threads = getWorkbenchAttachableThreads({
+    hostEnvironmentId,
+    repositoryProjectIds: ticket.repositoryProjectIds,
+    remoteRepositories: remoteRepositories ?? new Map(),
+    threads: getWorkbenchReachableThreads({
+      hostEnvironmentId,
+      liveEnvironmentIds: pageData.liveEnvironmentIds,
+      threads: useThreadShells(),
+    }),
+    assignedThreadIds: new Set(
+      (pageData.snapshot?.assignments ?? []).map((assignment) => assignment.threadId),
+    ),
+    reservedThreadIds: pageData.reservedThreadIds,
+    hostThreadIds: pageData.existingThreadIds,
+  });
+  return (
+    <WorkbenchAttachThreadDialog
+      {...props}
+      projects={[
+        ...getWorkbenchBoardRepositoriesById({
+          hostProjects: pageData.projects,
+          remoteRepositories,
+        }).values(),
+      ]}
+      threads={threads}
+    />
+  );
+}
+
 function WorkbenchPageThreadDialogs(
   props: Pick<
     WorkbenchPageViewProps,
@@ -798,7 +885,7 @@ function WorkbenchPageThreadDialogs(
   >,
 ) {
   const { pageData, threadActions, environmentId, error, pendingAction } = props;
-  const { providers, snapshot, threadsById, reservedThreadIds } = pageData;
+  const { providers, snapshot } = pageData;
 
   const {
     startThreadRequest,
@@ -826,6 +913,9 @@ function WorkbenchPageThreadDialogs(
             workspace: snapshot?.ticketWorkspaces.find(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
+            board: snapshot?.projects.find(
+              (workspace) => workspace.id === startThreadRequest.ticket.projectId,
+            ),
             initialRepositoryScope: startThreadRequest.repositoryScope,
             repositoryProjectId: getActiveThreadRepository(startThreadRequest.ticket.id),
             environmentId,
@@ -843,17 +933,11 @@ function WorkbenchPageThreadDialogs(
           }}
         />
       ) : null}
-      {attachThreadTicket ? (
-        <WorkbenchAttachThreadDialog
-          projects={pageData.projects}
-          threads={[...threadsById.values()].filter(
-            (thread) =>
-              attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
-              !reservedThreadIds.has(thread.id) &&
-              !(snapshot?.assignments ?? []).some(
-                (assignment) => assignment.threadId === thread.id,
-              ),
-          )}
+      {attachThreadTicket && environmentId !== null ? (
+        <WorkbenchPageAttachThreadDialog
+          hostEnvironmentId={environmentId}
+          pageData={pageData}
+          ticket={attachThreadTicket}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error}

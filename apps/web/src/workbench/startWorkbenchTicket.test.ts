@@ -125,7 +125,8 @@ function startInput(assignment?: WorkbenchAssignment) {
     projects: [project],
     assignment,
     existingThreadIds: new Set<ThreadId>(),
-    threadLookupReady: true,
+    threadLookupState: "ready" as const,
+    board: undefined,
   };
 }
 
@@ -241,6 +242,42 @@ describe("coordinateWorkbenchTicketStart", () => {
       { modelSelection, repositoryScope: { repositoryProjectIds: [unavailableId] } },
     );
     expect(result).toEqual({ state: "project-unavailable", ticket: savedTicket });
+  });
+
+  // Worktrees exist only on the Board host, so a repository on another machine neither hosts
+  // the Thread nor needs a prepared checkout.
+  it("starts a host Thread when the Ticket also scopes a repository on another machine", async () => {
+    const remoteId = ProjectId.make("repository-remote");
+    const mixedTicket = { ...ticket, repositoryProjectIds: [remoteId, projectId] };
+    let createdThreadInput: unknown;
+    const result = await coordinateWorkbenchTicketStart(
+      {
+        ...startInput(),
+        ticket: mixedTicket,
+        board: {
+          remoteProjects: {
+            [remoteId]: {
+              environmentId: EnvironmentId.make("environment-remote"),
+              environmentLabel: "Laptop",
+              projectTitle: "Remote",
+            },
+          },
+        },
+      },
+      {
+        ...makeDependencies([]),
+        createThread: async ({ input }) => {
+          createdThreadInput = input;
+          return success;
+        },
+      },
+      { modelSelection },
+    );
+    expect(result).toEqual({ state: "opened", threadId });
+    expect(createdThreadInput).toMatchObject({
+      projectId,
+      worktreePath: "/worktrees/ticket-one/t3code",
+    });
   });
 
   it("does not prepare repositories or create a Thread when the reviewed scope cannot be saved", async () => {
@@ -380,7 +417,7 @@ describe("coordinateWorkbenchTicketStart", () => {
     let createdThreadInput: unknown;
     const selectedModel: ModelSelection = { ...modelSelection, model: "gpt-5.4-mini" };
     const result = await coordinateWorkbenchTicketStart(
-      { ...startInput(), threadLookupReady: false },
+      { ...startInput(), threadLookupState: "checking" as const },
       {
         ...makeDependencies(events),
         createThread: async (input) => {

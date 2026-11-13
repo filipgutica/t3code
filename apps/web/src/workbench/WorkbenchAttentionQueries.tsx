@@ -122,8 +122,9 @@ export function createWorkbenchAttentionQueries() {
         };
         for (const reference of batch) {
           const host = sourceControlClients.parseChangeRequestUrl(reference.url)?.link.host;
+          // A remote Thread's PR is read on its own machine; the viewer is a Board host read.
           const target = {
-            environmentId,
+            environmentId: reference.environmentId ?? environmentId,
             input: {
               projectId: reference.projectId,
               repository: reference.repository,
@@ -133,7 +134,7 @@ export function createWorkbenchAttentionQueries() {
           };
           const summaryQuery = linkedPullRequestDetailAtom(target);
           const activityQuery = pullRequestEnvironment.activity(target);
-          const summary = sharedPullRequestSummaryAtom(environmentId, target.input);
+          const summary = sharedPullRequestSummaryAtom(target.environmentId, target.input);
           const viewer =
             host === undefined
               ? null

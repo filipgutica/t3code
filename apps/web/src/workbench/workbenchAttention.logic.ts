@@ -15,6 +15,7 @@ import {
   legacyThreadPullRequestKey,
   threadPullRequestKeyOf,
 } from "@t3tools/client-runtime/thread-pull-requests";
+import { getWorkbenchAssignmentEnvironmentId } from "./workbench.logic";
 import type {
   TicketPullRequestReference,
   WorkbenchTicketPullRequest,
@@ -52,6 +53,8 @@ export type WorkbenchAttentionSignal =
         readonly type: "thread";
         readonly threadId: ThreadId;
         readonly threadTitle: string;
+        /** Set when the Thread runs on another machine than the Board host. */
+        readonly environmentId?: EnvironmentId;
       };
     })
   | {
@@ -190,10 +193,15 @@ export interface WorkbenchPullRequestAttention {
   readonly terminal: boolean;
 }
 
+/** A PR read through `hostEnvironmentId`, keyed by the machine that owns its Project. */
 export const workbenchAttentionIdentity = (
-  environmentId: EnvironmentId,
+  hostEnvironmentId: EnvironmentId,
   reference: TicketPullRequestReference,
-) => JSON.stringify([environmentId, threadPullRequestKeyOf(legacyThreadPullRequestKey(reference))]);
+) =>
+  JSON.stringify([
+    reference.environmentId ?? hostEnvironmentId,
+    threadPullRequestKeyOf(legacyThreadPullRequestKey(reference)),
+  ]);
 
 export const activeWorkbenchAttentionAssignments = ({
   assignments,
@@ -212,7 +220,8 @@ export const activeWorkbenchAttentionAssignments = ({
     return (
       assignment.supersededAt === null &&
       thread !== undefined &&
-      thread.environmentId === environmentId &&
+      environmentId !== null &&
+      thread.environmentId === getWorkbenchAssignmentEnvironmentId(assignment, environmentId) &&
       thread.archivedAt === null &&
       thread.settledOverride !== "settled"
     );

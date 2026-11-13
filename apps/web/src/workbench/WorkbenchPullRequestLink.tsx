@@ -27,6 +27,8 @@ export interface WorkbenchPullRequestReference {
   readonly repository?: string;
   readonly state?: PullRequestState;
   readonly isDraft?: boolean | undefined;
+  /** The machine whose `projectId` this is, when not the link's `environmentId`. */
+  readonly environmentId?: EnvironmentId | undefined;
 }
 
 function WorkbenchPullRequestIdentifier({
@@ -175,9 +177,10 @@ export function WorkbenchPullRequestLink({
   readonly linkedThread?: WorkbenchLinkedPullRequestThread | undefined;
   readonly onSelect?: () => void;
 }) {
+  const ownerEnvironmentId = pullRequest.environmentId ?? environmentId;
   const openWorkbenchPullRequest = useOpenWorkbenchPullRequest();
   const openChangeRequestLink = useOpenChangeRequestLink(
-    linkedThread ? scopeThreadRef(environmentId, linkedThread.threadId) : undefined,
+    linkedThread ? scopeThreadRef(ownerEnvironmentId, linkedThread.threadId) : undefined,
     undefined,
     openWorkbenchPullRequest
       ? (selection) =>
@@ -197,16 +200,16 @@ export function WorkbenchPullRequestLink({
   // Mounted for its answers, which land in the shared summary read below.
   useEnvironmentQuery(
     pullRequest.state === undefined && reference
-      ? linkedPullRequestDetailAtom({ environmentId, input: reference })
+      ? linkedPullRequestDetailAtom({ environmentId: ownerEnvironmentId, input: reference })
       : null,
   );
-  const summary = useSharedPullRequestSummary(environmentId, reference);
+  const summary = useSharedPullRequestSummary(ownerEnvironmentId, reference);
   const state = resolvedPullRequestState({ pullRequest, summary });
   const presentation = state ? PULL_REQUEST_STATE_PRESENTATION[state] : undefined;
   const stateClass = presentation?.toneClassName ?? "text-muted-foreground";
   const PullRequestIcon = presentation?.Icon ?? PullRequestGlyph.pullRequest;
   const openInWorkbench = (event: MouseEvent<HTMLAnchorElement>) => {
-    if (openChangeRequestLink(event, pullRequest.url, undefined, environmentId)) onSelect?.();
+    if (openChangeRequestLink(event, pullRequest.url, undefined, ownerEnvironmentId)) onSelect?.();
   };
 
   return (

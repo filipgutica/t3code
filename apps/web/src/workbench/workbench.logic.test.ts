@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
@@ -10,6 +11,9 @@ import {
   getActiveAssignmentsByTicket,
   getAssignmentsForTicket,
   getWorkbenchContextForThread,
+  getWorkbenchThreadLookupState,
+  getWorkbenchReachableThreads,
+  getWorkbenchThreadsById,
   getWorkbenchTicketSummaryActionLabel,
   getWorkbenchTicketSummaryPresentation,
   getWorkbenchTicketThreadSections,
@@ -19,7 +23,11 @@ import {
   getWorkbenchOmittedThreadIds,
   getWorkbenchOmittedThreadsStatus,
   isWorkbenchThreadArchived,
+  resolveWorkbenchTicketThreadTarget,
 } from "./workbench.logic";
+
+const hostEnvironmentId = EnvironmentId.make("host-environment");
+const remoteEnvironmentId = EnvironmentId.make("remote-environment");
 
 describe("Workbench ticket helpers", () => {
   it("uses stored generated summaries without falling back to descriptions", () => {
@@ -143,6 +151,92 @@ describe("Workbench ticket helpers", () => {
       stateLabel: "Thread deleted",
       state: "missing",
     });
+    // A Thread on a machine this client cannot reach is not deleted.
+    const offline = {
+      actionLabel: "Check Thread",
+      pendingActionLabel: "Checking Thread…",
+      stateLabel: "Offline",
+      state: "offline",
+    };
+    expect(getWorkbenchThreadPresentation(true, false, null, false, "offline")).toEqual(offline);
+    // Nor still working or archived: a cached shell outlives the connection.
+    expect(getWorkbenchThreadPresentation(true, true, "Working", false, "offline")).toEqual(
+      offline,
+    );
+    expect(getWorkbenchThreadPresentation(true, false, null, true, "offline")).toEqual(offline);
+  });
+
+  it("starts a replacement only once the Thread's own environment confirms it is gone", () => {
+    const threadId = ThreadId.make("remote-thread");
+    const remoteAssignment = { threadId, environmentId: remoteEnvironmentId };
+
+    // The host lookup being ready says nothing about a Thread on another machine.
+    expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "offline")).toEqual({
+      state: "thread-status-unavailable",
+    });
+    expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "checking")).toEqual({
+      state: "thread-status-unavailable",
+    });
+    expect(resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set(), "ready")).toEqual({
+      state: "start",
+    });
+    expect(
+      resolveWorkbenchTicketThreadTarget(remoteAssignment, new Set([threadId]), "offline"),
+    ).toEqual({ state: "open", threadId });
+    expect(resolveWorkbenchTicketThreadTarget(undefined, new Set(), "offline")).toEqual({
+      state: "start",
+    });
+
+    const lookupState = (
+      assignment: { readonly environmentId?: EnvironmentId },
+      threadLookupReady: boolean,
+    ) =>
+      getWorkbenchThreadLookupState({
+        assignment,
+        threadLookupReady,
+        remoteEnvironmentStates: new Map([[remoteEnvironmentId, "ready" as const]]),
+      });
+    expect(lookupState({}, true)).toBe("ready");
+    expect(lookupState({}, false)).toBe("checking");
+    expect(lookupState({ environmentId: remoteEnvironmentId }, false)).toBe("ready");
+    expect(lookupState({ environmentId: EnvironmentId.make("unsaved-machine") }, true)).toBe(
+      "offline",
+    );
+  });
+
+  it("reads each assigned Thread from its own environment", () => {
+    const thread = (id: string, environmentId: EnvironmentId) => ({
+      id: ThreadId.make(id),
+      environmentId,
+    });
+    const host = thread("host-thread", hostEnvironmentId);
+    const remote = thread("remote-thread", remoteEnvironmentId);
+    const unassignedRemote = thread("unassigned-remote", remoteEnvironmentId);
+    // A host Assignment names a host Thread; another machine's copy of that id is not it.
+    const hostIdElsewhere = thread("host-assigned", remoteEnvironmentId);
+    // And a host copy of a remote Assignment's id is not the remote Thread.
+    const remoteIdOnHost = thread("remote-thread", hostEnvironmentId);
+
+    expect([
+      ...getWorkbenchThreadsById({
+        hostEnvironmentId,
+        assignments: [
+          { threadId: remote.id, environmentId: remoteEnvironmentId },
+          { threadId: hostIdElsewhere.id },
+        ],
+        threads: [host, remote, unassignedRemote, hostIdElsewhere, remoteIdOnHost],
+      }).values(),
+    ]).toEqual([host, remote]);
+
+    // A cached shell from a machine whose shells are not live would show a stale status.
+    const offlineRemote = thread("offline-remote", EnvironmentId.make("offline-machine"));
+    expect(
+      getWorkbenchReachableThreads({
+        hostEnvironmentId,
+        liveEnvironmentIds: new Set([remoteEnvironmentId]),
+        threads: [host, remote, offlineRemote],
+      }),
+    ).toEqual([host, remote]);
   });
 
   it("resolves the Workspace and Ticket that own a native Thread", () => {
@@ -190,9 +284,11 @@ describe("Workbench ticket helpers", () => {
           assignments: [assignment],
           reservedThreadIds: [],
         },
-        threadId,
+        hostEnvironmentId,
+        { environmentId: hostEnvironmentId, threadId },
       ),
     ).toEqual({ assignment, ticket, workspace });
+    // The same id on another machine is a different Thread.
     expect(
       getWorkbenchContextForThread(
         {
@@ -204,7 +300,39 @@ describe("Workbench ticket helpers", () => {
           assignments: [assignment],
           reservedThreadIds: [],
         },
-        ThreadId.make("another-thread"),
+        hostEnvironmentId,
+        { environmentId: remoteEnvironmentId, threadId },
+      ),
+    ).toBeNull();
+    const remoteAssignment = { ...assignment, environmentId: remoteEnvironmentId };
+    expect(
+      getWorkbenchContextForThread(
+        {
+          references: [],
+          projects: [workspace],
+          tickets: [ticket],
+          threadRecaps: [],
+          ticketWorkspaces: [],
+          assignments: [remoteAssignment],
+          reservedThreadIds: [],
+        },
+        hostEnvironmentId,
+        { environmentId: remoteEnvironmentId, threadId },
+      ),
+    ).toEqual({ assignment: remoteAssignment, ticket, workspace });
+    expect(
+      getWorkbenchContextForThread(
+        {
+          references: [],
+          projects: [workspace],
+          tickets: [ticket],
+          threadRecaps: [],
+          ticketWorkspaces: [],
+          assignments: [assignment],
+          reservedThreadIds: [],
+        },
+        hostEnvironmentId,
+        { environmentId: hostEnvironmentId, threadId: ThreadId.make("another-thread") },
       ),
     ).toBeNull();
   });
@@ -438,6 +566,20 @@ describe("Workbench ticket helpers", () => {
     expect(getVisibleWorkbenchAssignments([missing], new Set(), new Set(), false)).toEqual([
       missing,
     ]);
+    // A Thread on a machine this client cannot reach stays listed so it can be unassigned.
+    const offlineRemote = { ...missing, environmentId: remoteEnvironmentId };
+    expect(
+      getVisibleWorkbenchAssignments([offlineRemote], new Set(), new Set(), true, new Map()),
+    ).toEqual([offlineRemote]);
+    expect(
+      getVisibleWorkbenchAssignments(
+        [offlineRemote],
+        new Set(),
+        new Set(),
+        true,
+        new Map([[remoteEnvironmentId, "ready"]]),
+      ),
+    ).toEqual([]);
   });
 
   it("reads assigned Threads only when the shell left them out as older settled", () => {

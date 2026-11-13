@@ -1,5 +1,6 @@
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import type {
+  EnvironmentId,
   PullRequestListEntry,
   ProjectId,
   WorkbenchReference,
@@ -31,6 +32,8 @@ export interface WorkbenchTicketPullRequest {
 export type TicketPullRequestReference = ThreadLinkedPullRequest &
   Partial<Pick<PullRequestListEntry, "title" | "state" | "checksState" | "reviewDecision">> & {
     readonly isDraft?: boolean | undefined;
+    /** The machine whose `projectId` this is, when not the Board host. */
+    readonly environmentId?: EnvironmentId | undefined;
   };
 
 /** A Reference-only row has no native Project, so it shows no looked-up status. */
@@ -179,7 +182,7 @@ export function getWorkbenchTicketPullRequests({
   includeBranchPullRequest = true,
 }: {
   readonly includeBranchPullRequest?: boolean;
-  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId">>;
+  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId" | "environmentId">>;
   readonly threadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
 }): ReadonlyArray<WorkbenchTicketPullRequest> {
@@ -198,7 +201,10 @@ export function getWorkbenchTicketPullRequests({
       pullRequests.push({
         threadId: thread.id,
         threadTitle: thread.title,
-        pullRequest,
+        pullRequest:
+          assignment.environmentId === undefined
+            ? pullRequest
+            : { ...pullRequest, environmentId: assignment.environmentId },
       });
     }
   }

@@ -446,5 +446,12 @@ describe("Workbench attention from active native Threads and linked PRs", () => 
     expect(workbenchAttentionIdentity(environmentId, reference)).not.toBe(
       workbenchAttentionIdentity(EnvironmentId.make("remote"), reference),
     );
+    // A remote Thread's PR belongs to its own machine, not the Board host reading it.
+    expect(
+      workbenchAttentionIdentity(environmentId, {
+        ...reference,
+        environmentId: EnvironmentId.make("remote"),
+      }),
+    ).toBe(workbenchAttentionIdentity(EnvironmentId.make("remote"), reference));
   });
 });

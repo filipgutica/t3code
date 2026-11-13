@@ -395,6 +395,8 @@ describe("getWorkbenchThreadStatusSections", () => {
         thread("request", "request"),
         thread("waiting", "waiting"),
         thread("failed", "failed"),
+        // A Thread on a machine this client cannot reach has no status, but is not idle.
+        { ...thread("unreachable"), offline: true },
       ],
       settled: [thread("done")],
       showingThreadId: null,
@@ -408,6 +410,7 @@ describe("getWorkbenchThreadStatusSections", () => {
       },
       { id: "idle", threads: ["idle"], openByDefault: true },
       { id: "working", threads: ["working", "waiting"], openByDefault: false },
+      { id: "offline", threads: ["unreachable"], openByDefault: true },
       { id: "settled", threads: ["done"], openByDefault: false },
     ]);
   });

@@ -10,7 +10,11 @@ import type {
   WorkbenchTicketId,
 } from "@t3tools/contracts";
 
-import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { getWorkbenchThreadsById, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import {
+  getWorkbenchBoardRepositoriesById,
+  getWorkbenchRemoteRepositories,
+} from "./workbenchRemote.logic";
 import { getWorkbenchTicketPullRequests } from "./workbenchPullRequests.logic";
 import {
   getTicketIssue,
@@ -30,6 +34,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   threads,
   projects,
   workbenchProjects,
+  environmentLabels,
   referencesByTicket,
 }: {
   readonly environmentId: EnvironmentId | null;
@@ -37,7 +42,7 @@ export const getWorkbenchSidebarTicketDetails = ({
     Pick<WorkbenchTicket, "id" | "projectId" | "status" | "blocked" | "repositoryProjectIds">
   >;
   readonly assignments: ReadonlyArray<
-    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt" | "environmentId">
   >;
   readonly threads: ReadonlyArray<
     Pick<
@@ -58,19 +63,33 @@ export const getWorkbenchSidebarTicketDetails = ({
     >
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
-  readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
+  readonly workbenchProjects: ReadonlyArray<
+    Pick<WorkbenchProject, "id" | "archivedAt" | "remoteProjects">
+  >;
+  readonly environmentLabels: ReadonlyMap<EnvironmentId, string>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
 }) => {
-  const threadsById = new Map(
-    threads
-      .filter((thread) => thread.environmentId === environmentId)
-      .map((thread) => [thread.id, thread]),
+  const threadsById = getWorkbenchThreadsById({
+    hostEnvironmentId: environmentId,
+    assignments,
+    threads,
+  });
+  const hostProjects = projects.filter((project) => project.environmentId === environmentId);
+  const remoteRepositoriesByBoard = getWorkbenchRemoteRepositories({
+    boards: workbenchProjects,
+    projects,
+    environmentLabels,
+  });
+  const repositoriesByBoard = new Map(
+    [...remoteRepositoriesByBoard].map(([boardId, remoteRepositories]) => [
+      boardId,
+      getWorkbenchBoardRepositoriesById({ hostProjects, remoteRepositories }),
+    ]),
   );
-  const projectsById = new Map(
-    projects
-      .filter((project) => project.environmentId === environmentId)
-      .map((project) => [project.id, project.title]),
-  );
+  const hostRepositoriesById = getWorkbenchBoardRepositoriesById({
+    hostProjects,
+    remoteRepositories: undefined,
+  });
   const activeWorkspaceIds = new Set(
     workbenchProjects.filter((workspace) => workspace.archivedAt == null).map(({ id }) => id),
   );
@@ -79,7 +98,7 @@ export const getWorkbenchSidebarTicketDetails = ({
   const threadStatuses = getWorkbenchTicketThreadStatuses(executionInput);
   const assignmentsByTicket = new Map<
     WorkbenchTicketId,
-    Array<Pick<WorkbenchAssignment, "threadId">>
+    Array<Pick<WorkbenchAssignment, "threadId" | "environmentId">>
   >();
   for (const assignment of assignments) {
     const entries = assignmentsByTicket.get(assignment.ticketId) ?? [];
@@ -99,8 +118,10 @@ export const getWorkbenchSidebarTicketDetails = ({
           attentionLabel: ticket.blocked ? "Blocked" : null,
           issue: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id)),
           repositories: ticket.repositoryProjectIds.flatMap((id) => {
-            const title = projectsById.get(id);
-            return title ? [title] : [];
+            const repository = (
+              repositoriesByBoard.get(ticket.projectId) ?? hostRepositoriesById
+            ).get(id);
+            return repository ? [repository.title] : [];
           }),
           threads: (threadStatuses.get(ticket.id) ?? []).map((entry) => ({
             ...entry,

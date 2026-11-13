@@ -9,12 +9,14 @@ import { Schema } from "effect";
 import { useLocation, useParams, useSearch } from "@tanstack/react-router";
 import { createContext, useContext, type ReactNode } from "react";
 import { resolveThreadRouteRef } from "../threadRoutes";
-import { useThreadShells } from "../state/entities";
 import { usePrimaryEnvironmentId } from "../state/environments";
 import { useEnvironmentQuery } from "../state/query";
 import { useWorkbenchAttention } from "./useWorkbenchAttention";
 import { useWorkbenchOmittedThreads } from "./useWorkbenchOmittedThreads";
 import { workbenchEnvironment } from "./state";
+import { useWorkbenchThreadOwner } from "./useWorkbenchThreadOwner";
+import { getWorkbenchAssignmentEnvironmentId, getWorkbenchThreadsById } from "./workbench.logic";
+import { useWorkbenchThreadShells } from "./useWorkbenchThreadShells";
 import { activeWorkbenchAttentionAssignments } from "./workbenchAttention.logic";
 import { shouldShowWorkbenchSidebar } from "./workbenchNavigation";
 
@@ -47,8 +49,9 @@ export function WorkbenchAttentionProvider({ children }: { children: ReactNode }
   const activeThreadRef = useParams({ strict: false, select: resolveThreadRouteRef });
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const isOnWorkbench = shouldShowWorkbenchSidebar(pathname);
+  // A Thread on another machine belongs to the Board host that assigns it.
   const environmentId =
-    activeThreadRef?.environmentId ?? search.environmentId ?? primaryEnvironmentId;
+    useWorkbenchThreadOwner(activeThreadRef) ?? search.environmentId ?? primaryEnvironmentId;
   const needsSnapshot = isOnWorkbench || activeThreadRef !== null;
   const query = useEnvironmentQuery(
     !needsSnapshot || environmentId === null
@@ -81,12 +84,12 @@ function WorkbenchEnvironmentAttention({
   children: ReactNode;
 }) {
   useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
-  const shells = useThreadShells();
-  const threadsById = new Map(
-    shells
-      .filter((thread) => thread.environmentId === environmentId)
-      .map((thread) => [thread.id, thread]),
-  );
+  const shells = useWorkbenchThreadShells(environmentId);
+  const threadsById = getWorkbenchThreadsById({
+    hostEnvironmentId: environmentId,
+    assignments: snapshot?.assignments ?? emptyAssignments,
+    threads: shells,
+  });
   const visibleTickets = (() => {
     const activeWorkspaceIds = new Set(
       snapshot?.projects
@@ -100,7 +103,7 @@ function WorkbenchEnvironmentAttention({
     );
   })();
   const assignedThreadRef = (() => {
-    if (!activeThreadRef || activeThreadRef.environmentId !== environmentId) return null;
+    if (!activeThreadRef || environmentId === null) return null;
     const ticketIds = new Set(visibleTickets.map((ticket) => ticket.id));
     const assigned = activeWorkbenchAttentionAssignments({
       assignments: snapshot?.assignments ?? emptyAssignments,
@@ -108,7 +111,10 @@ function WorkbenchEnvironmentAttention({
       environmentId,
     }).some(
       (assignment) =>
-        assignment.threadId === activeThreadRef.threadId && ticketIds.has(assignment.ticketId),
+        assignment.threadId === activeThreadRef.threadId &&
+        getWorkbenchAssignmentEnvironmentId(assignment, environmentId) ===
+          activeThreadRef.environmentId &&
+        ticketIds.has(assignment.ticketId),
     );
     return assigned ? activeThreadRef : null;
   })();
