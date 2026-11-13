@@ -66,6 +66,7 @@ import { ThreadToolkit } from "../../apps/server/src/mcp/toolkits/thread/tools.t
 import { WorktreeToolkit } from "../../apps/server/src/mcp/toolkits/worktree/tools.ts";
 import {
   PLANNING_INSTRUCTION,
+  remoteTicketInstruction,
   ticketInstruction,
 } from "../../apps/server/src/workbench/agentInstructions.ts";
 import { WorkbenchToolkit } from "../../apps/server/src/workbench/mcp/tools.ts";
@@ -321,6 +322,11 @@ export const McpToolUseCase = Schema.Struct({
             Schema.Struct({ id: Schema.String, name: Schema.String, path: Schema.String }),
           ),
         ),
+        /**
+         * The thread runs on another machine's T3 server, which has no Workbench tools. Its first
+         * message carries the remote Ticket text instead of the per-turn instructions.
+         */
+        remote: Schema.optional(Schema.Boolean),
       }),
     ),
     /**
@@ -505,11 +511,20 @@ const pastedSecret = (name: string, input: Readonly<Record<string, unknown>>) =>
 const hiddenFromSubagents = enabledWhen(McpInvocationContext.hiddenFromSubagents);
 // The Linked environments beta starts off, and T3 lists its tools only while it is on.
 const hiddenWhileLinksOff = enabledWhen(McpInvocationContext.hiddenWhileLinksOff);
-const visibleT3Tools = (options: { readonly subagent?: boolean; readonly links?: boolean }) =>
+// A Thread on another machine's T3 server has no Workbench tools.
+const workbenchTools = new Set(
+  Object.values(WorkbenchToolkit.tools).map((tool) => `${T3_PREFIX}${tool.name}`),
+);
+const visibleT3Tools = (options: {
+  readonly subagent?: boolean;
+  readonly links?: boolean;
+  readonly workbench?: boolean;
+}) =>
   t3Tools.filter(
     (tool) =>
       (options.links === true || !hiddenWhileLinksOff.has(tool.name)) &&
-      !(options.subagent === true && hiddenFromSubagents.has(tool.name)),
+      !(options.subagent === true && hiddenFromSubagents.has(tool.name)) &&
+      !(options.workbench === false && workbenchTools.has(tool.name)),
   );
 
 /**
@@ -616,6 +631,7 @@ export const buildBase = (
     readonly keepUserInstructions: boolean;
     readonly subagent?: boolean;
     readonly links?: boolean;
+    readonly workbench?: boolean;
     /** A native subagent starts from its task: T3 appends nothing to its system prompt. */
     readonly nativeSubagent?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
@@ -708,6 +724,7 @@ const buildCodexBase = (
     readonly effort?: string | undefined;
     readonly subagent?: boolean;
     readonly links?: boolean;
+    readonly workbench?: boolean;
     /** false: the thread has no agent device access, so T3's text leaves devices out. */
     readonly deviceAccess?: boolean;
   },
@@ -973,6 +990,7 @@ const loadTools = (tools: Array<ApiTool>, id: string, found: ReadonlyArray<ApiTo
 const workstreamTurnInstructions = ({ setup }: McpToolUseCase) => {
   const workstream = setup.workstream;
   if (workstream === undefined) return undefined;
+  if (workstream.remote === true) return remoteTicketInstruction(workstream);
   const planning = workstream.repositories
     ? [
         PLANNING_INSTRUCTION,
@@ -2400,6 +2418,7 @@ const main = Effect.gen(function* () {
     role: McpToolUseCase["setup"]["role"],
     deviceAccess: boolean,
     links: boolean,
+    workbench: boolean,
   ): Effect.Effect<Base, Schema.SchemaError> =>
     codex
       ? decodeCodexCapture(template).pipe(
@@ -2410,6 +2429,7 @@ const main = Effect.gen(function* () {
               effort: flags.effort,
               subagent: role === "delegated-child",
               links,
+              workbench,
               deviceAccess,
             }),
           ),
@@ -2422,6 +2442,7 @@ const main = Effect.gen(function* () {
               subagent: role === "delegated-child",
               nativeSubagent: role === "native-subagent",
               links,
+              workbench,
               deviceAccess,
             });
             return role === "native-subagent"
@@ -2433,18 +2454,22 @@ const main = Effect.gen(function* () {
         );
   // Codex has no native subagents; its cases with that role run as top-level threads.
   const baseKey = ({ setup }: McpToolUseCase) =>
-    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.linkedEnvironments === true}`;
-  const base = yield* buildFor("top", true, false);
-  const bases = new Map<string, Base>([["top:true:false", base]]);
+    `${codex && setup.role === "native-subagent" ? "top" : setup.role}:${setup.world?.deviceAgentAccess !== false}:${setup.linkedEnvironments === true}:${setup.workstream?.remote !== true}`;
+  const base = yield* buildFor("top", true, false, true);
+  const bases = new Map<string, Base>([["top:true:false:true", base]]);
   for (const testCase of selected) {
     const key = baseKey(testCase);
     if (bases.has(key)) continue;
-    const [role = "top", access, links] = key.split(":") as [
+    const [role = "top", access, links, workbench] = key.split(":") as [
       McpToolUseCase["setup"]["role"],
       string,
       string,
+      string,
     ];
-    bases.set(key, yield* buildFor(role, access === "true", links === "true"));
+    bases.set(
+      key,
+      yield* buildFor(role, access === "true", links === "true", workbench === "true"),
+    );
   }
   const baseFor = (testCase: McpToolUseCase) => bases.get(baseKey(testCase)) ?? base;
   const effort = flags.effort ?? base.codex?.reasoning.effort ?? "high";

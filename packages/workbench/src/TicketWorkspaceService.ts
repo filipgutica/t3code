@@ -16,6 +16,7 @@ import {
   type WorkbenchTicketWorktree,
   type WorkbenchTicket,
   type WorkbenchReference,
+  workbenchHostRepositoryProjectIds,
   workbenchTicketIssueLabel,
 } from "@t3tools/contracts";
 import * as Clock from "effect/Clock";
@@ -1125,17 +1126,31 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     // Workspace. Archiving must not allow this flow to clean up a retained
     // worktree, and deletion must not start a new preparation.
     const snapshot = yield* store.getSnapshot;
-    const ticket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
-    if (!ticket) {
+    const scopedTicket = snapshot.tickets.find((candidate) => candidate.id === input.ticketId);
+    if (!scopedTicket) {
       return yield* new WorkbenchOperationError({
         code: "ticket_not_found",
         message: "The Workbench Ticket does not exist.",
       });
     }
-    if (ticket.archivedAt !== undefined && ticket.archivedAt !== null) {
+    if (scopedTicket.archivedAt !== undefined && scopedTicket.archivedAt !== null) {
       return yield* new WorkbenchOperationError({
         code: "ticket_archived",
         message: "Archived Tickets cannot prepare worktrees.",
+      });
+    }
+    // Worktrees exist only for repositories on this host; other machines prepare their own.
+    const ticket = {
+      ...scopedTicket,
+      repositoryProjectIds: workbenchHostRepositoryProjectIds(
+        snapshot.projects.find((project) => project.id === scopedTicket.projectId),
+        scopedTicket.repositoryProjectIds,
+      ),
+    };
+    if (ticket.repositoryProjectIds.length === 0) {
+      return yield* new WorkbenchOperationError({
+        code: "repository_not_linked",
+        message: "This Ticket has no repository on this machine to prepare worktrees for.",
       });
     }
     const existing = yield* store.getTicketWorkspace(input.ticketId);
@@ -1157,7 +1172,12 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
     );
     const recordedDirectory = recordedWorkspaceDirectory(reconciledExisting);
     const assignedThreadIds = snapshot.assignments
-      .filter((assignment) => assignment.ticketId === ticket.id && assignment.supersededAt === null)
+      .filter(
+        (assignment) =>
+          assignment.ticketId === ticket.id &&
+          assignment.supersededAt === null &&
+          assignment.environmentId === undefined,
+      )
       .map((assignment) => assignment.threadId);
     let generatedBranchName = Option.getOrUndefined(
       yield* store.getTicketWorkspaceGeneratedBranchName(ticket.id),
@@ -1322,7 +1342,13 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         ),
       );
       const worktrees: Array<WorkbenchTicketWorktree> = [];
-      for (const projectId of ticket.repositoryProjectIds) {
+      // A remote Project's ID can also exist here (copied data); never resolve it on this host.
+      const board = yield* store.getProject(ticket.projectId);
+      const hostProjectIds = workbenchHostRepositoryProjectIds(
+        Option.getOrUndefined(board),
+        ticket.repositoryProjectIds,
+      );
+      for (const projectId of hostProjectIds) {
         const project = yield* projections.getProjectShellById(projectId);
         if (Option.isNone(project)) continue;
         const sourceRoot = yield* canonicalizePath(project.value.workspaceRoot);

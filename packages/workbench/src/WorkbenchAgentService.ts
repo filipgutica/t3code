@@ -10,6 +10,7 @@ import {
   WorkbenchTicketId,
   WorkbenchTicketStatus,
   parseWorkbenchReferenceUrl,
+  workbenchHostRepositoryProjectIds,
   type ProviderInteractionMode,
   type RuntimeMode,
   type WorkbenchReference,
@@ -220,9 +221,15 @@ const make = Effect.gen(function* () {
     const workspace = yield* store.getProject(workspaceId);
     const linked = Option.isSome(workspace) ? workspace.value.linkedProjectIds : [];
     const ids = [...new Set([...selected, ...linked])];
-    const titles = new Map(
-      (yield* host.describeProjects(ids)).map((project) => [project.id, project.title]),
-    );
+    const remote = Option.isSome(workspace) ? (workspace.value.remoteProjects ?? {}) : {};
+    const titles = new Map([
+      ...(yield* host.describeProjects(ids)).map((project) => [project.id, project.title] as const),
+      // This host cannot read a remote Project; name it and its machine from the stored labels.
+      ...Object.entries(remote).map(
+        ([id, project]) =>
+          [id, `${project.projectTitle} (on ${project.environmentLabel})`] as const,
+      ),
+    ]);
     return ids.map((projectId) => {
       const paths = worktrees
         .filter((worktree) => worktree.projectId === projectId)
@@ -266,10 +273,10 @@ const make = Effect.gen(function* () {
     const members = Option.isSome(roster)
       ? [
           { threadId, recap: roster.value.recap },
-          ...roster.value.siblings.map((sibling) => ({
-            threadId: sibling.threadId,
-            recap: sibling.recap,
-          })),
+          // A Thread on another machine is not readable or addressable from here.
+          ...roster.value.siblings
+            .filter((sibling) => sibling.environmentId === undefined)
+            .map((sibling) => ({ threadId: sibling.threadId, recap: sibling.recap })),
         ]
       : [];
     const threads = yield* host.describeThreads(members.map((member) => member.threadId));
@@ -569,9 +576,18 @@ const make = Effect.gen(function* () {
     readonly callerThreadId: ThreadId;
     readonly requested: ProjectId | undefined;
   }) {
-    const linked = ticket.repositoryProjectIds;
+    const board = Option.getOrUndefined(yield* store.getProject(ticket.projectId));
+    // Threads start on this machine; a repository on another one has no worktree here.
+    const linked = workbenchHostRepositoryProjectIds(board, ticket.repositoryProjectIds);
     if (requested !== undefined) {
       if (linked.includes(requested)) return requested;
+      const remote = board?.remoteProjects?.[requested];
+      if (remote !== undefined && ticket.repositoryProjectIds.includes(requested)) {
+        return yield* new WorkbenchOperationError({
+          code: "repository_not_linked",
+          message: `${remote.projectTitle} is on ${remote.environmentLabel}, and Workbench can't start a Thread on another machine. Ask the user to start one there from the Ticket.`,
+        });
+      }
       return yield* new WorkbenchOperationError({
         code: "repository_not_linked",
         message:
@@ -586,7 +602,10 @@ const make = Effect.gen(function* () {
     if (first !== undefined) return first;
     return yield* new WorkbenchOperationError({
       code: "repository_not_linked",
-      message: "This Ticket has no repositories. Add one before starting a Thread.",
+      message:
+        ticket.repositoryProjectIds.length === 0
+          ? "This Ticket has no repositories. Add one before starting a Thread."
+          : "This Ticket's repositories are all on other machines, so Workbench can't start a Thread here. Ask the user to start one there from the Ticket.",
     });
   });
 

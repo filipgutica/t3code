@@ -328,6 +328,44 @@ describe("ensureWorkbenchSchema", () => {
     ),
   );
 
+  it.effect("adds remote environment columns in place and keeps existing rows on the host", () =>
+    withForeignKeys(
+      Effect.gen(function* () {
+        const sql = yield* SqlClient.SqlClient;
+        yield* ensureWorkbenchSchema;
+        // Rewind to v27 so the migration runs against existing rows.
+        yield* sql`DELETE FROM workbench_schema_migrations WHERE version = 28`;
+        for (const column of ["environment_id", "environment_label", "project_title"]) {
+          yield* sql`ALTER TABLE workbench_project_links DROP COLUMN ${sql(column)}`;
+        }
+        for (const column of ["environment_id", "project_id"]) {
+          yield* sql`ALTER TABLE workbench_assignments DROP COLUMN ${sql(column)}`;
+        }
+        yield* sql`INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
+          VALUES ('remote-board', 'Remote', ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_project_links (workbench_project_id, t3_project_id, position)
+          VALUES ('remote-board', 'repo', 0)`;
+        yield* sql`INSERT INTO workbench_tickets (ticket_id, workbench_project_id, title, markdown,
+            primary_t3_project_id, status, blocked, revision, created_at, updated_at)
+          VALUES ('remote-ticket', 'remote-board', 'Ticket', 'Brief', 'repo', 'todo', 0, 0, ${now}, ${now})`;
+        yield* sql`INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at)
+          VALUES ('remote-assignment', 'remote-ticket', 'thread', ${now})`;
+
+        yield* ensureWorkbenchSchema;
+
+        expect(
+          yield* sql`SELECT t3_project_id AS id, environment_id AS env, environment_label AS label,
+            project_title AS title FROM workbench_project_links`,
+        ).toEqual([{ id: "repo", env: null, label: null, title: null }]);
+        expect(
+          yield* sql`SELECT assignment_id AS id, environment_id AS env, project_id AS project
+            FROM workbench_assignments`,
+        ).toEqual([{ id: "remote-assignment", env: null, project: null }]);
+        yield* expectForeignKeysIntact;
+      }),
+    ),
+  );
+
   it.effect("moves v19 Jira state onto local Tickets and Epics and drops the Jira tables", () =>
     withForeignKeys(
       Effect.gen(function* () {

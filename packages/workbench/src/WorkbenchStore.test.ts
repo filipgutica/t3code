@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   RunId,
   ProjectId,
   ThreadId,
@@ -46,6 +47,7 @@ const nativeLayer = (options?: {
   return Layer.succeed(
     WorkbenchNativeAccess,
     WorkbenchNativeAccess.of({
+      hostEnvironmentId: EnvironmentId.make("environment-host"),
       findProject: (projectId) =>
         Effect.succeed(
           projects.has(projectId)
@@ -928,6 +930,208 @@ describe("WorkbenchStore package boundary", () => {
         }),
       ),
     ),
+  );
+});
+
+describe("Projects and Threads on other machines", () => {
+  const host = ProjectId.make("remote-host-repo");
+  const remote = ProjectId.make("remote-laptop-repo");
+  const laptop = EnvironmentId.make("laptop");
+  const remoteProject = {
+    environmentId: laptop,
+    environmentLabel: "Laptop",
+    projectTitle: "Laptop repo",
+  };
+  const boardId = WorkbenchProjectId.make("remote-board");
+  const ticketId = WorkbenchTicketId.make("remote-ticket");
+  const at = "2026-11-09T10:00:00.000Z";
+  const layer = testLayer({
+    projects: new Set([host]),
+    // Copied data can give this host a Thread in a Project the Board links from another machine.
+    threads: new Map([
+      ["remote-host-thread", host],
+      ["copied-host-thread", remote],
+    ]),
+  });
+  const seedBoard = (store: WorkbenchStore["Service"]) =>
+    Effect.gen(function* () {
+      yield* store.createProject({
+        id: boardId,
+        title: "Remote board",
+        linkedProjectIds: [host, remote],
+        remoteProjects: { [remote]: remoteProject },
+        createdAt: at,
+      });
+      return yield* store.createTicket({
+        id: ticketId,
+        projectId: boardId,
+        title: "Remote ticket",
+        markdown: "",
+        repositoryProjectIds: [host, remote],
+        createdAt: at,
+      });
+    });
+
+  it.effect("links a Project on another machine without reading it", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const second = ProjectId.make("remote-laptop-second");
+      const remoteOnly = yield* Effect.flip(
+        store.createProject({
+          id: WorkbenchProjectId.make("remote-only-board"),
+          title: "Remote only",
+          linkedProjectIds: [remote],
+          remoteProjects: { [remote]: remoteProject },
+          createdAt: at,
+        }),
+      );
+      expect(remoteOnly.code).toBe("linked_project_not_found");
+
+      // This machine's own environment is a host link, read and validated here.
+      const missingHost = ProjectId.make("missing-host-project");
+      const unvalidated = yield* Effect.flip(
+        store.createProject({
+          id: WorkbenchProjectId.make("missing-host-board"),
+          title: "Missing host",
+          linkedProjectIds: [host, missingHost],
+          remoteProjects: {
+            [missingHost]: {
+              ...remoteProject,
+              environmentId: EnvironmentId.make("environment-host"),
+            },
+          },
+          createdAt: at,
+        }),
+      );
+      expect(unvalidated.code).toBe("linked_project_not_found");
+      const board = yield* store.createProject({
+        id: boardId,
+        title: "Remote board",
+        linkedProjectIds: [remote, host],
+        remoteProjects: {
+          [remote]: remoteProject,
+          [host]: { ...remoteProject, environmentId: EnvironmentId.make("environment-host") },
+        },
+        createdAt: at,
+      });
+      expect(board.remoteProjects).toEqual({ [remote]: remoteProject });
+      const updated = yield* store.updateProject({
+        id: boardId,
+        title: "Remote board",
+        linkedProjectIds: [second],
+        remoteProjects: { [second]: { ...remoteProject, projectTitle: "Second" } },
+        updatedAt: at,
+      });
+      expect((yield* store.getSnapshot).projects).toEqual([updated]);
+      expect(updated).toMatchObject({
+        linkedProjectIds: [remote, host, second],
+        remoteProjects: {
+          [remote]: remoteProject,
+          [second]: { ...remoteProject, projectTitle: "Second" },
+        },
+      });
+      const ticket = yield* store.createTicket({
+        id: ticketId,
+        projectId: boardId,
+        title: "Remote ticket",
+        markdown: "",
+        repositoryProjectIds: [remote],
+        createdAt: at,
+      });
+      expect(ticket.repositoryProjectIds).toEqual([remote]);
+    }).pipe(Effect.provide(layer)),
+  );
+
+  it.effect(
+    "keeps a remote Thread's Assignment live and its repository held until unassigned",
+    () =>
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const ticket = yield* seedBoard(store);
+        const remoteThread = ThreadId.make("remote-laptop-thread");
+        const hostThread = ThreadId.make("remote-host-thread");
+        const assign = (input: {
+          readonly id: string;
+          readonly threadId: ThreadId;
+          readonly environmentId?: EnvironmentId;
+          readonly projectId?: ProjectId;
+        }) =>
+          store.createAssignment({
+            ...input,
+            id: WorkbenchAssignmentId.make(input.id),
+            ticketId,
+            createdAt: at,
+          });
+
+        const assignment = yield* assign({
+          id: "remote-assignment",
+          threadId: remoteThread,
+          environmentId: laptop,
+          projectId: remote,
+        });
+        expect(assignment).toMatchObject({ environmentId: laptop, projectId: remote });
+        for (const mismatch of [
+          { environmentId: EnvironmentId.make("desktop"), projectId: remote },
+          { environmentId: laptop, projectId: host },
+        ]) {
+          const error = yield* Effect.flip(
+            assign({ id: "mismatch", threadId: ThreadId.make("mismatch"), ...mismatch }),
+          );
+          expect(error.code).toBe("thread_project_mismatch");
+        }
+        // This machine's own environment takes the native path, which reads the Thread.
+        const native = yield* Effect.flip(
+          assign({
+            id: "native",
+            threadId: ThreadId.make("missing-native-thread"),
+            environmentId: EnvironmentId.make("environment-host"),
+            projectId: host,
+          }),
+        );
+        expect(native.code).toBe("thread_not_found");
+        const copied = yield* Effect.flip(
+          assign({ id: "copied", threadId: ThreadId.make("copied-host-thread") }),
+        );
+        expect(copied.code).toBe("thread_project_mismatch");
+        // A host Thread that shares the remote Thread's ID does not act as that Ticket's Thread.
+        expect(yield* store.resolveThreadOwner(remoteThread)).toEqual(Option.none());
+        expect(yield* store.getThreadRoster(remoteThread)).toEqual(Option.none());
+        yield* assign({ id: "host-assignment", threadId: hostThread });
+        expect((yield* store.getSnapshot).assignments).toEqual([
+          expect.objectContaining({ threadId: hostThread }),
+          expect.objectContaining({ threadId: remoteThread, environmentId: laptop }),
+        ]);
+        expect((yield* store.getSnapshot).assignments[0]).not.toHaveProperty("environmentId");
+        expect(Option.getOrThrow(yield* store.getThreadRoster(hostThread)).siblings).toEqual([
+          { threadId: remoteThread, recap: null, environmentId: laptop },
+        ]);
+        // Recaps and native runs belong to this machine's Threads only.
+        expect(yield* store.listTicketThreadIds).toEqual([hostThread]);
+        yield* store.initializeTicketExecution;
+        yield* store.consumeTicketExecution({
+          sequence: 1,
+          run: { id: RunId.make("remote-run"), threadId: remoteThread, startedAt: at },
+        });
+        expect(Option.getOrThrow(yield* store.getTicket(ticketId)).status).toBe("todo");
+
+        const scopeTo = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
+          Effect.flatMap(store.getTicket(ticketId), (current) =>
+            store.updateTicket({
+              id: ticketId,
+              expectedRevision: Option.getOrThrow(current).revision,
+              repositoryProjectIds,
+              updatedAt: at,
+              writer: { kind: "user" },
+            }),
+          );
+        expect(yield* Effect.flip(scopeTo([host]))).toMatchObject({
+          code: "ticket_repository_scope_locked",
+          message:
+            "Laptop repo can't be removed while a Thread on Laptop works in it. Unassign that Thread first.",
+        });
+        yield* store.unlinkAssignment({ ticketId: ticket.id, threadId: remoteThread });
+        expect((yield* scopeTo([host])).repositoryProjectIds).toEqual([host]);
+      }).pipe(Effect.provide(layer)),
   );
 });
 

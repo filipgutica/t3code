@@ -1,7 +1,14 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import { it } from "@effect/vitest";
-import { ProviderThreadId, RunId, ThreadId, WorkbenchAssignmentId } from "@t3tools/contracts";
+import {
+  EnvironmentId,
+  ProjectId,
+  ProviderThreadId,
+  RunId,
+  ThreadId,
+  WorkbenchAssignmentId,
+} from "@t3tools/contracts";
 import { WorkbenchAgentHost } from "@t3tools/workbench/WorkbenchAgentHost";
 import { WorkbenchNativeAccess } from "@t3tools/workbench/WorkbenchNativeAccess";
 import {
@@ -623,6 +630,56 @@ describe("Ticket Context view", () => {
           // Both ticks, and the Thread that joined since.
           changes: 3,
         });
+      }),
+    ),
+  );
+
+  it.effect("counts Threads on other machines and gives them a text without tools or paths", () =>
+    run(
+      Effect.gen(function* () {
+        const store = yield* WorkbenchStore;
+        const contexts = yield* TicketContextService;
+        const remote = ProjectId.make("context-laptop-repo");
+        const remoteThread = ThreadId.make("context-laptop-thread");
+        const environmentId = EnvironmentId.make("laptop");
+        const ticket = Option.getOrThrow(yield* store.getTicket(ticketId));
+        yield* store.updateProject({
+          id: ticket.projectId,
+          title: "Execution",
+          linkedProjectIds: [remote],
+          remoteProjects: {
+            [remote]: { environmentId, environmentLabel: "Laptop", projectTitle: "Laptop repo" },
+          },
+          updatedAt: now,
+        });
+        yield* store.updateTicket({
+          id: ticketId,
+          expectedRevision: ticket.revision,
+          repositoryProjectIds: [projectId, remote],
+          updatedAt: now,
+          writer: { kind: "user" },
+        });
+        yield* store.createAssignment({
+          id: WorkbenchAssignmentId.make("assignment-context-laptop"),
+          ticketId,
+          threadId: remoteThread,
+          environmentId,
+          projectId: remote,
+          createdAt: now,
+        });
+
+        const view = yield* contexts.forTicket(ticketId);
+        expect(view?.text).toContain("1 other Thread works on this ticket on other machines.");
+        expect(view?.text).not.toContain(remoteThread);
+        expect(view?.threads.map((row) => row.threadId)).toEqual([threadId]);
+
+        const remoteView = yield* contexts.forTicket(ticketId, "remote-thread");
+        expect(remoteView?.text).toContain(`Brief (user content):\n${briefX}`);
+        expect(remoteView?.text).toContain("no Workbench tools");
+        expect(remoteView?.text).not.toMatch(/workbench_|\/artifacts\/|thread_id=/);
+        expect(remoteView?.threads).toEqual([]);
+        expect(remoteView?.audience).toBe("remote-thread");
+        expect(view).not.toHaveProperty("audience");
       }),
     ),
   );

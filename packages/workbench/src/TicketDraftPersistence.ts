@@ -129,6 +129,16 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     NodeSqliteClient.readOnly,
     Effect.mapError(operationError),
   );
+  // A remote link carries its machine's label; the host cannot read its Project.
+  const boardLinks = (projectId: WorkbenchProjectId) => sql<{
+    readonly id: ProjectId;
+    readonly environmentLabel: string | null;
+    readonly projectTitle: string | null;
+  }>`SELECT t3_project_id AS id,
+      CASE WHEN environment_id IS NULL THEN NULL
+        ELSE COALESCE(environment_label, environment_id) END AS "environmentLabel",
+      project_title AS "projectTitle"
+    FROM workbench_project_links WHERE workbench_project_id = ${projectId} ORDER BY position`;
   const requireWorkspace = Effect.fn("TicketDraftPersistence.requireWorkspace")(function* (
     projectId: WorkbenchProjectId,
   ) {
@@ -146,9 +156,13 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         code: "project_archived",
         message: "Restore this Board before preparing a Ticket.",
       });
-    const links = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
-      FROM workbench_project_links WHERE workbench_project_id = ${projectId} ORDER BY position`;
-    return links.map((link) => link.id);
+    const links = yield* boardLinks(projectId);
+    return {
+      linked: links.map((link) => link.id),
+      // Planning runs on the host, so its anchor is the first host link.
+      hostAnchor: links.find((link) => link.environmentLabel === null)?.id,
+      remote: new Set(links.flatMap((link) => (link.environmentLabel === null ? [] : [link.id]))),
+    };
   });
   const requireActiveDraftTicket = Effect.fn("TicketDraftPersistence.requireActiveDraftTicket")(
     function* (draft: WorkbenchTicketDraft) {
@@ -174,7 +188,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     draft: WorkbenchTicketDraft,
     validatedRoots: ReadonlyMap<ProjectId, string>,
   ) {
-    const linked = yield* requireWorkspace(draft.projectId);
+    const { linked, remote } = yield* requireWorkspace(draft.projectId);
     const selected = draft.fields.repositoryProjectIds;
     if (new Set(selected).size !== selected.length || selected.some((id) => !linked.includes(id))) {
       return yield* new WorkbenchOperationError({
@@ -183,6 +197,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       });
     }
     for (const id of selected) {
+      if (remote.has(id)) continue;
       const project = yield* native.findProject(id);
       if (Option.isNone(project)) {
         return yield* new WorkbenchOperationError({
@@ -198,11 +213,22 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       }
     }
   });
-  const validateRepositories = Effect.fn("TicketDraftPersistence.validateRepositories")(function* (
-    ids: ReadonlyArray<ProjectId>,
-  ) {
+  /** Validates the host repositories among `ids`; the host cannot read remote ones. */
+  const validateRepositories = Effect.fn("TicketDraftPersistence.validateRepositories")(function* ({
+    projectId,
+    ids,
+  }: {
+    readonly projectId: WorkbenchProjectId;
+    readonly ids: ReadonlyArray<ProjectId>;
+  }) {
+    const remote = new Set(
+      (yield* boardLinks(projectId)).flatMap((link) =>
+        link.environmentLabel === null ? [] : [link.id],
+      ),
+    );
     const validatedRoots = new Map<ProjectId, string>();
     for (const id of ids) {
+      if (remote.has(id)) continue;
       const project = yield* native.findProject(id);
       if (Option.isNone(project) || !(yield* native.isRepository(project.value.workspaceRoot))) {
         return yield* new WorkbenchOperationError({
@@ -250,15 +276,18 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           const existing =
             yield* sql`SELECT 1 FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
           if (existing.length > 0) return undefined;
-          return (yield* requireWorkspace(input.projectId))[0];
+          return (yield* requireWorkspace(input.projectId)).hostAnchor;
         }),
       )
       .pipe(NodeSqliteClient.readOnly);
-    const validatedRoots = yield* validateRepositories(anchor === undefined ? [] : [anchor]);
+    const validatedRoots = yield* validateRepositories({
+      projectId: input.projectId,
+      ids: anchor === undefined ? [] : [anchor],
+    });
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         yield* sql`UPDATE workbench_projects SET updated_at = updated_at WHERE project_id = ${input.projectId}`;
-        const linked = yield* requireWorkspace(input.projectId);
+        const { hostAnchor } = yield* requireWorkspace(input.projectId);
         const existing = yield* sql<{ readonly payload: string }>`SELECT payload_json AS payload
       FROM workbench_ticket_drafts WHERE draft_id = ${input.id} OR thread_id = ${input.threadId}`;
         if (existing[0]) {
@@ -276,14 +305,14 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
           return draft;
         }
         const project =
-          linked[0] === undefined ? Option.none() : yield* native.findProject(linked[0]);
-        if (linked[0] === undefined || Option.isNone(project) || linked[0] !== anchor) {
+          hostAnchor === undefined ? Option.none() : yield* native.findProject(hostAnchor);
+        if (hostAnchor === undefined || Option.isNone(project) || hostAnchor !== anchor) {
           return yield* new WorkbenchOperationError({
             code: "linked_project_not_repository",
             message: "This Board needs an available repository before planning can begin.",
           });
         }
-        if (project.value.workspaceRoot !== validatedRoots.get(linked[0])) {
+        if (project.value.workspaceRoot !== validatedRoots.get(hostAnchor)) {
           return yield* new WorkbenchOperationError({
             code: "project_changed",
             message: "A selected repository's workspace root changed. Retry the operation.",
@@ -307,7 +336,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         const createdAt = yield* now;
         const draft = WorkbenchTicketDraft.make({
           ...input,
-          anchorProjectId: linked[0],
+          anchorProjectId: hostAnchor,
           phase: "creating",
           revision: 0,
           fields: {
@@ -337,7 +366,10 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
   ) {
     const current = yield* readCurrentDraft(input);
     if (current.phase !== "draft") return yield* busy();
-    const validatedRoots = yield* validateRepositories(input.fields.repositoryProjectIds);
+    const validatedRoots = yield* validateRepositories({
+      projectId: current.projectId,
+      ids: input.fields.repositoryProjectIds,
+    });
     return yield* sql.withTransaction(
       Effect.gen(function* () {
         const draft = yield* lockEditableDraft(input);
@@ -440,7 +472,10 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       if (input.phase === "draft" || input.phase === "promoting") {
         const current = yield* readCurrentDraft(input);
         if (!input.from.includes(current.phase)) return yield* busy();
-        validatedRoots = yield* validateRepositories(current.fields.repositoryProjectIds);
+        validatedRoots = yield* validateRepositories({
+          projectId: current.projectId,
+          ids: current.fields.repositoryProjectIds,
+        });
       }
       return yield* sql.withTransaction(
         Effect.gen(function* () {
@@ -590,8 +625,21 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
       if (!rows[0]) return null;
       const draft = yield* decodeDraft(rows[0].payload);
       // Keep restrictions even when a parent workspace has been archived or deleted.
-      const linked = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
-      FROM workbench_project_links WHERE workbench_project_id = ${draft.projectId} ORDER BY position`;
+      const linked = yield* boardLinks(draft.projectId);
+      // The host reads its own repositories; remote ones are listed by their stored labels.
+      const planningRepositories = (ids: ReadonlyArray<ProjectId>) => {
+        const links = new Map(linked.map((link) => [link.id, link]));
+        const remote = ids.flatMap((id) => {
+          const link = links.get(id);
+          return link?.environmentLabel == null
+            ? []
+            : [{ id, title: link.projectTitle ?? id, environmentLabel: link.environmentLabel }];
+        });
+        return {
+          planningRepositoryProjectIds: ids.filter((id) => links.get(id)?.environmentLabel == null),
+          planningRemoteRepositories: remote,
+        };
+      };
       if (draft.phase === "planning" || draft.phase === "starting" || draft.phase === "working") {
         const tickets = yield* sql<{
           readonly title: string;
@@ -612,11 +660,11 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
               markdown: ticket.markdown,
               repositoryProjectIds: ids,
             },
-            planningRepositoryProjectIds: ids,
+            ...planningRepositories(ids),
           };
         }
       }
-      return { ...draft, planningRepositoryProjectIds: linked.map((row) => row.id) };
+      return { ...draft, ...planningRepositories(linked.map((row) => row.id)) };
     },
     Effect.mapError(operationError),
   );

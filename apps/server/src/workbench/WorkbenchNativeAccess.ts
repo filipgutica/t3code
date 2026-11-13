@@ -13,6 +13,7 @@ import * as Schema from "effect/Schema";
 import * as SqlClient from "effect/sql/SqlClient";
 import * as SqlSchema from "effect/sql/SqlSchema";
 
+import { ServerEnvironment } from "../environment/ServerEnvironment.ts";
 import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 
 const NativeProjectRow = Schema.Struct({
@@ -37,6 +38,7 @@ const persistenceError = (_cause: unknown) =>
 const makeWorkbenchNativeAccess = Effect.gen(function* () {
   const sql = yield* SqlClient.SqlClient;
   const git = yield* GitWorkflowService.GitWorkflowService;
+  const hostEnvironmentId = yield* (yield* ServerEnvironment).getEnvironmentId;
   const findProjectRow = SqlSchema.findOneOption({
     Request: Schema.Struct({ projectId: ProjectId }),
     Result: NativeProjectRow,
@@ -124,6 +126,7 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
   });
 
   return WorkbenchNativeAccess.of({
+    hostEnvironmentId,
     executionSequence: sql<{ readonly sequence: number }>`
       SELECT COALESCE(MAX(sequence), 0) AS sequence FROM orchestration_events
       WHERE application_event_version = 2 AND aggregate_kind = 'thread'

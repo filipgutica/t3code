@@ -1,4 +1,5 @@
 import {
+  EnvironmentId,
   RunId,
   ProjectId,
   ProviderThreadId,
@@ -13,6 +14,8 @@ import type * as Option from "effect/Option";
 export class WorkbenchNativeAccess extends Context.Service<
   WorkbenchNativeAccess,
   {
+    /** This server's environment; a Board's link to it is a host link, stored without one. */
+    readonly hostEnvironmentId: EnvironmentId;
     /** Read through the caller's SQL transaction to establish a durable execution boundary. */
     readonly executionSequence: Effect.Effect<number, WorkbenchOperationError>;
     readonly startedExecutionRunIds: Effect.Effect<ReadonlyArray<RunId>, WorkbenchOperationError>;

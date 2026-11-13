@@ -12,8 +12,12 @@ import { PLANNING_INSTRUCTION } from "./agentInstructions.ts";
 import { TicketContextService } from "./TicketContextService.ts";
 import * as WorkbenchStore from "./WorkbenchStore.ts";
 
+// A repository on another machine has no path here; the planning agent can only read about it.
 const RepositoryManifest = Schema.Array(
-  Schema.Struct({ id: ProjectId, name: Schema.String, path: Schema.String }),
+  Schema.Union([
+    Schema.Struct({ id: ProjectId, name: Schema.String, path: Schema.String }),
+    Schema.Struct({ id: ProjectId, name: Schema.String, machine: Schema.String }),
+  ]),
 );
 const encodeManifest = Schema.encodeEffect(Schema.fromJsonString(RepositoryManifest));
 const isRuntimePolicyResolveError = Schema.is(RuntimePolicy.RuntimePolicyResolveError);
@@ -84,13 +88,18 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
               cause: "A repository in the planning scope is unavailable.",
             });
           }
-          const manifest = yield* encodeManifest(
-            repositories.map((repository) => ({
+          const manifest = yield* encodeManifest([
+            ...repositories.map((repository) => ({
               id: repository.projectId,
               name: repository.title,
               path: repository.workspaceRoot,
             })),
-          );
+            ...draft.planningRemoteRepositories.map((repository) => ({
+              id: repository.id,
+              name: repository.title,
+              machine: repository.environmentLabel,
+            })),
+          ]);
           return {
             ...policy,
             // Approvals go to the provider's auto reviewer, not the user. Drafts created before
@@ -101,6 +110,11 @@ const makeRuntimePolicyDecorator = Effect.gen(function* () {
             instructions: [
               PLANNING_INSTRUCTION,
               `Repository manifest: ${manifest}`,
+              ...(draft.planningRemoteRepositories.length === 0
+                ? []
+                : [
+                    "A repository with a `machine` is on another machine: you can't inspect its files, but you can select it for the Ticket.",
+                  ]),
               draft.phase === "planning"
                 ? "The ticket is already saved. Continue planning here until the user selects Start work; further planning must not implement the ticket."
                 : "The ticket has not been created yet.",

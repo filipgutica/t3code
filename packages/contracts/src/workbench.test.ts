@@ -6,6 +6,7 @@ import * as Struct from "effect/Struct";
 import {
   WorkbenchArchiveTicketInput,
   WorkbenchArchiveProjectInput,
+  WorkbenchCreateAssignmentInput,
   WorkbenchDeleteProjectInput,
   WorkbenchCreateTicketInput,
   WorkbenchDeleteTicketInput,
@@ -27,6 +28,9 @@ import { WsRpcGroup } from "./rpc.ts";
 
 const decodeWorkbenchArchiveProjectInput = Schema.decodeUnknownEffect(WorkbenchArchiveProjectInput);
 const decodeWorkbenchDeleteProjectInput = Schema.decodeUnknownEffect(WorkbenchDeleteProjectInput);
+const decodeWorkbenchCreateAssignmentInput = Schema.decodeUnknownEffect(
+  WorkbenchCreateAssignmentInput,
+);
 const decodeWorkbenchSnapshot = Schema.decodeUnknownEffect(WorkbenchSnapshot);
 const decodeWorkbenchTicketStatus = Schema.decodeUnknownEffect(WorkbenchTicketStatus);
 const decodeWorkbenchCreateTicketInput = Schema.decodeUnknownEffect(WorkbenchCreateTicketInput);
@@ -373,6 +377,28 @@ describe("Workbench contracts", () => {
         updatedAt: "2026-09-03T12:03:00.000Z",
       });
       expect(invalid._tag).toBe("Failure");
+    }),
+  );
+
+  it.effect("requires a remote Assignment's environment and Project together", () =>
+    Effect.gen(function* () {
+      const assignment = {
+        id: "assignment-1",
+        ticketId: "ticket-1",
+        threadId: "thread-1",
+        createdAt: "2026-09-03T12:03:00.000Z",
+      };
+      expect(yield* decodeWorkbenchCreateAssignmentInput(assignment)).toEqual(assignment);
+      const remote = { ...assignment, environmentId: "environment-laptop", projectId: "project-1" };
+      expect(yield* decodeWorkbenchCreateAssignmentInput(remote)).toEqual(remote);
+      for (const partial of [
+        { ...assignment, environmentId: "environment-laptop" },
+        { ...assignment, projectId: "project-1" },
+      ]) {
+        expect((yield* Effect.exit(decodeWorkbenchCreateAssignmentInput(partial)))._tag).toBe(
+          "Failure",
+        );
+      }
     }),
   );
 

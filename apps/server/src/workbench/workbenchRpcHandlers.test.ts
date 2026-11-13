@@ -20,10 +20,12 @@ import { TicketDraftService } from "./TicketDraftService.ts";
 import { TicketSummaryService } from "./TicketSummaryService.ts";
 import { TicketWorkspaceService } from "./TicketWorkspaceService.ts";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { hostEnvironmentLayer } from "./testing/hostEnvironment.ts";
 import { acquireWorkbenchRpcServices, makeWorkbenchRpcHandlers } from "./workbenchRpcHandlers.ts";
 
 const TestLayer = Layer.mergeAll(
   WorkbenchStoreLive.pipe(
+    Layer.provide(hostEnvironmentLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({

@@ -3,6 +3,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   DEFAULT_SERVER_SETTINGS,
+  EnvironmentId,
   GitCommandError,
   type ServerSettings,
   type ServerProvider,
@@ -56,6 +57,7 @@ import {
   TicketWorkspaceServiceLive,
 } from "@t3tools/workbench/TicketWorkspaceService";
 import { WorkbenchStore, WorkbenchStoreLive } from "./WorkbenchStore.ts";
+import { hostEnvironmentLayer } from "./testing/hostEnvironment.ts";
 import { TicketWorkspaceHost } from "@t3tools/workbench/TicketWorkspaceHost";
 
 const legacyBranchName = "workbench/ticket-1-737ce60f";
@@ -260,6 +262,7 @@ const makeTestLayer = ({
     isRepository: () => Effect.succeed(true),
   });
   const storeLayer = WorkbenchStoreLive.pipe(
+    Layer.provide(hostEnvironmentLayer),
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provideMerge(storeGitLayer),
   );
@@ -570,6 +573,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     Layer.provide(NodeServices.layer),
   );
   const storeLayer = WorkbenchStoreLive.pipe(
+    Layer.provide(hostEnvironmentLayer),
     Layer.provideMerge(persistence),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService, {
@@ -1614,6 +1618,60 @@ describe("TicketWorkspaceService", () => {
     }).pipe(
       Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls, worktreeInputs })),
     );
+  });
+
+  it.effect("prepares worktrees only for the Ticket's repositories on this machine", () => {
+    const events: Array<string> = [];
+    const fetchRemoteTrackingBranchCalls: Array<{
+      readonly cwd: string;
+      readonly remoteName: string;
+      readonly remoteBranch: string;
+    }> = [];
+    return Effect.gen(function* () {
+      yield* seedTicket;
+      const store = yield* WorkbenchStore;
+      const service = yield* TicketWorkspaceService;
+      const remote = ProjectId.make("project-laptop");
+      yield* store.updateProject({
+        id: workspaceId,
+        title: "Workspace",
+        linkedProjectIds: [remote],
+        remoteProjects: {
+          [remote]: {
+            environmentId: EnvironmentId.make("laptop"),
+            environmentLabel: "Laptop",
+            projectTitle: "Laptop repo",
+          },
+        },
+        updatedAt: createdAt,
+      });
+      const scopeTo = (repositoryProjectIds: ReadonlyArray<ProjectId>) =>
+        Effect.flatMap(store.getTicket(ticketId), (ticket) =>
+          store.updateTicket({
+            id: ticketId,
+            expectedRevision: Option.getOrThrow(ticket).revision,
+            repositoryProjectIds,
+            updatedAt: createdAt,
+            writer: { kind: "user" },
+          }),
+        );
+
+      yield* scopeTo([remote]);
+      const remoteOnly = yield* Effect.flip(service.prepare({ ticketId, requestedAt: createdAt }));
+      expect(remoteOnly.code).toBe("repository_not_linked");
+
+      yield* scopeTo([remote, primaryProjectId]);
+      const workspace = yield* service.prepare({ ticketId, requestedAt: createdAt });
+      expect(workspace.status).toBe("ready");
+      expect(workspace.repositories.map((repository) => repository.projectId)).toEqual([
+        primaryProjectId,
+      ]);
+      expect(fetchRemoteTrackingBranchCalls.map((call) => call.cwd)).toEqual(["/repos/primary"]);
+      // A host copy of the remote Project's ID must not stand in for it when listing worktrees.
+      events.length = 0;
+      yield* service.listWorktrees({ ticketId });
+      expect(events).not.toContain(`project:${remote}`);
+    }).pipe(Effect.provide(makeTestLayer({ events, fetchRemoteTrackingBranchCalls })));
   });
 
   it.effect("prepares each repository from its resolved open PR branch", () => {
