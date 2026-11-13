@@ -29,6 +29,7 @@ import {
 } from "react";
 
 import ChatView from "../components/ChatView";
+import { BackgroundThreadContext } from "../components/chat/backgroundThread";
 import { Button } from "../components/ui/button";
 import { Menu, MenuItem, MenuItemLabel, MenuPopup, MenuTrigger } from "../components/ui/menu";
 import { PopoverCreateHandle } from "../components/ui/popover";
@@ -279,21 +280,23 @@ function FloatingChatThread({
   const conversation = (
     <ChangeRequestLinkOpenProvider value={openPullRequest}>
       <ComposerHandleContext value={composerHandle}>
-        <ChatView
-          key={thread.threadId}
-          environmentId={environmentId}
-          threadId={thread.threadId}
-          routeKind="server"
-          hideHeader
-          readOnlyPlanning={planningThread}
-          workbenchEmbed={{
-            composerFocusRequest,
-            openThread,
-            ...hosts,
-            threadDetails,
-            conversationHidden: hidden,
-          }}
-        />
+        <BackgroundThreadContext value>
+          <ChatView
+            key={thread.threadId}
+            environmentId={environmentId}
+            threadId={thread.threadId}
+            routeKind="server"
+            hideHeader
+            readOnlyPlanning={planningThread}
+            workbenchEmbed={{
+              composerFocusRequest,
+              openThread,
+              ...hosts,
+              threadDetails,
+              conversationHidden: hidden,
+            }}
+          />
+        </BackgroundThreadContext>
       </ComposerHandleContext>
     </ChangeRequestLinkOpenProvider>
   );
