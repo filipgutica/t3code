@@ -399,7 +399,10 @@ if (/^query ReviewThreads\b/.test(query)) {
         {
           commit: {
             statusCheckRollup: {
-              contexts: { nodes: checks(number), pageInfo: { hasNextPage: false } },
+              contexts: {
+                nodes: checks(number),
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
             },
           },
         },
