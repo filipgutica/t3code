@@ -55,6 +55,7 @@ const unsupportedTextGeneration: ProviderTextGeneration = (() => {
     // Workbench caller-owned generation (U08); remove when the native interface supports it.
     generateStructured: (input) => unsupported(input.operation),
     generateReviewGuide: () => unsupported("generateReviewGuide"),
+    generateTranscriptionPostProcessing: () => unsupported("generateTranscriptionPostProcessing"),
   };
 })();
 
