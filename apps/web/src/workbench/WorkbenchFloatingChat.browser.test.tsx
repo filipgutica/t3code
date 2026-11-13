@@ -19,12 +19,13 @@ import { resolveWorkbenchThreadExecutionStatusPresentation } from "./WorkbenchTh
 import type { WorkbenchThreadExecutionStatus } from "./workbenchThreadStatus.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
-const { openPullRequest, panelClick, chatMount, pageComposer } = vi.hoisted(() => ({
+const { openPullRequest, panelClick, chatMount, pageComposer, startDictation } = vi.hoisted(() => ({
   openPullRequest: vi.fn(),
   panelClick: vi.fn(),
   chatMount: vi.fn(),
   // The page's shared composer handle, which the command palette focuses when it closes.
   pageComposer: { current: null },
+  startDictation: vi.fn(async () => {}),
 }));
 vi.mock("./WorkbenchPullRequestPreview", () => ({
   useOpenWorkbenchPullRequest: () => openPullRequest,
@@ -42,11 +43,14 @@ vi.mock("@t3tools/client-runtime/change-request-links", async (importOriginal) =
 // composer per focus request, opens PR links through the native handler, renders an open panel
 // into the page's panel host, and names the composer handle context it would register in.
 vi.mock("../components/ChatView", async () => {
-  const { useEffect, useRef } = await import("react");
+  const { use, useEffect, useRef } = await import("react");
   const { createPortal } = await import("react-dom");
   const { useOpenChangeRequestLink } = await import("../lib/openPullRequestLink");
   const { useComposerHandleContext } = await import("../composerHandleContext");
   const { selectThreadRightPanelState, useRightPanelStore } = await import("../rightPanelStore");
+  const { BackgroundThreadContext } = await import("../components/chat/backgroundThread");
+  const { useDictationShortcut } = await import("../speech/useDictationShortcut");
+  const { DEFAULT_RESOLVED_KEYBINDINGS } = await import("@t3tools/shared/keybindings");
   return {
     default: function ChatViewStub(props: {
       environmentId: EnvironmentId;
@@ -54,6 +58,21 @@ vi.mock("../components/ChatView", async () => {
       workbenchEmbed?: { composerFocusRequest: number | null; panelHost?: HTMLElement | null };
     }) {
       const ref = useRef<HTMLTextAreaElement>(null);
+      const backgroundThread = use(BackgroundThreadContext);
+      useDictationShortcut({
+        keybindings: DEFAULT_RESOLVED_KEYBINDINGS,
+        speech: {
+          available: true,
+          state: { phase: "idle", error: null, errorAction: null },
+          start: startDictation,
+          stop: async () => {},
+          cancel: () => {},
+        },
+        disabled: false,
+        terminalOpen: false,
+        modelPickerOpen: false,
+        ...(backgroundThread ? { targetRef: ref } : {}),
+      });
       const composerHandle = useComposerHandleContext();
       const request = props.workbenchEmbed?.composerFocusRequest ?? null;
       const threadRef = scopeThreadRef(props.environmentId, props.threadId);
@@ -105,6 +124,7 @@ const setup = () => {
   openPullRequest.mockReset();
   panelClick.mockReset();
   chatMount.mockReset();
+  startDictation.mockClear();
 };
 
 const thread = (
@@ -518,9 +538,17 @@ it("opens a file from the embed in the page's panel and keeps it through collaps
   await expect.element(screen.getByRole("menuitem", { name: "Thread details" })).toBeVisible();
   await userEvent.keyboard("{Escape}");
 
+  await userEvent.click(screen.getByLabelText("Composer for a"));
+  const modifier = /Mac/i.test(navigator.platform) ? "Meta" : "Control";
+  const dictationChord = `{${modifier}>}{Shift>}D{/Shift}{/${modifier}}`;
+  await userEvent.keyboard(dictationChord);
+  expect(startDictation).toHaveBeenCalledOnce();
+
   await userEvent.click(screen.getByRole("button", { name: "Collapse ticket chat" }));
   await expect.element(panel).toBeVisible();
   await expect.element(screen.getByLabelText("Composer for a")).not.toBeVisible();
+  await userEvent.keyboard(dictationChord);
+  expect(startDictation).toHaveBeenCalledOnce();
   // The hidden conversation can't lay out the details card, so only Open full Thread remains.
   await userEvent.click(screen.getByRole("button", { name: "Thread actions" }));
   await expect.element(screen.getByRole("menuitem", { name: "Open full Thread" })).toBeVisible();
