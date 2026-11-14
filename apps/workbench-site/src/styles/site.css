@@ -93,43 +93,44 @@ body {
   font: var(--weight-regular) var(--text-md) / 1.55 var(--font-sans);
   -webkit-font-smoothing: antialiased;
 }
-h1,
-h2,
-h3,
-p,
-figure {
-  margin: 0;
-}
-h1,
-h2,
-h3 {
-  font-weight: var(--weight-semibold);
-  text-wrap: balance;
-}
-h1,
-h2 {
-  font-family: var(--font-mono);
-}
-h1 {
-  max-width: 18ch;
-  font-size: var(--h1);
-  line-height: var(--h1-leading);
-  letter-spacing: -0.035em;
-}
-h2 {
-  font-size: var(--h2);
-  line-height: var(--h2-leading);
-  letter-spacing: -0.025em;
-}
-h3 {
-  font-size: var(--text-lg);
-  line-height: 1.3;
-  letter-spacing: -0.01em;
-}
-p {
-  text-wrap: pretty;
-}
+/* Element type stays in the base layer, so the library's dialog and drawer titles keep theirs. */
 @layer base {
+  h1,
+  h2,
+  h3,
+  p,
+  figure {
+    margin: 0;
+  }
+  h1,
+  h2,
+  h3 {
+    font-weight: var(--weight-semibold);
+    text-wrap: balance;
+  }
+  h1,
+  h2 {
+    font-family: var(--font-mono);
+  }
+  h1 {
+    max-width: 18ch;
+    font-size: var(--h1);
+    line-height: var(--h1-leading);
+    letter-spacing: -0.035em;
+  }
+  h2 {
+    font-size: var(--h2);
+    line-height: var(--h2-leading);
+    letter-spacing: -0.025em;
+  }
+  h3 {
+    font-size: var(--text-lg);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+  p {
+    text-wrap: pretty;
+  }
   a {
     color: var(--color-link);
     text-decoration: none;
@@ -206,14 +207,6 @@ p {
   .contents-list a {
     min-height: var(--control-lg);
   }
-}
-/* The page's unlayered h2 rule outranks the library's drawer title; restore its type. */
-.fg-drawer__title {
-  font-family: var(--font-ui);
-  font-size: var(--text-md);
-  font-weight: var(--weight-medium);
-  line-height: var(--leading);
-  letter-spacing: normal;
 }
 
 /* Steps: every section is a commit. Its heading's first line sits on the node. */
@@ -438,24 +431,6 @@ p.provenance {
   color: var(--text-muted);
   font-weight: var(--weight-regular);
 }
-.image-lightbox {
-  width: calc(var(--lightbox-image-width, 32rem) + var(--space-8) + 2px);
-  max-width: calc(100vw - var(--space-8));
-  max-height: calc(100svh - var(--space-8));
-}
-.lightbox-image-region {
-  min-width: 0;
-  overflow: auto;
-}
-.lightbox-image-region img {
-  display: block;
-  height: auto;
-  max-width: 100%;
-  max-height: calc(100svh - var(--space-16) - var(--space-16));
-  margin: auto;
-  object-fit: contain;
-  border-radius: var(--radius-inline);
-}
 main p a {
   text-decoration: underline;
   text-underline-offset: 0.18em;
@@ -463,10 +438,6 @@ main p a {
 @media (max-width: 640px) {
   .actions {
     gap: var(--space-4);
-  }
-  .image-lightbox {
-    width: 100%;
-    max-width: 100%;
   }
 }
 @media (prefers-reduced-motion: reduce) {
