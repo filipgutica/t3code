@@ -82,7 +82,7 @@
   display: none !important;
 }
 html {
-  scroll-padding-top: var(--space-16);
+  scroll-padding-top: var(--space-4);
   scroll-behavior: smooth;
 }
 body {
@@ -156,22 +156,59 @@ p {
 .fg-site-header .fg-site-projects__trigger {
   margin-inline-start: calc(-1 * var(--space-3));
 }
+/* More than 6 sections: the labelled contents trigger opens a drawer (design system, Horizontal strip). */
 .section-navigation {
-  position: sticky;
-  top: 0;
-  z-index: 20;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(12px);
+  padding-block: var(--space-2);
 }
-nav.section-nav {
-  display: flex;
-  gap: var(--space-6);
-  overflow-x: auto;
-  scrollbar-width: none;
+.contents-trigger,
+.contents-summary {
+  gap: var(--space-3);
+  max-width: 100%;
+  border-radius: var(--radius-field);
+  white-space: normal;
+  text-align: start;
 }
-nav.section-nav a {
+.fg-button.contents-trigger {
+  padding-block: var(--space-2);
+}
+.contents-trigger::before {
+  content: "";
   flex: none;
+  width: 14px;
+  height: 10px;
+  border-block: 1.5px solid currentColor;
+  background: linear-gradient(currentColor, currentColor) center / 100% 1.5px no-repeat;
+}
+.contents-summary {
+  width: max-content;
+  list-style: none;
+}
+.contents-summary::-webkit-details-marker {
+  display: none;
+}
+.contents-summary::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  margin-left: var(--space-1);
+  border-right: 1px solid currentColor;
+  border-bottom: 1px solid currentColor;
+  transform: rotate(45deg);
+}
+.contents-list {
+  display: grid;
+  gap: 2px;
+}
+.contents-menu[open] > .contents-list {
+  margin-top: var(--space-2);
+}
+/* The page's unlayered h2 rule outranks the library's drawer title; restore its type. */
+.fg-drawer__title {
+  font-family: var(--font-ui);
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading);
+  letter-spacing: normal;
 }
 
 /* Steps: every section is a commit. Its heading's first line sits on the node. */
@@ -419,9 +456,6 @@ main p a {
   text-underline-offset: 0.18em;
 }
 @media (max-width: 640px) {
-  nav.section-nav {
-    gap: var(--space-4);
-  }
   .actions {
     gap: var(--space-4);
   }

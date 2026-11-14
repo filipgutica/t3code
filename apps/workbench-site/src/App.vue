@@ -57,7 +57,7 @@ onMounted(() => {
         { label: 'Downloads', href: downloads },
       ]"
     />
-    <SiteNavigation :sections="sections" :active-id="activeId" />
+    <SiteNavigation :sections="sections" :active-id="activeId" :enhanced="enhanced" />
     <main id="main" class="frame">
       <section class="step hero" aria-labelledby="hero-heading">
         <CommitGraph kind="root" />
