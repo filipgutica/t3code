@@ -58,6 +58,19 @@ on:
         description: "Optional previous Workbench tag for notes (for example workbench-v0.0.1)"
         required: false
         type: string
+      release_channel:
+        description: "Workbench updater channel"
+        required: true
+        default: latest
+        type: choice
+        options:
+          - latest
+          - nightly
+      metadata_json:
+        description: "Existing release provenance when resuming an allocated release"
+        required: false
+        default: ""
+        type: string
       sign_macos:
         description: "Sign and notarize macOS builds (requires Workbench Apple secrets)"
         required: true
@@ -277,7 +290,7 @@ jobs:
             arch: x64
             rust_target: x86_64-unknown-linux-gnu
           - label: Windows x64
-            runner: windows-2022
+            runner: ubuntu-24.04
             platform: win
             target: nsis
             arch: x64
@@ -315,21 +328,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential libsecret-1-dev pkg-config imagemagick
 
-      - name: Install Spectre-mitigated MSVC libraries
-        if: matrix.platform == 'win'
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = "Stop"
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $installPath = & $vswhere -products * -latest -property installationPath
-          $setupExe = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\setup.exe"
-          $proc = Start-Process -FilePath $setupExe -ArgumentList "modify", "--installPath", "`"$installPath`"", "--add", "Microsoft.VisualStudio.Component.VC.Runtimes.x86.x64.Spectre", "--quiet", "--norestart" -Wait -PassThru -NoNewWindow
-          if ($null -eq $proc -or $proc.ExitCode -ne 0) { exit 1 }
-
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           targets: ${{ matrix.rust_target }}
+
+      - name: Install cargo-xwin
+        if: matrix.platform == 'win'
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2
+        with:
+          tool: cargo-xwin@0.23.1
+
+      # Match release-desktop.yml's cross-build and existing helper-reuse contract.
+      - name: Build Windows resource monitor
+        if: matrix.platform == 'win'
+        shell: bash
+        run: cargo xwin build --locked --release --manifest-path native/resource-monitor/Cargo.toml --target "${{ matrix.rust_target }}"
 
       - name: Download Linux CLI archive for WSL
         if: matrix.platform == 'win'
@@ -361,6 +375,8 @@ jobs:
 
       - name: Build desktop artifact
         shell: bash
+        env:
+          T3CODE_DESKTOP_REUSE_RESOURCE_MONITOR: ${{ matrix.platform == 'win' }}
         run: |
           set -euo pipefail
           args=(
@@ -372,16 +388,43 @@ jobs:
           )
           if [[ "${{ matrix.platform }}" == win ]]; then
             args+=(--wsl-runtime "$GITHUB_WORKSPACE"/wsl-runtime/t3-*-linux-${{ matrix.arch }}.tar.gz)
+            args+=(--keep-stage)
           fi
           if [[ "${{ matrix.platform }}" == mac && "${{ inputs.sign_macos }}" == true ]]; then
             args+=(--signed)
           fi
-          # Stapling and dependency downloads intermittently lose their network connection;
-          # one rebuild clears those without masking a deterministic failure.
-          if ! vp run dist:desktop:artifact "${args[@]}"; then
+          # Keep a single Windows stage for the native verifier, as upstream does.
+          if [[ "${{ matrix.platform }}" == win ]]; then
+            vp run dist:desktop:artifact "${args[@]}"
+          elif ! vp run dist:desktop:artifact "${args[@]}"; then
             echo "::warning::Desktop artifact build failed; retrying once."
             vp run dist:desktop:artifact "${args[@]}"
           fi
+
+      # Reuse upstream's verifier on Windows for probes the Linux host cannot run.
+      - name: Stage Windows verification inputs
+        if: matrix.platform == 'win'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p verify
+          unpacked=$(ls -d "${TMPDIR:-/tmp}"/t3code-desktop-win-stage-*/app/dist/win-unpacked)
+          tar -C "$(dirname "$unpacked")" -cf verify/unpacked.tar "$(basename "$unpacked")"
+          banner="import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);"
+          scripts/node_modules/.bin/esbuild scripts/verify-windows-desktop-artifact.ts \
+            --bundle --platform=node --format=esm --target=node24 \
+            --define:import.meta.main=false --banner:js="$banner" \
+            --outfile=verify/verify-windows-desktop-artifact.mjs
+
+      - name: Upload Windows verification inputs
+        if: matrix.platform == 'win'
+        uses: actions/upload-artifact@v7
+        with:
+          name: workbench-verify-win-x64
+          path: verify/*
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
 
       - name: Verify macOS signature and optional notarization
         if: matrix.platform == 'mac'
@@ -486,13 +529,72 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  verify_windows:
+    name: Verify Windows x64
+    needs: [resolve, build]
+    runs-on: windows-2025
+    timeout-minutes: 15
+    env:
+      T3CODE_DESKTOP_UPDATE_REPOSITORY: ${{ github.repository }}
+    steps:
+      - name: Download Windows verification inputs
+        uses: actions/download-artifact@v8
+        with:
+          name: workbench-verify-win-x64
+          path: verify
+
+      - name: Verify packaged natives
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C verify -xf verify/unpacked.tar
+          node verify/verify-windows-desktop-artifact.mjs \
+            --app-dir "$(cygpath -w "$PWD/verify/win-unpacked")" \
+            --arch x64 --build-version "${{ needs.resolve.outputs.version }}" --verbose
+
+      - name: Smoke-test resource monitor
+        shell: bash
+        env:
+          MONITOR: verify/win-unpacked/resources/resource-monitor/t3-resource-monitor.exe
+        run: |
+          node --input-type=module <<'EOF'
+          import { spawn } from "node:child_process";
+          const monitor = spawn(process.env.MONITOR, { stdio: ["pipe", "pipe", "inherit"] });
+          monitor.stdout.setEncoding("utf8");
+          let output = "";
+          const exited = new Promise((resolve) => monitor.on("close", resolve));
+          const hello = await new Promise((resolve, reject) => {
+            monitor.on("error", reject);
+            monitor.on("close", () => reject(new Error(`Resource monitor exited before hello: ${output}`)));
+            monitor.stdout.on("data", (chunk) => {
+              output += chunk;
+              const end = output.indexOf("\n");
+              if (end !== -1) resolve(JSON.parse(output.slice(0, end)));
+            });
+          });
+          if (hello.type !== "hello" || hello.arch !== "x86_64") {
+            throw new Error(`Unexpected hello: ${JSON.stringify(hello)}`);
+          }
+          const send = (message) => monitor.stdin.write(`${JSON.stringify({ version: hello.version, ...message })}\n`);
+          send({ type: "configure", rootPid: process.pid, sampleIntervalMs: 1000 });
+          send({ type: "sampleNow", requestId: "verify" });
+          monitor.stdin.end();
+          const exitCode = await exited;
+          const sample = output.split("\n").filter((line) => line.trim())
+            .map((line) => JSON.parse(line)).find((message) => message.requestId === "verify");
+          if (exitCode !== 0 || sample?.type !== "snapshot" || !sample.processes.some((p) => p.pid === process.pid)) {
+            throw new Error(`Resource monitor exited ${exitCode} with: ${output}`);
+          }
+          console.log(`Resource monitor sampled ${sample.scannedProcessCount} processes.`);
+          EOF
+
   release_draft:
     name: Create Workbench GitHub Release
-    needs: [resolve, build]
+    needs: [resolve, build, verify_windows]
     if: >-
       always() && !cancelled() && inputs.release_mode != 'build-only' &&
       needs.resolve.result == 'success' && needs.resolve.outputs.should_release == 'true' &&
-      needs.build.result == 'success'
+      needs.build.result == 'success' && needs.verify_windows.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
