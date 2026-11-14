@@ -202,6 +202,11 @@ p {
 .contents-menu[open] > .contents-list {
   margin-top: var(--space-2);
 }
+@media (max-width: 800px) {
+  .contents-list a {
+    min-height: var(--control-lg);
+  }
+}
 /* The page's unlayered h2 rule outranks the library's drawer title; restore its type. */
 .fg-drawer__title {
   font-family: var(--font-ui);
