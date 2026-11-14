@@ -3,11 +3,39 @@ import { assert, it } from "@effect/vitest";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
+import * as Path from "effect/Path";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
-import { createBuildConfig } from "./build-desktop-artifact.ts";
+import { createBuildConfig, WindowsPrimaryNativeProbeError } from "./build-desktop-artifact.ts";
 import { selectWorkbenchDesktopBuildProduct } from "./lib/workbench-desktop-product.ts";
+import { verifyWorkbenchWindowsDesktopArtifact } from "./workbench-verify-windows-desktop-artifact.ts";
 
 it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
+  it.effect.each(["0.1.2", "0.1.2-nightly.20261113.92"])(
+    "verifies the Workbench executable identity for %s",
+    (buildVersion) =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const fs = yield* FileSystem.FileSystem;
+          const path = yield* Path.Path;
+          const packagedAppDir = yield* fs.makeTempDirectoryScoped();
+          const executablePath = path.join(packagedAppDir, "T3 Code Workbench.exe");
+          yield* fs.writeFileString(executablePath, "identity fixture");
+          const input = {
+            packagedAppDir,
+            buildVersion,
+            targetArch: "x64",
+            verbose: false,
+          } as const;
+          yield* verifyWorkbenchWindowsDesktopArtifact(input);
+          yield* fs.remove(executablePath);
+          const error = yield* verifyWorkbenchWindowsDesktopArtifact(input).pipe(Effect.flip);
+          assert.instanceOf(error, WindowsPrimaryNativeProbeError);
+          assert.equal(error.executablePath, executablePath);
+        }),
+      ).pipe(Effect.provideService(HostProcess.Platform, "linux")),
+  );
+
   it.effect("uses package.json for the Node version in Workbench release workflows", () =>
     Effect.gen(function* () {
       const fs = yield* FileSystem.FileSystem;

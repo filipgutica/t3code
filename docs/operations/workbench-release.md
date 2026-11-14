@@ -31,8 +31,9 @@ notarize both macOS builds. Signing failures fail the build; they do not fall ba
 to unsigned Mac updates. Windows and Linux builds remain unsigned.
 
 Windows follows upstream's Linux cross-packaging path with `cargo-xwin` for the
-resource monitor. A Windows runner then executes upstream's packaged-native
-verifier and resource-monitor smoke check before publication.
+resource monitor. A Windows runner then applies Workbench's executable identity to
+the native packaged-runtime verifier and runs upstream's resource-monitor smoke
+check before publication.
 
 A complete nightly publishes as a prerelease using workbench-daily-vX.Y.Z-nightly.DATE.RUN.
 A stable publishes as latest using workbench-vX.Y.Z. All platform artifacts and updater
@@ -47,6 +48,8 @@ build workflow from the corrected ref with the original `commit_sha`, `version`,
 `release_channel`, and `metadata_json`. Reuse its `previous_tag` for the same notes
 range. This selects the corrected workflow while keeping the allocated source and
 provenance; rerunning the old Actions run would retain its old workflow definition.
+The verification entry comes from the corrected workflow ref; the packaged product
+and native verification helpers still come from `commit_sha`.
 
 The explicit build workflow retains unsigned-preview drafts and build-only artifacts
 for build validation. These are separate from the normal nightly and stable release action.

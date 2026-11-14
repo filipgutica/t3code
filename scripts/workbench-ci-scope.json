@@ -465,6 +465,7 @@
     "scripts/workbench-release.test.ts"
   ],
   "packagingPaths": [
+    "scripts/workbench-verify-windows-desktop-artifact.ts",
     "scripts/workbench-release-notes.ts",
     "scripts/lib/workbench-release-notes.ts",
     ".github/workflows/workbench-release.yml",

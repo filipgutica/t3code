@@ -405,16 +405,21 @@ jobs:
       - name: Stage Windows verification inputs
         if: matrix.platform == 'win'
         shell: bash
+        env:
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           set -euo pipefail
+          # The released source can predate this fork-owned verification entry.
+          git fetch --no-tags --depth=1 origin "$WORKFLOW_SHA"
+          git show FETCH_HEAD:scripts/workbench-verify-windows-desktop-artifact.ts > scripts/workbench-verify-windows-desktop-artifact.ts
           mkdir -p verify
           unpacked=$(ls -d "${TMPDIR:-/tmp}"/t3code-desktop-win-stage-*/app/dist/win-unpacked)
           tar -C "$(dirname "$unpacked")" -cf verify/unpacked.tar "$(basename "$unpacked")"
           banner="import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);"
-          scripts/node_modules/.bin/esbuild scripts/verify-windows-desktop-artifact.ts \
+          scripts/node_modules/.bin/esbuild scripts/workbench-verify-windows-desktop-artifact.ts \
             --bundle --platform=node --format=esm --target=node24 \
             --define:import.meta.main=false --banner:js="$banner" \
-            --outfile=verify/verify-windows-desktop-artifact.mjs
+            --outfile=verify/workbench-verify-windows-desktop-artifact.mjs
 
       - name: Upload Windows verification inputs
         if: matrix.platform == 'win'
@@ -545,12 +550,21 @@ jobs:
 
       - name: Verify packaged natives
         shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.resolve.outputs.version }}
         run: |
           set -euo pipefail
           tar -C verify -xf verify/unpacked.tar
-          node verify/verify-windows-desktop-artifact.mjs \
-            --app-dir "$(cygpath -w "$PWD/verify/win-unpacked")" \
-            --arch x64 --build-version "${{ needs.resolve.outputs.version }}" --verbose
+          export APP_DIR="$(cygpath -w "$PWD/verify/win-unpacked")"
+          node --input-type=module <<'EOF'
+          import { runWorkbenchWindowsVerification } from "./verify/workbench-verify-windows-desktop-artifact.mjs";
+          runWorkbenchWindowsVerification({
+            packagedAppDir: process.env.APP_DIR,
+            buildVersion: process.env.RELEASE_VERSION,
+            targetArch: "x64",
+            verbose: true,
+          });
+          EOF
 
       - name: Smoke-test resource monitor
         shell: bash
