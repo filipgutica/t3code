@@ -26,6 +26,13 @@ const load = async (page: Page, hash = "") => {
   await page.goto(`/t3code/${hash}`);
   await expect(page.locator("[data-enhanced]")).toHaveAttribute("data-enhanced", "true");
 };
+const trigger = (page: Page) => page.getByRole("button", { name: /^On this page/ });
+const openContents = async (page: Page) => {
+  await trigger(page).click();
+  return page
+    .getByRole("dialog", { name: "On this page" })
+    .getByRole("navigation", { name: "On this page" });
+};
 const noOverflow = async (page: Page) => {
   expect(
     await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
@@ -121,7 +128,7 @@ const atReadingTop = async (page: Page, id: string) =>
           parseFloat(
             getComputedStyle(document.querySelector(".fg-site-projects__trigger")!).paddingLeft,
           ),
-        nav: box("nav.section-nav a").left,
+        nav: box(".contents-trigger").left,
         graphLeft: Math.min(...graphs.map((graph) => graph.left)),
         graphRight: Math.max(...graphs.map((graph) => graph.right)),
         headings: [...document.querySelectorAll("main :is(h1, h2)")].map(
@@ -142,10 +149,13 @@ const atReadingTop = async (page: Page, id: string) =>
     expect(edges.themeSwitch).toBeCloseTo(edges.frameRight, 0);
   });
 });
-test("section anchors, active state, and history retain native scrolling", async ({ page }) => {
+test("the contents drawer reaches every section and its trigger follows the reader", async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 1280, height: 900 });
   await load(page);
-  const nav = page.getByRole("navigation", { name: "On this page" });
+  await expect(trigger(page)).toHaveText("On this page: Overview");
+  let nav = await openContents(page);
   expect(
     await nav
       .getByRole("link")
@@ -160,15 +170,9 @@ test("section anchors, active state, and history retain native scrolling", async
     "#recaps-heading",
     "#done-heading",
   ]);
-  await markScrollEnd(page);
-  await nav.getByRole("link", { name: "Plan", exact: true }).click();
-  await ended(page);
-  await atReadingTop(page, "plan-heading");
-  await expect(nav.getByRole("link", { name: "Plan", exact: true })).toHaveAttribute(
-    "aria-current",
-    "location",
-  );
-  const marker = await nav.getByRole("link", { name: "Plan", exact: true }).evaluate((link) => {
+  const overview = nav.getByRole("link", { name: "Overview", exact: true });
+  await expect(overview).toHaveAttribute("aria-current", "location");
+  const marker = await overview.evaluate((link) => {
     const row = getComputedStyle(link);
     const pip = getComputedStyle(link, "::before");
     return {
@@ -185,6 +189,14 @@ test("section anchors, active state, and history retain native scrolling", async
     decoration: "none",
   });
   await markScrollEnd(page);
+  await nav.getByRole("link", { name: "Plan", exact: true }).click();
+  await ended(page);
+  await atReadingTop(page, "plan-heading");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.locator("#plan-heading")).toBeFocused();
+  await expect(trigger(page)).toHaveText("On this page: Plan");
+  nav = await openContents(page);
+  await markScrollEnd(page);
   await nav.getByRole("link", { name: "Threads", exact: true }).click();
   await ended(page);
   await atReadingTop(page, "threads-heading");
@@ -196,10 +208,7 @@ test("section anchors, active state, and history retain native scrolling", async
   await page.evaluate(() =>
     scrollTo({ top: document.documentElement.scrollHeight, behavior: "instant" }),
   );
-  await expect(nav.getByRole("link", { name: "Done", exact: true })).toHaveAttribute(
-    "aria-current",
-    "location",
-  );
+  await expect(trigger(page)).toHaveText("On this page: Done");
   await expect(page).toHaveURL(/#plan-heading$/);
   await load(page);
   const guide = page.locator(".hero .text-link");
@@ -290,25 +299,32 @@ test("modifier click preserves the original PNG navigation", async ({ page, cont
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await opened.close();
 });
-test("phone section navigation stays keyboard accessible across breakpoints", async ({ page }) => {
+test("phone contents drawer works from the keyboard across breakpoints", async ({ page }) => {
   await page.setViewportSize({ width: 320, height: 844 });
   await load(page);
-  const nav = page.getByRole("navigation", { name: "On this page" });
+  await trigger(page).focus();
+  await page.keyboard.press("Enter");
+  const nav = page
+    .getByRole("dialog", { name: "On this page" })
+    .getByRole("navigation", { name: "On this page" });
+  await expect(nav.getByRole("link", { name: "Overview", exact: true })).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(trigger(page)).toBeFocused();
+  await page.keyboard.press("Enter");
   const review = nav.getByRole("link", { name: "Review", exact: true });
   await review.focus();
-  await expect(review).toBeFocused();
-  await expect(review).toBeInViewport();
   await markScrollEnd(page);
   await page.keyboard.press("Enter");
   await ended(page);
   await atReadingTop(page, "review-heading");
   await expect(page).toHaveURL(/#review-heading$/);
-  await review.focus();
-  await expect(review).toBeFocused();
+  await expect(page.locator("#review-heading")).toBeFocused();
+  await trigger(page).focus();
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(review).toBeFocused();
+  await expect(trigger(page)).toBeFocused();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(review).toBeFocused();
+  await expect(trigger(page)).toBeFocused();
   await noOverflow(page);
 });
 test("themes switch screenshot previews, originals, and an open lightbox", async ({
@@ -419,7 +435,9 @@ test("the commit graph draws to the viewport's centre line and is only scroll-li
   // Let the shared nav's state transition finish before checking the idle graph.
   await expect
     .poll(() =>
-      page.locator(".section-nav").evaluate((nav) => nav.getAnimations({ subtree: true }).length),
+      page
+        .locator(".section-navigation")
+        .evaluate((nav) => nav.getAnimations({ subtree: true }).length),
     )
     .toBe(0);
   // Every animation follows scroll, so nothing runs while the page is idle.
@@ -516,10 +534,7 @@ test("reduced motion shows the whole graph drawn and keeps navigation immediate"
   const { nodes, lines } = await graphState(page);
   expect(nodes.every((node) => node.filled === 1)).toBe(true);
   expect(lines.every((line) => Math.abs(line.drawnTo - line.bottom) < 0.5)).toBe(true);
-  await page
-    .getByRole("navigation", { name: "On this page" })
-    .getByRole("link", { name: "Threads", exact: true })
-    .click();
+  await (await openContents(page)).getByRole("link", { name: "Threads", exact: true }).click();
   await atReadingTop(page, "threads-heading");
   await noOverflow(page);
 });

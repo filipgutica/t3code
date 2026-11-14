@@ -16,6 +16,7 @@ import { test, expect } from "@playwright/test";
     expect(
       await page.evaluate(() => document.documentElement.scrollWidth - innerWidth),
     ).toBeLessThanOrEqual(1);
+    await page.locator("summary", { hasText: "On this page" }).click();
     const nav = page.getByRole("navigation", { name: "On this page" });
     await expect(nav).toBeVisible();
     await nav.getByRole("link", { name: "Review", exact: true }).click();
