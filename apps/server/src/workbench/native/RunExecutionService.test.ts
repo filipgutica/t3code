@@ -106,6 +106,12 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
             captureBaseline: () => Ref.update(baselineCaptures, (count) => count + 1),
           }),
           Layer.mock(EventSink.EventSinkV2)({
+            consumeProviderEvents: (source, process, after) =>
+              source.pipe(
+                Stream.mapEffect((event) => process(event).pipe(Effect.andThen(after))),
+                Stream.takeUntil(Boolean),
+                Stream.runDrain,
+              ),
             write: () => Effect.succeed([]),
             writeWithEffects: (payload) =>
               Effect.gen(function* () {
