@@ -30,6 +30,11 @@ Windows x64, and generates release notes and checksums. Normal releases sign and
 notarize both macOS builds. Signing failures fail the build; they do not fall back
 to unsigned Mac updates. Windows and Linux builds remain unsigned.
 
+Windows follows upstream's Linux cross-packaging path with `cargo-xwin` for the
+resource monitor. A Windows runner then applies Workbench's executable identity to
+the native packaged-runtime verifier and runs upstream's resource-monitor smoke
+check before publication.
+
 A complete nightly publishes as a prerelease using workbench-daily-vX.Y.Z-nightly.DATE.RUN.
 A stable publishes as latest using workbench-vX.Y.Z. All platform artifacts and updater
 feeds are uploaded and checksummed before publication. No separate Stable approval
@@ -37,6 +42,14 @@ or promotion workflow is required. Rerunning a publication retains its version a
 leaves an already published release unchanged. An unpublished draft and its tag are
 replaced before uploading, so the new source, notes and complete asset set agree.
 An interrupted upstream event retains its allocated version across workflow runs.
+
+To resume an allocated release after a workflow correction, dispatch the shared
+build workflow from the corrected ref with the original `commit_sha`, `version`,
+`release_channel`, and `metadata_json`. Reuse its `previous_tag` for the same notes
+range. This selects the corrected workflow while keeping the allocated source and
+provenance; rerunning the old Actions run would retain its old workflow definition.
+The verification entry comes from the corrected workflow ref; the packaged product
+and native verification helpers still come from `commit_sha`.
 
 The explicit build workflow retains unsigned-preview drafts and build-only artifacts
 for build validation. These are separate from the normal nightly and stable release action.
@@ -138,10 +151,10 @@ migrate existing T3 Code data.
 Windows packages embed the complete Linux CLI archive used by the upstream
 WSL backend. The workflow builds and smoke-tests it on Ubuntu with upstream
 `build-cli-archive.ts` and `smoke-cli-archive.ts`, then passes it to the Windows
-packager through `--wsl-runtime`. Linux packaging installs
+packager through `--wsl-runtime`. Linux build hosts install
 `build-essential`, `libsecret-1-dev`, `pkg-config`, and ImageMagick. Windows
-uses the hosted Visual Studio installation, Rust's MSVC target, Python 3, tar,
-and the Spectre-mitigated MSVC runtime component.
+cross-packaging uses Rust's MSVC target through `cargo-xwin`; the existing packager
+reuses that binary. Native verification runs on Windows after packaging.
 
 ## Set up Apple signing
 
