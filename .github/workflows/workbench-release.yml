@@ -321,8 +321,8 @@ jobs:
         shell: bash
         run: node scripts/update-release-package-versions.ts "$RELEASE_VERSION"
 
-      - name: Install Linux desktop build libraries
-        if: matrix.platform == 'linux'
+      - name: Install Linux build libraries
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo apt-get update

@@ -151,7 +151,7 @@ migrate existing T3 Code data.
 Windows packages embed the complete Linux CLI archive used by the upstream
 WSL backend. The workflow builds and smoke-tests it on Ubuntu with upstream
 `build-cli-archive.ts` and `smoke-cli-archive.ts`, then passes it to the Windows
-packager through `--wsl-runtime`. Linux packaging installs
+packager through `--wsl-runtime`. Linux build hosts install
 `build-essential`, `libsecret-1-dev`, `pkg-config`, and ImageMagick. Windows
 cross-packaging uses Rust's MSVC target through `cargo-xwin`; the existing packager
 reuses that binary. Native verification runs on Windows after packaging.
