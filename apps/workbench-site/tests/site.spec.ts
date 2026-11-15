@@ -16,6 +16,12 @@ const test = base.extend<{ cleanPage: void }>({
         )
           errors.push(`${response.status()} ${response.url()}`);
       });
+      // UiSiteHeader fetches the published project list after mount. Answer it without a list,
+      // so the menu keeps the one built into @filipgutica/ui and no test depends on that site.
+      // An aborted request would log a console error and fail this fixture.
+      await page.route("https://filipgutica.github.io/ui/projects.json", (route) =>
+        route.fulfill({ status: 204, headers: { "access-control-allow-origin": "*" } }),
+      );
       await use();
       expect(errors).toEqual([]);
     },
@@ -95,7 +101,7 @@ const atReadingTop = async (page: Page, id: string) =>
     expect((await download.boundingBox())!.height).toBeGreaterThanOrEqual(44);
     await page.locator(".fg-site-projects > summary").click();
     const projects = page.getByRole("navigation", { name: "Projects" });
-    await expect(projects.getByRole("link")).toHaveCount(6);
+    await expect(projects.getByRole("link")).toHaveCount(8);
     await expect(
       page
         .getByRole("navigation", { name: "Projects" })
@@ -547,7 +553,7 @@ test("actions with the button fill are library buttons", async ({ page }) => {
     await page.waitForLoadState("networkidle");
     const strays = await page.evaluate(() => {
       const probe = document.body.appendChild(document.createElement("span"));
-      probe.style.background = "var(--color-button-bg)";
+      probe.style.background = "var(--color-accent)";
       const fill = getComputedStyle(probe).backgroundColor;
       probe.remove();
       return [...document.querySelectorAll("a, button")]
