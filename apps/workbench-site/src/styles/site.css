@@ -85,6 +85,11 @@ html {
   scroll-padding-top: var(--space-4);
   scroll-behavior: smooth;
 }
+/* A deep link jumps before the page enhances, so scroll anchoring holds its target in place
+ * when the hero caption's font swaps; a smooth scroll would end at its stale position. */
+html:has([data-enhanced="false"]) {
+  scroll-behavior: auto;
+}
 body {
   margin: 0;
   min-width: 0;

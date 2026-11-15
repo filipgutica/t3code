@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useActiveSection } from "@filipgutica/ui";
 import { UiSiteHeader } from "@filipgutica/ui/site";
 import { sections } from "./sections";
@@ -42,22 +42,8 @@ const restoreImageFocus = (event: Event) => {
   if (opener?.isConnected) opener.focus({ preventScroll: true });
   viewedImage.value = undefined;
 };
-const deepLinkTarget = () => {
-  try {
-    return document.getElementById(decodeURIComponent(location.hash.slice(1)));
-  } catch {
-    return null;
-  }
-};
-onMounted(async () => {
+onMounted(() => {
   enhanced.value = true;
-  // A deep link starts scrolling before enhancement changes the layout above its target, so the
-  // scroll ends off target. Land it again once the enhanced layout has painted.
-  if (!location.hash) return;
-  await nextTick();
-  requestAnimationFrame(() =>
-    deepLinkTarget()?.scrollIntoView({ behavior: "instant", block: "start" }),
-  );
 });
 </script>
 <template>
