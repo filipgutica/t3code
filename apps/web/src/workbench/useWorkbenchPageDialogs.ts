@@ -80,7 +80,7 @@ export function useWorkbenchPageDialogs({
   const saveWorkspace = async (
     title: string,
     linkedProjectIds: ReadonlyArray<ProjectId>,
-    remoteProjects: ReadonlyArray<WorkbenchRemoteProject> = selectedProject?.remoteProjects ?? [],
+    remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>,
   ) => {
     if (
       !canOperate ||
@@ -98,7 +98,7 @@ export function useWorkbenchPageDialogs({
         expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
-        remoteProjects,
+        remoteProjects: remoteProjects ?? selectedProject.remoteProjects ?? [],
         updatedAt: new Date().toISOString(),
       },
     });
