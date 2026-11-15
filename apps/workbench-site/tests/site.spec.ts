@@ -287,6 +287,14 @@ test("full-size screenshots keep one source pixel per screen pixel on Retina", a
     await load(page);
     await page.locator(".hero-media [data-product-image]").click();
     const image = page.getByRole("dialog", { name: "Ticket screenshot" }).locator("img");
+    // naturalWidth is 0 until the original PNG loads.
+    await expect
+      .poll(() =>
+        image.evaluate((element) =>
+          element instanceof HTMLImageElement ? element.naturalWidth : 0,
+        ),
+      )
+      .toBeGreaterThan(0);
     const pixels = await image.evaluate((element) => ({
       original: element instanceof HTMLImageElement ? element.naturalWidth : 0,
       dpr: devicePixelRatio,
