@@ -644,19 +644,23 @@ function WorkbenchPageBoardChat({
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
 }) {
   const { snapshot } = pageData;
+  // Board chat Threads and planning drafts run on the Board's own environment.
+  const localProjects = boardData.linkedT3Projects.filter(
+    (project) => project.environmentId === environmentId,
+  );
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
       workspace={workspace}
       providers={pageData.providers}
-      linkedProjects={boardData.linkedT3Projects}
+      linkedProjects={localProjects}
       tickets={boardData.projectTickets}
       assignments={snapshot?.assignments ?? []}
       referencesByTicket={pageData.referencesByTicket}
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}
-      createContext={{ linkedProjects: boardData.linkedT3Projects }}
+      createContext={{ linkedProjects: localProjects }}
       canStartDrafts={
         pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
       }

@@ -125,7 +125,7 @@ export function WorkbenchTicketSharedContext({
 }: SharedContextSources & {
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
-  remoteEnvironmentId?: EnvironmentId | null;
+  remoteEnvironmentId?: EnvironmentId | null | undefined;
 }) {
   const machine = useEnvironment(remoteEnvironmentId);
   const [expanded, setExpanded] = useState(false);

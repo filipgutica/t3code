@@ -1037,7 +1037,7 @@ function WorkbenchTicketDetailController({
               <WorkbenchTicketSharedContext
                 key={ticket.id}
                 environmentId={environmentId}
-                remoteEnvironmentId={remoteRepository?.environmentId ?? null}
+                remoteEnvironmentId={remoteRepository?.environmentId}
                 ticket={ticket}
                 references={references}
                 assignments={assignments}
@@ -1189,7 +1189,8 @@ function WorkbenchTicketDetailController({
         setResetConfirmationOpen={setResetConfirmationOpen}
       />
       <WorkbenchTicketFloatingChat
-        enabled={floatingChat}
+        // Remote Threads open in their own environment; this chat reads only the Board's.
+        enabled={floatingChat && remoteRepository === undefined}
         environmentId={environmentId}
         ticket={actionableTicket}
         ticketKey={getTicketIssue(references)?.label}
@@ -3582,7 +3583,7 @@ function WorkbenchWorkspaceRepositories({
       left === environmentId ? -1 : right === environmentId ? 1 : left.localeCompare(right),
   );
   return (
-    <fieldset className="space-y-2">
+    <fieldset className="min-w-0 space-y-2">
       <legend className="text-sm font-medium">Linked repositories</legend>
       <p className="text-xs text-muted-foreground">
         {initialWorkspace
