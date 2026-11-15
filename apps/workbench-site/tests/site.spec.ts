@@ -238,22 +238,22 @@ test("every screenshot links to its original PNG", async ({ page }) => {
   for (const link of await links.all())
     await expect(link).toHaveAttribute("href", /\/t3code\/_astro\/.*\.png$/);
 });
-test("image dialog uses original pixels, scales to DPR, and restores focus", async ({ page }) => {
-  await page.setViewportSize({ width: 2800, height: 1440 });
+test("screenshot viewer fits desktop, pans at full size on phones, and restores focus", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
   await load(page);
   const link = page.locator(".hero-media [data-product-image]");
   const original = await link.getAttribute("href");
   await link.click();
-  const dialog = page.getByRole("dialog", { name: /Orbit Ticket/ });
+  const dialog = page.getByRole("dialog", { name: "Ticket screenshot" });
   await expect(dialog).toBeVisible();
-  await expect(dialog.locator("img")).toHaveAttribute("src", original!);
-  const measured = await dialog.locator("img").evaluate((image) => ({
-    original: image.getAttribute("width"),
-    dpr: devicePixelRatio,
-  }));
-  await expect
-    .poll(() => dialog.locator("img").evaluate((image) => image.getBoundingClientRect().width))
-    .toBe(Number(measured.original) / measured.dpr);
+  const image = dialog.getByRole("img", { name: /Orbit Ticket/ });
+  await expect(image).toHaveAttribute("src", original!);
+  // 2x captures are 1280px at full size; a desktop viewer fits them while they keep 70% of that.
+  const fitted = await image.evaluate((element) => element.getBoundingClientRect().width);
+  expect(fitted).toBeLessThanOrEqual(1280);
+  expect(fitted).toBeGreaterThanOrEqual(1280 * 0.7);
   await noOverflow(page);
   await page.keyboard.press("Escape");
   await expect(dialog).not.toBeVisible();
@@ -264,7 +264,13 @@ test("image dialog uses original pixels, scales to DPR, and restores focus", asy
   const rect = await dialog.boundingBox();
   expect(rect!.x).toBeCloseTo(0, 0);
   expect(rect!.width).toBeCloseTo(390, 0);
-  await dialog.getByRole("button", { name: "Close screenshot", exact: true }).click();
+  // Fitting would shrink the text past reading, so the screenshot stays at full size and pans.
+  await expect
+    .poll(() => image.evaluate((element) => element.getBoundingClientRect().width))
+    .toBe(1280);
+  const region = dialog.getByRole("region", { name: "Ticket screenshot" });
+  expect(await region.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
+  await dialog.getByRole("button", { name: "Close dialog", exact: true }).click();
   await expect(link).toBeFocused();
 });
 test("full-size screenshots keep one source pixel per screen pixel on Retina", async ({
@@ -280,9 +286,17 @@ test("full-size screenshots keep one source pixel per screen pixel on Retina", a
     const page = await context.newPage();
     await load(page);
     await page.locator(".hero-media [data-product-image]").click();
-    const image = page.getByRole("dialog", { name: /Orbit Ticket/ }).locator("img");
+    const image = page.getByRole("dialog", { name: "Ticket screenshot" }).locator("img");
+    // naturalWidth is 0 until the original PNG loads.
+    await expect
+      .poll(() =>
+        image.evaluate((element) =>
+          element instanceof HTMLImageElement ? element.naturalWidth : 0,
+        ),
+      )
+      .toBeGreaterThan(0);
     const pixels = await image.evaluate((element) => ({
-      original: Number(element.getAttribute("width")),
+      original: element instanceof HTMLImageElement ? element.naturalWidth : 0,
       dpr: devicePixelRatio,
     }));
     expect(pixels.dpr).toBe(2);
