@@ -53,7 +53,7 @@ export function WorkbenchPage({
     setError,
   });
 
-  const boardData = getWorkbenchBoardData({ pageData, selection });
+  const boardData = getWorkbenchBoardData({ pageData, selection, environmentId });
 
   const { ticketActions, threadActions } = useWorkbenchPageTicketWorkflow({
     environmentId,

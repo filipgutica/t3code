@@ -222,7 +222,7 @@ function BoardFloatingChat(props: WorkbenchBoardFloatingChatProps) {
   const threads = getWorkbenchBoardChatThreads({
     projectId,
     tickets: props.tickets,
-    assignments: props.assignments,
+    assignments: props.assignments.filter((assignment) => assignment.environmentId === undefined),
     drafts,
     threadsById: props.threadsById,
     archivedThreadsById: props.archivedThreadsById,

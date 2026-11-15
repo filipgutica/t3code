@@ -8,6 +8,7 @@ import { workbenchEnvironment } from "./state";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 import { getWorkbenchCommandPaletteTargets } from "./workbenchCommandPalette.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { useWorkbenchThreadContext } from "./useWorkbenchThreadContext";
 import { useNavigateToLastWorkbench } from "./workbenchLastLocation";
 
 const selectPageChatAvailable = (
@@ -58,6 +59,18 @@ const ticketActions = (
   return items;
 };
 
+function useWorkbenchCommandPaletteSnapshot(environmentId: EnvironmentId | null) {
+  const { environments } = useEnvironments();
+  const connected = environments.some(
+    (environment) =>
+      environment.environmentId === environmentId && environment.connection.phase === "connected",
+  );
+  const query = useEnvironmentQuery(
+    environmentId && connected ? workbenchEnvironment.snapshot({ environmentId, input: {} }) : null,
+  );
+  return connected && query.isSuccess ? query.data : null;
+}
+
 export const useWorkbenchCommandPaletteActions = ({
   thread,
   draftEnvironmentId,
@@ -71,27 +84,28 @@ export const useWorkbenchCommandPaletteActions = ({
   const location = useLocation();
   const navigate = useNavigate();
   const navigateToLastWorkbench = useNavigateToLastWorkbench();
-  const { environments } = useEnvironments();
   const primaryEnvironmentId = usePrimaryEnvironmentId();
   const pageChatAvailable = useWorkbenchFloatingChatStore(selectPageChatAvailable);
   const onWorkbench = location.pathname === "/workbench";
   const search = onWorkbench ? parseWorkbenchSearch(location.search) : {};
+  const routedThread = onWorkbench ? null : thread;
+  const owner = useWorkbenchThreadContext(
+    routedThread?.environmentId ?? null,
+    routedThread?.id ?? null,
+  );
   const environmentId =
-    search.environmentId ?? thread?.environmentId ?? draftEnvironmentId ?? primaryEnvironmentId;
-  const connected = environments.some(
-    (environment) =>
-      environment.environmentId === environmentId && environment.connection.phase === "connected",
-  );
-  const query = useEnvironmentQuery(
-    environmentId && connected ? workbenchEnvironment.snapshot({ environmentId, input: {} }) : null,
-  );
-  // A successful snapshot doubles as feature detection for upstream or older remote hosts.
-  if (!environmentId || !connected || !query.isSuccess || !query.data) return [];
+    owner?.environmentId ??
+    search.environmentId ??
+    thread?.environmentId ??
+    draftEnvironmentId ??
+    primaryEnvironmentId;
+  const snapshot = useWorkbenchCommandPaletteSnapshot(environmentId);
+  if (!environmentId || !snapshot) return [];
   const targets = getWorkbenchCommandPaletteTargets({
     environmentId,
-    snapshot: query.data,
+    snapshot,
     workspaceId: search.workbenchProjectId,
-    threadId: !onWorkbench && thread?.environmentId === environmentId ? thread.id : undefined,
+    threadId: routedThread?.id,
   });
   const items: CommandPaletteActionItem[] = [
     {

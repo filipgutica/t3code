@@ -66,6 +66,7 @@ import {
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
@@ -538,7 +539,6 @@ function WorkbenchPageBoard(
     pendingAction,
   } = props;
   const {
-    repositoriesById,
     snapshot,
     optimisticStatus,
     threadsById,
@@ -591,7 +591,9 @@ function WorkbenchPageBoard(
             />
           }
           selectedTicketId={null}
-          repositoriesById={repositoriesById}
+          repositoriesById={
+            new Map(boardData.linkedT3Projects.map((project) => [project.id, project]))
+          }
           repositoryProjectIds={selectedProject.linkedProjectIds}
           repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
@@ -751,7 +753,13 @@ function WorkbenchPageWorkspace(
 function WorkbenchPageWorkspaceDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "createWorkspace" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    | "environmentId"
+    | "createWorkspace"
+    | "dialogs"
+    | "error"
+    | "pageData"
+    | "pendingAction"
+    | "selection"
   >,
 ) {
   const { pageData, selection, dialogs, createWorkspace, error, pendingAction } = props;
@@ -767,6 +775,7 @@ function WorkbenchPageWorkspaceDialogs(
         <WorkbenchWorkspaceDialog
           open={createWorkspace}
           projects={projects}
+          environmentId={props.environmentId}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
@@ -779,6 +788,7 @@ function WorkbenchPageWorkspaceDialogs(
           key={selectedProject.id}
           open
           projects={projects}
+          environmentId={props.environmentId}
           initialWorkspace={selectedProject}
           pending={pending}
           disabled={!pageData.canOperate}
@@ -818,11 +828,13 @@ function WorkbenchPageThreadDialogs(
           open
           request={{
             ticket: startThreadRequest.ticket,
-            projects: pageData.projects.filter((project) =>
-              snapshot?.projects
-                .find((workspace) => workspace.id === startThreadRequest.ticket.projectId)
-                ?.linkedProjectIds.includes(project.id),
-            ),
+            projects: getWorkbenchBoardRepositories({
+              board: snapshot?.projects.find(
+                (board) => board.id === startThreadRequest.ticket.projectId,
+              ) ?? { linkedProjectIds: [] },
+              projects: pageData.projects,
+              environmentId,
+            }),
             workspace: snapshot?.ticketWorkspaces.find(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
@@ -849,6 +861,11 @@ function WorkbenchPageThreadDialogs(
           threads={[...threadsById.values()].filter(
             (thread) =>
               attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
+              thread.environmentId ===
+                (snapshot?.projects
+                  .find((board) => board.id === attachThreadTicket.projectId)
+                  ?.remoteProjects?.find((remote) => remote.projectId === thread.projectId)
+                  ?.environmentId ?? environmentId) &&
               !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,

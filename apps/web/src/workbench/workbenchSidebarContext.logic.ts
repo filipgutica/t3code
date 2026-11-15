@@ -37,7 +37,7 @@ export const getWorkbenchSidebarTicketDetails = ({
     Pick<WorkbenchTicket, "id" | "projectId" | "status" | "blocked" | "repositoryProjectIds">
   >;
   readonly assignments: ReadonlyArray<
-    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt">
+    Pick<WorkbenchAssignment, "ticketId" | "threadId" | "supersededAt" | "environmentId">
   >;
   readonly threads: ReadonlyArray<
     Pick<
@@ -58,12 +58,22 @@ export const getWorkbenchSidebarTicketDetails = ({
     >
   >;
   readonly projects: ReadonlyArray<Pick<EnvironmentProject, "id" | "environmentId" | "title">>;
-  readonly workbenchProjects: ReadonlyArray<Pick<WorkbenchProject, "id" | "archivedAt">>;
+  readonly workbenchProjects: ReadonlyArray<
+    Pick<WorkbenchProject, "id" | "archivedAt" | "remoteProjects">
+  >;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
 }) => {
   const threadsById = new Map(
     threads
-      .filter((thread) => thread.environmentId === environmentId)
+      .filter(
+        (thread) =>
+          thread.environmentId === environmentId ||
+          assignments.some(
+            (assignment) =>
+              assignment.threadId === thread.id &&
+              assignment.environmentId === thread.environmentId,
+          ),
+      )
       .map((thread) => [thread.id, thread]),
   );
   const projectsById = new Map(
@@ -99,7 +109,14 @@ export const getWorkbenchSidebarTicketDetails = ({
           attentionLabel: ticket.blocked ? "Blocked" : null,
           issue: getTicketIssue(getTicketReferences(referencesByTicket, ticket.id)),
           repositories: ticket.repositoryProjectIds.flatMap((id) => {
-            const title = projectsById.get(id);
+            const remote = workbenchProjects
+              .find((board) => board.id === ticket.projectId)
+              ?.remoteProjects?.find((project) => project.projectId === id);
+            const title = remote
+              ? (projects.find(
+                  (project) => project.id === id && project.environmentId === remote.environmentId,
+                )?.title ?? `${remote.title} · not connected`)
+              : projectsById.get(id);
             return title ? [title] : [];
           }),
           threads: (threadStatuses.get(ticket.id) ?? []).map((entry) => ({

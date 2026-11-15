@@ -327,6 +327,28 @@ After deleting a Ticket or Workspace, open **Retained worktrees** in the Workben
 remove its kept worktrees. Review the listed repository paths, choose **Remove**,
 and confirm. The same Thread ownership and local-change checks apply.
 
+## Repositories on another machine
+
+A Board can include T3 Projects from another machine you are connected to, such
+as a server running `npx t3`. That machine needs no Workbench install. The Board
+and its Tickets stay on the machine that holds the Board.
+
+1. Connect this device to the other machine (see [Remote access](./remote-access.md)).
+2. Choose **Edit Board** and select its Projects, listed under that machine's name.
+3. Create a Ticket whose repositories are all on that machine, then start work.
+
+Starting work creates the Thread on the other machine and puts the Ticket in its
+composer as the first message. Choose that Thread's workspace mode before you
+send it. After that the Thread works like any native Thread on that machine:
+
+- Later Ticket changes, Workbench tools, recaps, and automatic status don't reach it.
+- Workbench does not prepare worktrees or a work area for the Ticket.
+- Its status shows only on devices connected to that machine. Elsewhere it shows as
+  not connected.
+
+A Ticket's repositories must all be on one machine, and planning drafts use only
+the Board's own machine. Unlinking a remote Thread keeps it on its machine.
+
 ## Archive or delete a Workspace
 
 Choose **Archive Workspace** to hide it from the active list and attention

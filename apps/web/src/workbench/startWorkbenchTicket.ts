@@ -14,9 +14,11 @@ import type {
   WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
+  WorkbenchRemoteProject,
   WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
 
+import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
 import { DEFAULT_INTERACTION_MODE } from "../types";
 import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 import {
@@ -38,6 +40,7 @@ interface StartWorkbenchTicketInput {
   readonly ticket: WorkbenchTicket;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
+  readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject> | undefined;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
 }
@@ -114,13 +117,18 @@ interface StartWorkbenchTicketDependencies {
   readonly deleteThread: (
     input: EnvironmentCommandInput<DeleteThreadInput>,
   ) => Promise<CommandResult>;
-  readonly waitForThread: (threadId: ThreadId) => Promise<void>;
-  readonly openThread: (threadId: ThreadId) => Promise<void>;
+  readonly waitForThread: (threadId: ThreadId, environmentId: EnvironmentId) => Promise<void>;
+  readonly openThread: (threadId: ThreadId, environmentId: EnvironmentId) => Promise<void>;
   readonly resolveModelSelection: (project: EnvironmentProject) => ModelSelection | null;
   readonly resolveRuntimeMode: (project: EnvironmentProject) => RuntimeMode;
   readonly makeThreadId: () => ThreadId;
   readonly makeAssignmentId: () => WorkbenchAssignmentId;
   readonly now: () => string;
+  readonly seedRemotePrompt?: (
+    threadId: ThreadId,
+    environmentId: EnvironmentId,
+    ticket: WorkbenchTicket,
+  ) => void;
   readonly onStage?: (stage: WorkbenchTicketStartStage) => void;
 }
 
@@ -155,7 +163,10 @@ const openExistingWorkbenchThread = async ({
   if (target.state === "open") {
     dependencies.onStage?.("opening-thread");
     try {
-      await dependencies.openThread(target.threadId);
+      await dependencies.openThread(
+        target.threadId,
+        input.assignment?.environmentId ?? input.environmentId,
+      );
     } catch (cause) {
       return { state: "navigation-failed", cause };
     }
@@ -218,6 +229,73 @@ const saveReviewedRepositoryScope = async ({
   return { state: "saved", ticket: saved.value } as const;
 };
 
+const prepareWorkbenchThreadCheckout = async ({
+  input,
+  dependencies,
+  project,
+  createdAt,
+  remote,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+  project: EnvironmentProject;
+  createdAt: string;
+  remote: boolean;
+}) => {
+  if (remote)
+    return { state: "ready", checkout: { branchName: null, worktreePath: null } } as const;
+  dependencies.onStage?.("preparing-workspace");
+  const result = await dependencies.prepareTicketWorkspace({
+    environmentId: input.environmentId,
+    input: { ticketId: input.ticket.id, requestedAt: createdAt },
+  });
+  if (result._tag === "Failure")
+    return { state: "failed", stage: "workspace", failure: result, ticket: input.ticket } as const;
+  return {
+    state: "ready",
+    checkout: getPreparedRepository({
+      ticket: input.ticket,
+      workspace: result.value,
+      projectId: project.id,
+    }),
+  } as const;
+};
+
+const assignWorkbenchThread = ({
+  input,
+  dependencies,
+  options,
+  threadId,
+  assignmentId,
+  createdAt,
+  remote,
+}: {
+  input: StartWorkbenchTicketInput;
+  dependencies: StartWorkbenchTicketDependencies;
+  options: StartWorkbenchTicketOptions;
+  threadId: ThreadId;
+  assignmentId: WorkbenchAssignmentId;
+  createdAt: string;
+  remote: WorkbenchCreateAssignmentInput["remote"];
+}) => {
+  const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
+  const assignment = {
+    id: assignmentId,
+    ticketId: input.ticket.id,
+    threadId,
+    ...(remote ? { remote } : {}),
+  };
+  return options.mode !== "additional" && previousThreadId
+    ? dependencies.replaceAssignment({
+        environmentId: input.environmentId,
+        input: { ...assignment, previousThreadId, replacedAt: createdAt },
+      })
+    : dependencies.createAssignment({
+        environmentId: input.environmentId,
+        input: { ...assignment, createdAt },
+      });
+};
+
 export async function coordinateWorkbenchTicketStart(
   originalInput: StartWorkbenchTicketInput,
   dependencies: StartWorkbenchTicketDependencies,
@@ -241,7 +319,14 @@ export async function coordinateWorkbenchTicketStart(
     ticket: input.ticket,
     preferred: options.repositoryProjectId,
   });
-  const project = input.projects.find((candidate) => candidate.id === repositoryProjectId);
+  const project = getWorkbenchBoardRepositories({
+    board: {
+      linkedProjectIds: input.ticket.repositoryProjectIds,
+      remoteProjects: input.remoteProjects ?? [],
+    },
+    projects: input.projects,
+    environmentId: input.environmentId,
+  }).find((candidate) => candidate.id === repositoryProjectId);
   if (!project) return { state: "project-unavailable", ticket: input.ticket };
   const modelSelection = options.modelSelection ?? dependencies.resolveModelSelection(project);
   if (modelSelection === null) return { state: "provider-unavailable", ticket: input.ticket };
@@ -249,22 +334,23 @@ export async function coordinateWorkbenchTicketStart(
   const threadId = dependencies.makeThreadId();
   const assignmentId = dependencies.makeAssignmentId();
   const createdAt = dependencies.now();
-  dependencies.onStage?.("preparing-workspace");
-  const workspaceResult = await dependencies.prepareTicketWorkspace({
-    environmentId: input.environmentId,
-    input: { ticketId: input.ticket.id, requestedAt: createdAt },
+  const threadEnvironmentId = project.environmentId;
+  const remote =
+    threadEnvironmentId !== input.environmentId
+      ? { environmentId: threadEnvironmentId, projectId: project.id }
+      : undefined;
+  const preparation = await prepareWorkbenchThreadCheckout({
+    input,
+    dependencies,
+    project,
+    createdAt,
+    remote: remote !== undefined,
   });
-  if (workspaceResult._tag === "Failure") {
-    return { state: "failed", stage: "workspace", failure: workspaceResult, ticket: input.ticket };
-  }
-  const checkout = getPreparedRepository({
-    ticket: input.ticket,
-    workspace: workspaceResult.value,
-    projectId: project.id,
-  });
+  if (preparation.state === "failed") return preparation;
+  const { checkout } = preparation;
   dependencies.onStage?.("creating-thread");
   const threadResult = await dependencies.createThread({
-    environmentId: input.environmentId,
+    environmentId: threadEnvironmentId,
     input: {
       threadId,
       projectId: project.id,
@@ -281,32 +367,19 @@ export async function coordinateWorkbenchTicketStart(
     return { state: "failed", stage: "thread", failure: threadResult, ticket: input.ticket };
   }
 
-  const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
   dependencies.onStage?.("linking-thread");
-  const assignmentResult =
-    options.mode !== "additional" && previousThreadId
-      ? await dependencies.replaceAssignment({
-          environmentId: input.environmentId,
-          input: {
-            id: assignmentId,
-            ticketId: input.ticket.id,
-            previousThreadId,
-            threadId,
-            replacedAt: createdAt,
-          },
-        })
-      : await dependencies.createAssignment({
-          environmentId: input.environmentId,
-          input: {
-            id: assignmentId,
-            ticketId: input.ticket.id,
-            threadId,
-            createdAt,
-          },
-        });
+  const assignmentResult = await assignWorkbenchThread({
+    input,
+    dependencies,
+    options,
+    threadId,
+    assignmentId,
+    createdAt,
+    remote,
+  });
   if (assignmentResult._tag === "Failure") {
     const cleanupResult = await dependencies.deleteThread({
-      environmentId: input.environmentId,
+      environmentId: threadEnvironmentId,
       input: { threadId },
     });
     return {
@@ -318,17 +391,19 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  return openStartedThread(dependencies, threadId);
+  if (remote) dependencies.seedRemotePrompt?.(threadId, threadEnvironmentId, input.ticket);
+  return openStartedThread(dependencies, threadId, threadEnvironmentId);
 }
 
 const openStartedThread = async (
   dependencies: StartWorkbenchTicketDependencies,
   threadId: ThreadId,
+  environmentId: EnvironmentId,
 ): Promise<StartWorkbenchTicketResult> => {
   try {
     dependencies.onStage?.("opening-thread");
-    await dependencies.waitForThread(threadId);
-    await dependencies.openThread(threadId);
+    await dependencies.waitForThread(threadId, environmentId);
+    await dependencies.openThread(threadId, environmentId);
   } catch (cause) {
     return { state: "navigation-failed", cause };
   }

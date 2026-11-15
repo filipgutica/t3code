@@ -30,11 +30,19 @@ export const isWorkbenchRepositoryScopeValid = ({
   projects,
 }: {
   readonly scope: WorkbenchRepositoryScope;
-  readonly projects: ReadonlyArray<{ readonly id: ProjectId }>;
+  readonly projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly environmentId?: EnvironmentId;
+  }>;
 }) =>
   scope.repositoryProjectIds.length > 0 &&
   new Set(scope.repositoryProjectIds).size === scope.repositoryProjectIds.length &&
-  scope.repositoryProjectIds.every((id) => projects.some((project) => project.id === id));
+  scope.repositoryProjectIds.every((id) => projects.some((project) => project.id === id)) &&
+  new Set(
+    scope.repositoryProjectIds.map(
+      (id) => projects.find((project) => project.id === id)?.environmentId,
+    ),
+  ).size === 1;
 
 /**
  * The repository a new Thread works in: `preferred` while the Ticket still links it, else the

@@ -1,4 +1,9 @@
-import { WorkbenchProjectId, type ProjectId, type EnvironmentId } from "@t3tools/contracts";
+import {
+  WorkbenchProjectId,
+  type ProjectId,
+  type EnvironmentId,
+  type WorkbenchRemoteProject,
+} from "@t3tools/contracts";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
@@ -44,7 +49,11 @@ export function useWorkbenchPageDialogs({
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const submitProject = async (
+    title: string,
+    linkedProjectIds: ReadonlyArray<ProjectId>,
+    remoteProjects: ReadonlyArray<WorkbenchRemoteProject> = [],
+  ) => {
     if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
     setError(null);
@@ -55,6 +64,7 @@ export function useWorkbenchPageDialogs({
         id,
         title,
         linkedProjectIds,
+        remoteProjects,
         createdAt: new Date().toISOString(),
       },
     });
@@ -67,7 +77,11 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
-  const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const saveWorkspace = async (
+    title: string,
+    linkedProjectIds: ReadonlyArray<ProjectId>,
+    remoteProjects: ReadonlyArray<WorkbenchRemoteProject> = selectedProject?.remoteProjects ?? [],
+  ) => {
     if (
       !canOperate ||
       environmentId === null ||
@@ -84,6 +98,7 @@ export function useWorkbenchPageDialogs({
         expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
+        remoteProjects,
         updatedAt: new Date().toISOString(),
       },
     });
@@ -134,6 +149,14 @@ export function useWorkbenchPageDialogs({
     )
       return;
     setError(null);
+    if (
+      !selectedProject.linkedProjectIds.some(
+        (id) => !selectedProject.remoteProjects?.some((remote) => remote.projectId === id),
+      )
+    ) {
+      setTicketDialogOpen(true);
+      return;
+    }
     void navigate({
       to: "/workbench",
       search: withWorkbenchEnvironmentSearch(environmentId, {

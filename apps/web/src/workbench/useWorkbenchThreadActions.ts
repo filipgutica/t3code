@@ -11,6 +11,7 @@ import {
 } from "@t3tools/contracts";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
 import { useAtomCommand } from "../state/use-atom-command";
 import { threadEnvironment } from "../state/threads";
 import { useThreadActions } from "../hooks/useThreadActions";
@@ -61,7 +62,7 @@ const getWorkbenchThreadStartOptions = ({
       assignment.ticketId === request.ticket.id &&
       assignment.supersededAt === null &&
       assignment.threadId !== request.previousThreadId &&
-      existingThreadIds.has(assignment.threadId),
+      (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
   );
   return {
     ...(request.assignment ? { assignment: request.assignment } : {}),
@@ -115,7 +116,9 @@ export function useWorkbenchThreadActions({
     threadsById,
     archivedThreadsById,
   } = pageData;
-  const unarchiveThread = useAtomCommand(threadEnvironment.unarchive, { reportFailure: false });
+  const unarchiveThread = useOrchestrationCommand(threadEnvironment.unarchive, {
+    reportFailure: false,
+  });
   const attachAssignment = useAtomCommand(workbenchEnvironment.createAssignment, {
     reportFailure: false,
   });
@@ -128,8 +131,17 @@ export function useWorkbenchThreadActions({
   );
   const [attachThreadTicket, setAttachThreadTicket] = useState<WorkbenchTicket | null>(null);
 
-  const openAssignedThread = async (threadId: ThreadId) => {
+  const assignmentEnvironment = (threadId: ThreadId) =>
+    snapshot?.assignments.find((assignment) => assignment.threadId === threadId)?.environmentId ??
+    threadsById.get(threadId)?.environmentId ??
+    archivedThreadsById.get(threadId)?.environmentId ??
+    environmentId;
+  const openAssignedThread = async (
+    threadId: ThreadId,
+    targetEnvironmentId = assignmentEnvironment(threadId),
+  ) => {
     if (environmentId === null) return;
+    if (targetEnvironmentId === null) return;
     const archived = isWorkbenchThreadArchived(threadId, threadsById, archivedThreadsById);
     if (archived && !canOperate) return;
     if (archived) {
@@ -139,14 +151,14 @@ export function useWorkbenchThreadActions({
     const result = await (async () => {
       try {
         return await openAssignedThreadWithRestore(
-          { environmentId, threadId, archived },
+          { environmentId: targetEnvironmentId, threadId, archived },
           {
             unarchive: unarchiveThread,
             refreshArchived: refreshArchivedThreads,
             navigate: () =>
               navigate({
                 to: "/$environmentId/$threadId",
-                params: { environmentId, threadId },
+                params: { environmentId: targetEnvironmentId, threadId },
               }),
           },
         );
@@ -176,6 +188,8 @@ export function useWorkbenchThreadActions({
     }
   };
   const openTicketThread = useStartWorkbenchTicket({
+    workbenchProjects: snapshot?.projects,
+    references: snapshot?.references,
     environmentId,
     projects,
     providers,
@@ -226,7 +240,12 @@ export function useWorkbenchThreadActions({
               candidate.threadId === threadId &&
               candidate.supersededAt === null,
           );
-    if (assignment && (!threadLookupReady || existingThreadIds.has(assignment.threadId))) {
+    if (
+      assignment &&
+      (assignment.environmentId !== undefined ||
+        !threadLookupReady ||
+        existingThreadIds.has(assignment.threadId))
+    ) {
       void openTicketThread(ticket, { assignment });
       return;
     }
@@ -244,7 +263,7 @@ export function useWorkbenchThreadActions({
       (assignment) =>
         assignment.ticketId === ticket.id &&
         assignment.supersededAt === null &&
-        existingThreadIds.has(assignment.threadId),
+        (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
     );
     setError(null);
     setStartThreadRequest({
@@ -273,9 +292,12 @@ export function useWorkbenchThreadActions({
     setPendingAction(`delete-thread:${threadId}`);
     setError(null);
     return (async () => {
-      const result = await confirmAndDeleteThread(scopeThreadRef(environmentId, threadId), {
-        preserveWorktree: true,
-      });
+      const result = await confirmAndDeleteThread(
+        scopeThreadRef(assignmentEnvironment(threadId) ?? environmentId, threadId),
+        {
+          preserveWorktree: true,
+        },
+      );
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         setError(failureMessage(result));
       }
@@ -290,12 +312,22 @@ export function useWorkbenchThreadActions({
     if (environmentId === null || attachThreadTicket === null || pendingAction !== null) return;
     setPendingAction(`attach-thread:${attachThreadTicket.id}`);
     setError(null);
+    const thread = threadsById.get(threadId);
+    if (!thread) {
+      setPendingAction(null);
+      return;
+    }
+    const remote =
+      thread.environmentId !== environmentId
+        ? { environmentId: thread.environmentId, projectId: thread.projectId }
+        : undefined;
     const result = await attachAssignment({
       environmentId,
       input: {
         id: WorkbenchAssignmentId.make(randomUUID()),
         ticketId: attachThreadTicket.id,
         threadId,
+        ...(remote ? { remote } : {}),
         createdAt: new Date().toISOString(),
       },
     });
@@ -306,6 +338,7 @@ export function useWorkbenchThreadActions({
     }
     setAttachThreadTicket(null);
     if (
+      remote !== undefined ||
       !showWorkbenchPageChatThread({
         environmentId,
         ticketId: attachThreadTicket.id,
@@ -313,7 +346,7 @@ export function useWorkbenchThreadActions({
         threadId,
       })
     ) {
-      await openAssignedThread(threadId);
+      await openAssignedThread(threadId, thread.environmentId);
     }
   };
 
@@ -389,8 +422,9 @@ export function useWorkbenchThreadActions({
         assignments: snapshot?.assignments ?? [],
         existingThreadIds,
       }),
-      async (threadId) => {
+      async (threadId, targetEnvironmentId) => {
         if (
+          targetEnvironmentId !== request.environmentId ||
           !showWorkbenchPageChatThread({
             environmentId: request.environmentId,
             ticketId: request.ticket.id,
@@ -398,7 +432,7 @@ export function useWorkbenchThreadActions({
             threadId,
           })
         ) {
-          await openAssignedThread(threadId);
+          await openAssignedThread(threadId, targetEnvironmentId);
         }
       },
     );
