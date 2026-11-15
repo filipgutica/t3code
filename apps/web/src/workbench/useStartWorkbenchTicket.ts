@@ -148,6 +148,7 @@ export function useStartWorkbenchTicket({
   });
   const createThread = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
   const deleteThread = useOrchestrationCommand(threadEnvironment.delete, { reportFailure: false });
+  const readTicket = useAtomCommand(workbenchEnvironment.readTicket, { reportFailure: false });
 
   /** `openThread` replaces `onOpenAssignedThread` for this start, such as to stay on the page. */
   return async (
@@ -188,7 +189,14 @@ export function useStartWorkbenchTicket({
             waitForThread: (threadId, targetEnvironmentId) =>
               waitForWorkbenchThread(scopeThreadRef(targetEnvironmentId, threadId)),
             openThread,
-            seedRemotePrompt: (threadId, targetEnvironmentId, savedTicket) =>
+            seedRemotePrompt: async (threadId, targetEnvironmentId, startedTicket) => {
+              // Snapshot Tickets omit Progress, and the remote Thread gets the Ticket only once.
+              const read = await readTicket({
+                environmentId,
+                input: { ticketId: startedTicket.id },
+              });
+              const savedTicket =
+                read._tag === "Success" && read.value !== null ? read.value : startedTicket;
               useComposerDraftStore.getState().setPrompt(
                 scopeThreadRef(targetEnvironmentId, threadId),
                 portableWorkbenchTicketPrompt({
@@ -198,7 +206,8 @@ export function useStartWorkbenchTicket({
                   ),
                   boardMachine: readEnvironment(environmentId)?.label ?? "the Board machine",
                 }),
-              ),
+              );
+            },
             resolveRuntimeMode: (project) => {
               const settings =
                 appAtomRegistry.get(environmentServerConfigsAtom).get(project.environmentId)

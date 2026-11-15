@@ -128,7 +128,7 @@ interface StartWorkbenchTicketDependencies {
     threadId: ThreadId,
     environmentId: EnvironmentId,
     ticket: WorkbenchTicket,
-  ) => void;
+  ) => Promise<void>;
   readonly onStage?: (stage: WorkbenchTicketStartStage) => void;
 }
 
@@ -391,7 +391,7 @@ export async function coordinateWorkbenchTicketStart(
     };
   }
 
-  if (remote) dependencies.seedRemotePrompt?.(threadId, threadEnvironmentId, input.ticket);
+  if (remote) await dependencies.seedRemotePrompt?.(threadId, threadEnvironmentId, input.ticket);
   return openStartedThread(dependencies, threadId, threadEnvironmentId);
 }
 

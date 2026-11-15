@@ -342,6 +342,7 @@ composer as the first message. Choose that Thread's workspace mode before you
 send it. After that the Thread works like any native Thread on that machine:
 
 - Later Ticket changes, Workbench tools, recaps, and automatic status don't reach it.
+- Its pull requests show in the Thread, not on the Ticket.
 - Workbench does not prepare worktrees or a work area for the Ticket.
 - Its status shows only on devices connected to that machine. Elsewhere it shows as
   not connected.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   WorkbenchTicketId,
@@ -208,6 +209,7 @@ describe("Workbench Ticket pull request references", () => {
       id: "archived-thread",
       linkedPullRequest: archivedPullRequest,
     });
+    const remoteThread = thread({ id: "remote-thread", linkedPullRequest: pullRequest(4) });
 
     const pullRequests = getWorkbenchTicketPullRequests({
       assignments: [
@@ -215,10 +217,12 @@ describe("Workbench Ticket pull request references", () => {
         { threadId: secondThread.id },
         { threadId: archivedThread.id },
         { threadId: ThreadId.make("missing-thread") },
+        { threadId: remoteThread.id, environmentId: EnvironmentId.make("remote") },
       ],
       threadsById: new Map([
         [liveThread.id, liveThread],
         [secondThread.id, secondThread],
+        [remoteThread.id, remoteThread],
       ]),
       archivedThreadsById: new Map([[archivedThread.id, archivedThread]]),
     });

@@ -194,7 +194,7 @@ describe("coordinateWorkbenchTicketStart", () => {
             events.push("delete-thread");
             return success;
           },
-          seedRemotePrompt: (id, destination, snapshot) => {
+          seedRemotePrompt: async (id, destination, snapshot) => {
             expect([id, destination, snapshot]).toEqual([threadId, remoteEnvironmentId, ticket]);
             events.push("seed-prompt");
           },
