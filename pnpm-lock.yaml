@@ -1345,8 +1345,8 @@ importers:
         specifier: 7.0.3
         version: 7.0.3(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(astro@7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0))(esbuild@0.28.2)(jiti@2.7.0)(supports-color@8.1.1)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(vue@3.5.43(typescript@6.0.3))(yaml@2.9.0)
       '@filipgutica/ui':
-        specifier: 2.0.0
-        version: 2.0.0(vue@3.5.43(typescript@6.0.3))
+        specifier: 2.1.0
+        version: 2.1.0(vue@3.5.43(typescript@6.0.3))
       astro:
         specifier: ^7.0.3
         version: 7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0)
@@ -4519,8 +4519,8 @@ packages:
     resolution: {integrity: sha512-NxnKTcISb1dRcf2+sDj/Jc9Zt/64wQDN+l8DXKN7yBjPP4S3RTqfivV4iBbF2iR0gJoh1hb2e2BfPRg+AXGZLQ==}
     engines: {node: '>=22.12'}
 
-  '@filipgutica/ui@2.0.0':
-    resolution: {integrity: sha512-5fhvtzVCa83E8IBp/HgfOGooF7ZmNBbzENV2XP84X/cwEaX8E8IdIJFd0T3rdwYgh40T74KB8CE3ZdYOF4v0+Q==}
+  '@filipgutica/ui@2.1.0':
+    resolution: {integrity: sha512-jpnIuktO/cI+z1jk6tEX8YLNLeLVhj27nWzVRrrnO35Npp8Ut07YZGpWhnlp2vzg4th0tlgY33/vrjMVu3gTtw==}
     engines: {node: '>=22.12'}
     peerDependencies:
       vue: ^3.5.0
@@ -15275,7 +15275,7 @@ snapshots:
     dependencies:
       jsonc-parser: 3.3.1
 
-  '@filipgutica/ui@2.0.0(vue@3.5.43(typescript@6.0.3))':
+  '@filipgutica/ui@2.1.0(vue@3.5.43(typescript@6.0.3))':
     dependencies:
       '@filipgutica/design-system': 1.0.19
       '@vueuse/core': 14.4.0(vue@3.5.43(typescript@6.0.3))
