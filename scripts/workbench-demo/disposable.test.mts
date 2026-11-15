@@ -4,6 +4,8 @@ import * as NodeFS from "node:fs";
 import * as NodeFSP from "node:fs/promises";
 import * as NodeOS from "node:os";
 import * as NodePath from "node:path";
+import * as NodeNet from "node:net";
+import * as HostProcess from "@t3tools/shared/HostProcess";
 
 import { it as test } from "vite-plus/test";
 
@@ -78,6 +80,53 @@ test("recovers an older lock even if its run directory is already gone", async (
     NodeFS.rmSync(root, { recursive: true, force: true });
   }
 });
+
+test.skipIf(HostProcess.Platform.defaultValue() === "win32")(
+  "stops both environment controllers before removing a recovered run",
+  async () => {
+    const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "demo-recover-remote-"));
+    const controllers: NodeNet.Server[] = [];
+    try {
+      const source = setupHome(NodePath.join(root, "source"));
+      const run = setupHome(NodePath.join(source, "runs", "run-remote"));
+      const remote = setupHome(NodePath.join(run, "remote"));
+      await writeLock(source, run);
+      const stopped = new Set<string>();
+      for (const home of [run, remote]) {
+        NodeFS.writeFileSync(NodePath.join(home, "run.lock"), "");
+        const controller = NodeNet.createServer((socket) => {
+          socket.once("data", (data) => {
+            NodeAssert.equal(data.toString(), "stop\n");
+            NodeAssert.equal(NodeFS.existsSync(remote), true);
+            stopped.add(home);
+            socket.end("stopped\n");
+          });
+        });
+        controllers.push(controller);
+        await new Promise<void>((resolve, reject) => {
+          controller.once("error", reject);
+          controller.listen(NodePath.join(home, "control.sock"), resolve);
+        });
+      }
+
+      await recoverDisposableDemo({ sourceHome: source, runHome: run });
+
+      NodeAssert.deepEqual(stopped, new Set([run, remote]));
+      NodeAssert.equal(NodeFS.existsSync(run), false);
+      NodeAssert.equal(NodeFS.existsSync(NodePath.join(source, ".disposable-demo.lock")), false);
+    } finally {
+      await Promise.all(
+        controllers.map(
+          (controller) =>
+            new Promise<void>((resolve, reject) => {
+              controller.close((error) => (error ? reject(error) : resolve()));
+            }),
+        ),
+      );
+      NodeFS.rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
 
 test("rejects recovery for a run that does not match the source lock", async () => {
   const root = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "demo-disposable-test-"));

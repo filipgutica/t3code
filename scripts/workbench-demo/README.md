@@ -147,10 +147,28 @@ use **Clear filters** to restore All.
 Search for an excluded Ticket in All and inspect
 its Thread history or settled section to confirm why it was omitted.
 
-The hosted demo has one environment. Other-environment exclusion is covered by
-`workbenchAttention.logic.test.ts`; a foreign environment cannot honestly be
-seeded as a local native Thread. This fixture does not claim a multi-environment
-runtime verification.
+The hosted demo and default local run have one environment. To exercise a real
+second environment locally, run:
+
+```sh
+bash scripts/workbench-demo/run.sh --remote --home ~/.t3-workbench-demos/guide
+```
+
+This installs the published upstream `t3` release at the fork's integrated pin
+(`scripts/workbench-ci-scope.json`, `upstreamBase`) in the disposable run's
+`remote` directory and starts it on a free localhost port. It requires access to
+GitHub and npm; an unresolved or unavailable pin fails startup without a fallback.
+It seeds a synthetic **Orbit API (remote)** Project there, plus a **Remote machine**
+Board and one unstarted Ticket in Workbench. Existing fixture IDs stay unchanged.
+No provider runs during seeding.
+
+Open the demo pairing URL, then use **Settings → Connections → Add environment**
+with the printed remote pairing URL. Saved connections live in that browser, so
+repeat this for each fresh run. The remote Ticket is then ready to start on the
+second environment. Ctrl-C stops both servers and removes both sets of state;
+interrupted-run recovery also stops both. Other-environment attention exclusion
+remains covered by `workbenchAttention.logic.test.ts`; no remote Thread or
+Assignment is seeded by this option.
 
 Synthetic PRs 901–905 belong to the fictional
 `workbench-synthetic/attention-fixtures` repository; PR 906 belongs to the separate

@@ -37,13 +37,25 @@ const serverArgs = (home: string, built: boolean) => {
   ];
 };
 
+const upstreamEnvironment = (home: string): NodeJS.ProcessEnv => ({
+  ...Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !key.startsWith("T3CODE_") && key !== "VITE_DEV_SERVER_URL",
+    ),
+  ),
+  T3CODE_HOME: home,
+  T3CODE_AUTO_BOOTSTRAP_PROJECT_FROM_CWD: "0",
+});
+
 export const startDemo = async (
   input: string,
-  options: { built?: boolean } = {},
+  options: { built?: boolean; upstreamLauncher?: string } = {},
 ): Promise<number> => {
   const home = requireHome(input);
   const built = options.built ?? false;
-  const args = serverArgs(home, built);
+  const args = options.upstreamLauncher
+    ? [options.upstreamLauncher, "serve", "--host", "127.0.0.1", "--base-dir", home]
+    : serverArgs(home, built);
   const disposableLock = NodePath.join(home, ".disposable-demo.lock");
   if (NodeFS.existsSync(disposableLock))
     throw new Error(
@@ -99,8 +111,8 @@ export const startDemo = async (
       delete env.T3CODE_BOOTSTRAP_FD;
     }
     const child = NodeChildProcess.spawn(process.execPath, args, {
-      cwd: root,
-      env,
+      cwd: options.upstreamLauncher ? home : root,
+      env: options.upstreamLauncher ? upstreamEnvironment(home) : env,
       stdio: "inherit",
       // Own one process group so a stopped launcher cannot leave Vite or a
       // server running with this demo's credentials.

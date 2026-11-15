@@ -12,6 +12,7 @@ export const launchDemo = async (input: {
   home: string;
   env?: NodeJS.ProcessEnv;
   built?: boolean | undefined;
+  upstreamLauncher?: string | undefined;
 }) => {
   const home = requireHome(input.home);
   const child = NodeChildProcess.spawn(
@@ -22,6 +23,7 @@ export const launchDemo = async (input: {
       "--home",
       home,
       ...(input.built ? ["--built"] : []),
+      ...(input.upstreamLauncher ? ["--upstream-launcher", input.upstreamLauncher] : []),
     ],
     {
       cwd: root,

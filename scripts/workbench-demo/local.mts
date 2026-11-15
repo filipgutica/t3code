@@ -469,7 +469,7 @@ const runGit = async (cwd: string, args: ReadonlyArray<string>): Promise<string>
   return result.stdout.trim();
 };
 
-const ensureRepository = async (
+export const ensureRepository = async (
   root: string,
   repository: (typeof LOCAL_DEMO_REPOSITORIES)[number],
   remoteUrl: string | undefined,
@@ -589,7 +589,7 @@ const ensureRepository = async (
   }
 };
 
-const ensureLocalOrigin = async ({
+export const ensureLocalOrigin = async ({
   root,
   repositoryId,
   originDirectory,

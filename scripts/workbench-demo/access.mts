@@ -10,7 +10,7 @@ const root = NodeURL.fileURLToPath(new URL("../../", import.meta.url));
 export const withDemoAccess = async <T,>(
   homeInput: string,
   operation: (access: { wsUrl: string; token: string }) => Promise<T>,
-  options: { ttl?: "10m" | "30m" } = {},
+  options: { ttl?: "10m" | "30m"; upstreamLauncher?: string } = {},
 ): Promise<T> => {
   const home = requireHome(homeInput);
   const runtime: unknown = JSON.parse(
@@ -34,7 +34,7 @@ export const withDemoAccess = async <T,>(
   const issued = await exec(
     process.execPath,
     [
-      "apps/server/src/bin.ts",
+      options.upstreamLauncher ?? "apps/server/src/bin.ts",
       "auth",
       "session",
       "issue",
@@ -46,7 +46,10 @@ export const withDemoAccess = async <T,>(
       "Workbench demo setup",
       "--json",
     ],
-    { cwd: root },
+    {
+      cwd: root,
+      ...(options.upstreamLauncher ? { env: { ...process.env, T3CODE_HOME: home } } : {}),
+    },
   );
   const credential: unknown = JSON.parse(issued.stdout);
   if (
@@ -67,7 +70,7 @@ export const withDemoAccess = async <T,>(
     await exec(
       process.execPath,
       [
-        "apps/server/src/bin.ts",
+        options.upstreamLauncher ?? "apps/server/src/bin.ts",
         "auth",
         "session",
         "revoke",
@@ -75,7 +78,10 @@ export const withDemoAccess = async <T,>(
         home,
         credential.sessionId,
       ],
-      { cwd: root },
+      {
+        cwd: root,
+        ...(options.upstreamLauncher ? { env: { ...process.env, T3CODE_HOME: home } } : {}),
+      },
     );
   }
 };

@@ -18,6 +18,7 @@ import { readDemoModelSelection, verifyLocal } from "./local.mts";
 import { seedInstalledDemoProviders } from "./providers.mts";
 import { stopDemo } from "./lifecycle.mts";
 import { resetToBaseline } from "./reset-to-baseline.mts";
+import { launchRemoteDemo } from "./remote.mts";
 
 const RUNS_DIRECTORY = "runs";
 const LOCK_FILE = ".disposable-demo.lock";
@@ -34,6 +35,9 @@ export type DisposableDemoSession = {
   readonly sourceHome: string;
   readonly runHome: string;
   readonly pairingUrl: string;
+  readonly remote?:
+    | { readonly origin: string; readonly pairingUrl: string; readonly version: string }
+    | undefined;
   readonly exited: Promise<void>;
   readonly stop: () => Promise<void>;
   readonly finish: () => Promise<void>;
@@ -148,6 +152,7 @@ const stopRecordedRun = async (runHome: string): Promise<void> => {
 
 export const startDisposableDemo = async (input: {
   readonly sourceHome: string;
+  readonly remote?: boolean;
 }): Promise<DisposableDemoSession> => {
   const sourceHome = requireHome(input.sourceHome);
   const runHome = NodePath.join(
@@ -157,6 +162,7 @@ export const startDisposableDemo = async (input: {
   await NodeFSP.mkdir(runsPath(sourceHome), { recursive: true, mode: 0o700 });
   await acquireLock(sourceHome, runHome);
   let server: Awaited<ReturnType<typeof launchDemo>> | undefined;
+  let remote: Awaited<ReturnType<typeof launchRemoteDemo>> | undefined;
   try {
     await setupHome(runHome);
     await copyIfPresent(
@@ -190,6 +196,7 @@ export const startDisposableDemo = async (input: {
     await withDemoAccess(runHome, (access) =>
       verifyLocal({ home: runHome, ...access, storyOutcomes: true }),
     );
+    if (input.remote) remote = await launchRemoteDemo(runHome);
   } catch (error) {
     await server?.stop().catch(() => undefined);
     throw new Error(
@@ -202,20 +209,25 @@ export const startDisposableDemo = async (input: {
   let stopPromise: Promise<void> | undefined;
   const stop = async () => {
     stopping = true;
-    stopPromise ??= server?.stop() ?? Promise.resolve();
+    stopPromise ??= Promise.all([server?.stop(), remote?.stop()]).then(() => undefined);
     await stopPromise;
   };
-  const exited = server?.exited.then(() => {
-    if (!stopping)
-      throw new Error(
-        `The disposable demo exited unexpectedly. Its state is retained at ${runHome}; inspect it before retrying.`,
-      );
-  });
+  const exited =
+    server &&
+    Promise.race([server.exited, ...(remote ? [remote.exited] : [])]).then(async () => {
+      if (!stopping) {
+        if (remote) await stop();
+        throw new Error(
+          `The disposable demo exited unexpectedly. Its state is retained at ${runHome}; inspect it before retrying.`,
+        );
+      }
+    });
   if (!exited) throw new Error("Disposable demo failed to start.");
   return {
     sourceHome,
     runHome,
     pairingUrl: server.pairingUrl,
+    ...(remote ? { remote } : {}),
     exited,
     stop,
     finish: async () => {
@@ -239,6 +251,6 @@ export const recoverDisposableDemo = async (input: {
   const lock = await readLock(lockPath(sourceHome));
   if (lock.sourceHome !== sourceHome || lock.runHome !== runHome)
     throw new Error("The source lock does not point to the requested disposable run.");
-  await stopRecordedRun(runHome);
+  await Promise.all([stopRecordedRun(runHome), stopRecordedRun(NodePath.join(runHome, "remote"))]);
   await finishDisposableRun(sourceHome, runHome);
 };

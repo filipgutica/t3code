@@ -37,6 +37,7 @@ node scripts/workbench-demo/cli.mts COMMAND [--home PATH]
 
   setup    Run the first-time setup wizard (bash scripts/workbench-demo/setup.sh)
   run      Start a fresh disposable demo from the saved profile; Ctrl-C cleans it up
+           --remote adds a pinned upstream server and a remote-repository Ticket
   recover  Stop and remove a disposable demo left by an interrupted run
 
 Maintenance: --help --maintenance (see scripts/workbench-demo/maintenance.md)
@@ -69,6 +70,8 @@ const { values, positionals } = NodeUtil.parseArgs({
     help: { type: "boolean", short: "h", default: false },
     maintenance: { type: "boolean", default: false },
     built: { type: "boolean", default: false },
+    remote: { type: "boolean", default: false },
+    "upstream-launcher": { type: "string" },
   },
 });
 const main = async () => {
@@ -125,7 +128,10 @@ const main = async () => {
     return;
   }
   if (command === "start") {
-    process.exitCode = await startDemo(home, { built: values.built });
+    process.exitCode = await startDemo(home, {
+      built: values.built,
+      ...(values["upstream-launcher"] ? { upstreamLauncher: values["upstream-launcher"] } : {}),
+    });
     return;
   }
   if (command === "run") {
@@ -139,9 +145,16 @@ const main = async () => {
     process.once("SIGTERM", stop);
     try {
       console.log(`Preparing a fresh demo from ${home}; seeding repositories…`);
-      session = await startDisposableDemo({ sourceHome: home });
+      session = await startDisposableDemo({ sourceHome: home, remote: values.remote });
       console.log(`Disposable demo home: ${session.runHome}`);
       console.log(`Pairing URL: ${session.pairingUrl}`);
+      if (session.remote) {
+        console.log(`Remote upstream t3@${session.remote.version}: ${session.remote.origin}`);
+        console.log(`Remote pairing URL: ${session.remote.pairingUrl}`);
+        console.log(
+          "In the demo, use Settings → Connections → Add environment with the remote pairing URL.",
+        );
+      }
       console.log("Ready. Press Ctrl-C to stop and clean up this demo.");
       if (stopRequested) await session.stop();
       await session.exited;
