@@ -1,5 +1,6 @@
 import { seedNativeThread } from "./testing/nativeThreads.ts";
 import {
+  EnvironmentId,
   ProjectId,
   ProviderInstanceId,
   ThreadId,
@@ -1291,6 +1292,106 @@ describe("WorkbenchStore", () => {
       );
 
       expect(error.code).toBe("thread_not_found");
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
+  it.effect("links another machine's Projects and Threads without reading them here", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const localProjectId = ProjectId.make("t3-project-local");
+      const remoteProjectId = ProjectId.make("t3-project-remote");
+      const otherRemoteProjectId = ProjectId.make("t3-project-remote-2");
+      const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
+      const projectId = WorkbenchProjectId.make("workbench-project-1");
+      const ticketId = WorkbenchTicketId.make("ticket-1");
+      const remoteThreadId = ThreadId.make("remote-thread");
+      const createdAt = "2026-09-03T12:00:00.000Z";
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES (
+          ${localProjectId}, 'Orbit', '/tmp/orbit', '[]', ${createdAt}, ${createdAt}, NULL
+        )
+      `;
+      const remoteProjects = [
+        { projectId: remoteProjectId, environmentId: remoteEnvironmentId, title: "Beacon" },
+        {
+          projectId: otherRemoteProjectId,
+          environmentId: remoteEnvironmentId,
+          title: "Beacon API",
+        },
+      ];
+
+      const board = yield* store.createProject({
+        id: projectId,
+        title: "Agent Workbench",
+        linkedProjectIds: [localProjectId, remoteProjectId, otherRemoteProjectId],
+        remoteProjects,
+        createdAt,
+      });
+      expect(board.remoteProjects).toEqual(remoteProjects);
+      const mixed = yield* Effect.flip(
+        store.createTicket({
+          id: WorkbenchTicketId.make("ticket-mixed"),
+          projectId,
+          title: "Mixed",
+          markdown: "",
+          repositoryProjectIds: [localProjectId, remoteProjectId],
+          createdAt,
+        }),
+      );
+      expect(mixed.code).toBe("repository_environment_mismatch");
+      yield* store.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Remote",
+        markdown: "",
+        repositoryProjectIds: [remoteProjectId, otherRemoteProjectId],
+        createdAt,
+      });
+
+      const wrongMachine = yield* Effect.flip(
+        store.createAssignment({
+          id: WorkbenchAssignmentId.make("assignment-wrong"),
+          ticketId,
+          threadId: remoteThreadId,
+          remote: {
+            environmentId: EnvironmentId.make("environment:other"),
+            projectId: remoteProjectId,
+          },
+          createdAt,
+        }),
+      );
+      expect(wrongMachine.code).toBe("thread_project_mismatch");
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-1"),
+        ticketId,
+        threadId: remoteThreadId,
+        remote: { environmentId: remoteEnvironmentId, projectId: otherRemoteProjectId },
+        createdAt,
+      });
+
+      const snapshot = yield* store.getSnapshot;
+      expect(snapshot.projects[0]?.remoteProjects).toEqual(remoteProjects);
+      expect(snapshot.assignments).toEqual([
+        expect.objectContaining({ threadId: remoteThreadId, environmentId: remoteEnvironmentId }),
+      ]);
+      // A local Thread reusing the remote ID must not gain the remote Ticket's authority.
+      expect(Option.isNone(yield* store.resolveThreadOwner(remoteThreadId))).toBe(true);
+      const locked = yield* Effect.flip(
+        store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          repositoryProjectIds: [remoteProjectId],
+          updatedAt: createdAt,
+          writer: { kind: "user" },
+        }),
+      );
+      expect(locked).toMatchObject({
+        code: "ticket_repository_scope_locked",
+        message: expect.stringContaining("Beacon API"),
+      });
     }).pipe(Effect.provide(TestLayer)),
   );
 

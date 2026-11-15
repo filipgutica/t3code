@@ -1,6 +1,7 @@
 import * as Schema from "effect/Schema";
 
 import {
+  EnvironmentId,
   IsoDateTime,
   ProjectId,
   ThreadId,
@@ -167,10 +168,23 @@ export const workbenchTicketIssueLabel = (
   references: ReadonlyArray<{ readonly url: string }>,
 ): string | null => workbenchTicketIssueReferences(references)[0]?.label ?? null;
 
+/**
+ * A Board repository on another environment. The Board's environment cannot read it, so the
+ * linking client supplies the title it showed.
+ */
+export const WorkbenchRemoteProject = Schema.Struct({
+  projectId: ProjectId,
+  environmentId: EnvironmentId,
+  title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
+});
+export type WorkbenchRemoteProject = typeof WorkbenchRemoteProject.Type;
+
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   linkedProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
+  /** The entries of `linkedProjectIds` that live on another environment. */
+  remoteProjects: Schema.optionalKey(Schema.Array(WorkbenchRemoteProject)),
   archivedAt: Schema.NullOr(IsoDateTime),
   revision: NonNegativeInt,
   createdAt: IsoDateTime,
@@ -263,6 +277,8 @@ export const WorkbenchAssignment = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
+  /** Set when the Thread lives on another environment than the Board. */
+  environmentId: Schema.optionalKey(EnvironmentId),
   createdAt: IsoDateTime,
   supersededAt: Schema.NullOr(IsoDateTime),
 });
@@ -428,6 +444,7 @@ export const WorkbenchCreateProjectInput = Schema.Struct({
   id: WorkbenchProjectId,
   title: WorkbenchProject.fields.title,
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
+  remoteProjects: WorkbenchProject.fields.remoteProjects,
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Type;
@@ -439,6 +456,7 @@ export const WorkbenchUpdateProjectInput = Schema.Struct({
   // The server treats this as an additive set. Existing links remain intact;
   // callers may send either the new IDs or the full selected list.
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
+  remoteProjects: WorkbenchProject.fields.remoteProjects,
   updatedAt: IsoDateTime,
 });
 export type WorkbenchUpdateProjectInput = typeof WorkbenchUpdateProjectInput.Type;
@@ -522,10 +540,18 @@ export const WorkbenchRegenerateTicketSummaryInput = Schema.Struct({
 export type WorkbenchRegenerateTicketSummaryInput =
   typeof WorkbenchRegenerateTicketSummaryInput.Type;
 
+/** A Thread on another environment, which the Board's environment cannot read. */
+export const WorkbenchRemoteThread = Schema.Struct({
+  environmentId: EnvironmentId,
+  projectId: ProjectId,
+});
+export type WorkbenchRemoteThread = typeof WorkbenchRemoteThread.Type;
+
 export const WorkbenchCreateAssignmentInput = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
+  remote: Schema.optionalKey(WorkbenchRemoteThread),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
@@ -541,6 +567,7 @@ export const WorkbenchReplaceAssignmentInput = Schema.Struct({
   ticketId: WorkbenchTicketId,
   previousThreadId: ThreadId,
   threadId: ThreadId,
+  remote: Schema.optionalKey(WorkbenchRemoteThread),
   replacedAt: IsoDateTime,
 });
 export type WorkbenchReplaceAssignmentInput = typeof WorkbenchReplaceAssignmentInput.Type;
@@ -600,6 +627,8 @@ export const WorkbenchOperationErrorCode = Schema.Literals([
   "linked_project_not_found",
   "linked_project_not_repository",
   "repository_not_linked",
+  "repository_environment_mismatch",
+  "repository_remote_unsupported",
   "ticket_repository_scope_locked",
   "thread_not_found",
   "thread_not_owner",

@@ -1314,6 +1314,17 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
     }),
   );
   yield* applyMigration(27, migrateJiraMarkupBriefs);
+  yield* applyMigration(
+    28,
+    Effect.gen(function* () {
+      // NULL environment_id means the Board's own environment; other environments' records
+      // cannot be read here, so a link keeps the title and an Assignment its Thread's Project.
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN environment_id TEXT`;
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN remote_title TEXT`;
+      yield* sql`ALTER TABLE workbench_assignments ADD COLUMN environment_id TEXT`;
+      yield* sql`ALTER TABLE workbench_assignments ADD COLUMN remote_t3_project_id TEXT`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)
