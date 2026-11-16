@@ -99,6 +99,7 @@ export const prepareDemoProfile = async (input: { readonly home: string }): Prom
         ...access,
         repositoryRemotes: remotes,
         repositoryCommits: commits,
+        localOriginDirectory: NodePath.join(home, "git-remotes"),
         prepareWorkspaces: true,
       });
       await linkDemoPullRequests({ ...access, urls: urls.slice(0, 8) });
