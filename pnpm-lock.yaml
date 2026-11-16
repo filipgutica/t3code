@@ -1345,8 +1345,8 @@ importers:
         specifier: 7.0.3
         version: 7.0.3(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(astro@7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0))(esbuild@0.28.2)(jiti@2.7.0)(supports-color@8.1.1)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(vue@3.5.43(typescript@6.0.3))(yaml@2.9.0)
       '@filipgutica/ui':
-        specifier: 2.1.0
-        version: 2.1.0(vue@3.5.43(typescript@6.0.3))
+        specifier: 2.2.1
+        version: 2.2.1(vue@3.5.43(typescript@6.0.3))
       astro:
         specifier: ^7.0.3
         version: 7.3.5(@types/node@24.12.4)(@volar/typescript@2.4.28(typescript@6.0.3))(@vue/language-core@3.3.12)(aws4fetch@1.0.20)(idb-keyval@6.2.1)(ioredis@5.11.0(supports-color@8.1.1))(jiti@2.7.0)(terser@5.48.0)(typescript@6.0.3)(unrun@0.2.39)(vue-tsc@3.3.12(typescript@6.0.3))(yaml@2.9.0)
@@ -4515,12 +4515,12 @@ packages:
     cpu: [x64, arm64]
     os: [darwin, linux, win32, android]
 
-  '@filipgutica/design-system@1.0.19':
-    resolution: {integrity: sha512-NxnKTcISb1dRcf2+sDj/Jc9Zt/64wQDN+l8DXKN7yBjPP4S3RTqfivV4iBbF2iR0gJoh1hb2e2BfPRg+AXGZLQ==}
+  '@filipgutica/design-system@1.0.21':
+    resolution: {integrity: sha512-95Gu91G14E/t4VXVD0PclT9U3pV5vmtjun5oNAivycyXmgrJ91Q4z8P3BkI2qRJwzcNbbMZpoiTxt8q4DlBUFg==}
     engines: {node: '>=22.12'}
 
-  '@filipgutica/ui@2.1.0':
-    resolution: {integrity: sha512-jpnIuktO/cI+z1jk6tEX8YLNLeLVhj27nWzVRrrnO35Npp8Ut07YZGpWhnlp2vzg4th0tlgY33/vrjMVu3gTtw==}
+  '@filipgutica/ui@2.2.1':
+    resolution: {integrity: sha512-qBBhUCKaqCp1sab7+vN1wHBFst9CyLOzF8zp5kEAHf89EwyLqk1DGvlvUksj8fUXowzjpTPt3aMdhGp1rPg1XA==}
     engines: {node: '>=22.12'}
     peerDependencies:
       vue: ^3.5.0
@@ -15271,13 +15271,13 @@ snapshots:
       '@ff-labs/fff-bin-win32-arm64': 0.11.0
       '@ff-labs/fff-bin-win32-x64': 0.11.0
 
-  '@filipgutica/design-system@1.0.19':
+  '@filipgutica/design-system@1.0.21':
     dependencies:
       jsonc-parser: 3.3.1
 
-  '@filipgutica/ui@2.1.0(vue@3.5.43(typescript@6.0.3))':
+  '@filipgutica/ui@2.2.1(vue@3.5.43(typescript@6.0.3))':
     dependencies:
-      '@filipgutica/design-system': 1.0.19
+      '@filipgutica/design-system': 1.0.21
       '@vueuse/core': 14.4.0(vue@3.5.43(typescript@6.0.3))
       reka-ui: 2.11.0(vue@3.5.43(typescript@6.0.3))
       shiki: 3.23.0
