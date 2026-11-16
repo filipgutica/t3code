@@ -10,7 +10,7 @@ import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import {
   AlertCircleIcon,
@@ -910,6 +910,8 @@ function WorkbenchPageTicketDialogs(
 
   const { ticketDialogOpen, submitTicket, handleTicketDialogOpenChange } = dialogs;
   const routeManualTicket = getRouteTicketCreation(props) === "manual";
+  // A created Ticket has already replaced create=ticket with its own route.
+  const created = useRef(false);
   const { linkedT3Projects } = boardData;
 
   const pending = pendingAction !== null;
@@ -926,9 +928,10 @@ function WorkbenchPageTicketDialogs(
           error={error ?? query.error}
           onOpenChange={(open) => {
             handleTicketDialogOpenChange(open);
-            if (!open && routeManualTicket) dialogs.closeTicketConversation();
+            if (!open && routeManualTicket && !created.current) dialogs.closeTicketConversation();
+            created.current = false;
           }}
-          onCreate={submitTicket}
+          onCreate={async (draft) => (created.current = await submitTicket(draft))}
         />
       ) : null}
     </>
