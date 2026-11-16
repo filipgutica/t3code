@@ -145,11 +145,16 @@ export const launchRemoteDemo = async (runHome: string) => {
         }),
       );
     });
-    const paired = await exec(process.execPath, [upstreamLauncher, "pair", "--base-dir", home], {
-      cwd: home,
-      env: { ...process.env, T3CODE_HOME: home },
-      timeout: 30_000,
-    });
+    // The default five-minute token often expires before someone pairs the demo.
+    const paired = await exec(
+      process.execPath,
+      [upstreamLauncher, "pair", "--base-dir", home, "--ttl", "2h"],
+      {
+        cwd: home,
+        env: { ...process.env, T3CODE_HOME: home },
+        timeout: 30_000,
+      },
+    );
     const pairingUrl = paired.stdout.match(/https?:\/\/[^\s]+\/pair#[^\s]+/)?.[0];
     if (!pairingUrl)
       throw new Error("The pinned upstream pair command did not print a pairing URL.");
