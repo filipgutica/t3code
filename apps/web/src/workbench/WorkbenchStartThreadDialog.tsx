@@ -6,14 +6,19 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
-import { AuthOrchestrationOperateScope, ProviderInstanceId } from "@t3tools/contracts";
+import {
+  AuthOrchestrationOperateScope,
+  ProviderInstanceId,
+  resolveEnvironmentMachineKind,
+} from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useState, type FormEvent } from "react";
 
 import { useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
-import { useEnvironment } from "../state/environments";
+import { useConnectedEnvironmentIds, useEnvironment } from "../state/environments";
+import { BranchToolbarEnvironmentSelector } from "../components/BranchToolbarEnvironmentSelector";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
@@ -278,14 +283,41 @@ function useWorkbenchStartThreadEnvironment({
   const config = useAtomValue(serverEnvironment.configValueAtom(targetEnvironmentId));
   const canOperate = useEnvironmentScope(targetEnvironmentId, AuthOrchestrationOperateScope);
   const settings = useEnvironmentSettings(targetEnvironmentId);
+  const machineCount = useConnectedEnvironmentIds().length;
   return {
     environmentId: targetEnvironmentId,
     remote,
+    // Like the composer, name the machine once this client is connected to more than one.
+    showMachine: remote || machineCount > 1,
+    machineKind: resolveEnvironmentMachineKind(config ?? null),
     machineLabel: machine?.label ?? "Another machine",
     settings,
     providers: remote ? (config?.providers ?? []) : providers,
     available: !remote || (canOperate && machine?.connection.phase === "connected"),
   };
+}
+
+function WorkbenchStartThreadMachine({
+  target,
+}: {
+  target: ReturnType<typeof useWorkbenchStartThreadEnvironment>;
+}) {
+  if (!target.showMachine) return null;
+  return (
+    <BranchToolbarEnvironmentSelector
+      envLocked
+      environmentId={target.environmentId}
+      availableEnvironments={[
+        {
+          environmentId: target.environmentId,
+          projectId: null,
+          label: target.machineLabel,
+          isPrimary: !target.remote,
+          machine: target.machineKind,
+        },
+      ]}
+    />
+  );
 }
 
 function workbenchStartThreadDescription({
@@ -421,6 +453,7 @@ export function WorkbenchStartThreadDialog({
         <DialogPanel>
           <form id="workbench-start-thread" className="space-y-2" onSubmit={submit}>
             <div className="flex flex-wrap items-center gap-2">
+              <WorkbenchStartThreadMachine target={target} />
               <WorkbenchThreadRepositoryPicker
                 ticketRepositoryIds={ticketRepositoryIds}
                 projects={projects}
