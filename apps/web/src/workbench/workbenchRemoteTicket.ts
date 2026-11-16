@@ -18,5 +18,5 @@ export const portableWorkbenchTicketPrompt = ({
       reference.title ? `- ${reference.title}: ${reference.url}` : `- ${reference.url}`,
     ),
     "## Progress",
-    ticket.progress ?? "No progress recorded.",
+    ticket.progress?.trim() ? ticket.progress : "No progress recorded.",
   ].join("\n\n");
