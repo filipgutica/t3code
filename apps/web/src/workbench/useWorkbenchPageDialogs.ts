@@ -7,6 +7,7 @@ import {
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
+import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { useAtomCommand } from "../state/use-atom-command";
 import { randomUUID } from "../lib/utils";
@@ -149,11 +150,7 @@ export function useWorkbenchPageDialogs({
     )
       return;
     setError(null);
-    if (
-      !selectedProject.linkedProjectIds.some(
-        (id) => !selectedProject.remoteProjects?.some((remote) => remote.projectId === id),
-      )
-    ) {
+    if (!hasWorkbenchLocalRepository(selectedProject)) {
       setTicketDialogOpen(true);
       return;
     }

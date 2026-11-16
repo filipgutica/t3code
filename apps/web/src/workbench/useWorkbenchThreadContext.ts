@@ -5,6 +5,7 @@ import * as Option from "effect/Option";
 import { AsyncResult } from "effect/reactivity";
 
 import { environmentSummaries } from "../state/presentation";
+import { primaryEnvironmentIdAtom } from "../state/primaryEnvironment";
 import { workbenchEnvironment } from "./state";
 import { getWorkbenchContextForThread } from "./workbench.logic";
 
@@ -15,7 +16,10 @@ const threadContextAtom = Atom.family((key: string) =>
       ThreadId | null,
     ];
     if (threadEnvironmentId === null || threadId === null) return null;
-    for (const environmentId of get(environmentSummaries.connectedEnvironmentIdsAtom)) {
+    const connected = get(environmentSummaries.connectedEnvironmentIdsAtom);
+    // A Thread's Board lives on its own machine, or on this client's primary one for remote Threads.
+    const boardHosts = new Set([threadEnvironmentId, get(primaryEnvironmentIdAtom)]);
+    for (const environmentId of connected.filter((id) => boardHosts.has(id))) {
       const result = get(workbenchEnvironment.snapshot({ environmentId, input: {} }));
       // Workbench is optional on connected upstream servers; failed reads have no context.
       const snapshot = Option.getOrNull(AsyncResult.value(result));

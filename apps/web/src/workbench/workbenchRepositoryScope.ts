@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ProjectId,
+  WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -17,6 +18,23 @@ export type WorkbenchRepositoryScopeDraft = {
 export const getWorkbenchRepositoryScope = (ticket: WorkbenchTicket): WorkbenchRepositoryScope => ({
   repositoryProjectIds: ticket.repositoryProjectIds,
 });
+
+/** Remote repositories start Threads on their own machine, so their scope never prepares worktrees here. */
+export const isWorkbenchRemoteRepositoryScope = (
+  scope: WorkbenchRepositoryScope,
+  board: Pick<WorkbenchProject, "remoteProjects"> | undefined,
+) =>
+  scope.repositoryProjectIds.some(
+    (id) => board?.remoteProjects?.some((remote) => remote.projectId === id) ?? false,
+  );
+
+/** Planning drafts run on the Board's machine, so they need one of its own repositories. */
+export const hasWorkbenchLocalRepository = (
+  board: Pick<WorkbenchProject, "linkedProjectIds" | "remoteProjects">,
+) =>
+  board.linkedProjectIds.some(
+    (id) => !board.remoteProjects?.some((remote) => remote.projectId === id),
+  );
 
 export const isWorkbenchRepositoryScopeEqual = (
   left: WorkbenchRepositoryScope,

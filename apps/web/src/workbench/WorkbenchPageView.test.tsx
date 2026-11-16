@@ -142,10 +142,19 @@ const conversationFixture = ({
     createTicket: conversation === "create" || conversation === "legacy",
   };
 };
-const workspaceFixture = (workspaceState: "active" | "archived" | "deleted") => {
+type WorkspaceState = "active" | "archived" | "deleted" | "remote";
+const workspaceFixture = (workspaceState: WorkspaceState) => {
   const currentWorkspace = {
     ...workspace,
     archivedAt: workspaceState === "archived" ? timestamp : null,
+    // The Board's only repository lives on another machine.
+    ...(workspaceState === "remote"
+      ? {
+          remoteProjects: [
+            { projectId: repository.id, environmentId: EnvironmentId.make("b"), title: "Repo" },
+          ],
+        }
+      : {}),
   };
   return {
     currentWorkspace,
@@ -196,7 +205,7 @@ function Harness({
   archivedAssignedThread = false,
 }: {
   canOperate?: boolean;
-  workspaceState?: "active" | "archived" | "deleted";
+  workspaceState?: WorkspaceState;
   detail?: boolean;
   /** The Ticket has a Jira issue Reference. */
   linked?: boolean;
@@ -557,6 +566,10 @@ it("opens create=ticket in the Board chat", async () => {
   await render({ conversation: "create", workspaceState: "archived" });
   expect(document.querySelector("[data-conversation]")).toBeNull();
   expect(document.querySelector("article")).not.toBeNull();
+  // A planning draft needs a repository on this machine, so the manual form opens instead.
+  await render({ conversation: "create", workspaceState: "remote" });
+  expect(document.body.textContent).not.toContain("Preparing conversation");
+  expect(document.getElementById("create-workbench-ticket")).not.toBeNull();
 });
 
 it("shows a draft on the board while New ticket remains available", async () => {

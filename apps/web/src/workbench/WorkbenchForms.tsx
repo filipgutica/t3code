@@ -2536,7 +2536,8 @@ function WorkbenchTicketWorkspacePanel({
             {ticketWorkspace.errorMessage}
           </p>
         ) : null}
-        {ticketWorkspace && !remote ? (
+        {/* Worktrees kept from before the Ticket moved to another machine stay removable. */}
+        {ticketWorkspace ? (
           <WorkbenchTicketAdvancedWorkspace
             advancedWorkspaceSettingsCollapsed={advancedWorkspaceSettingsCollapsed}
             setAdvancedWorkspaceSettingsCollapsed={setAdvancedWorkspaceSettingsCollapsed}

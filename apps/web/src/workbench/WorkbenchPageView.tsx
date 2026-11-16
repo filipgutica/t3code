@@ -6,6 +6,7 @@ import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
+import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
@@ -685,6 +686,19 @@ function WorkbenchPageBoardChat({
   );
 }
 
+/** How the route's New Ticket request opens: a planning draft, or the manual form when no repository is on this machine. */
+function getRouteTicketCreation({
+  createTicket,
+  pageData,
+  selection,
+}: Pick<WorkbenchPageViewProps, "createTicket" | "pageData" | "selection">) {
+  const board = selection.selectedProject;
+  // An archived Board is read-only, so it never starts a conversation.
+  if (createTicket !== true || !pageData.canOperate || !board || board.archivedAt != null)
+    return null;
+  return hasWorkbenchLocalRepository(board) ? "draft" : "manual";
+}
+
 function WorkbenchPageWorkspace(
   props: Pick<
     WorkbenchPageViewProps,
@@ -709,9 +723,7 @@ function WorkbenchPageWorkspace(
     workspaceId: selectedProject?.id ?? null,
     selectedTicketId: selection.selectedTicketId,
     ticketExists: selectedTicket !== null,
-    // An archived Board is read-only, so it never starts a conversation.
-    createTicket:
-      props.createTicket === true && pageData.canOperate && selectedProject?.archivedAt == null,
+    createTicket: getRouteTicketCreation(props) === "draft",
     awaitingTicketId: selection.awaitingTicketId,
   });
 
@@ -889,7 +901,7 @@ function WorkbenchPageThreadDialogs(
 function WorkbenchPageTicketDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    "boardData" | "createTicket" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
   >,
 ) {
   const { pageData, selection, dialogs, boardData, error, pendingAction } = props;
@@ -897,6 +909,7 @@ function WorkbenchPageTicketDialogs(
   const { selectedProject } = selection;
 
   const { ticketDialogOpen, submitTicket, handleTicketDialogOpenChange } = dialogs;
+  const routeManualTicket = getRouteTicketCreation(props) === "manual";
   const { linkedT3Projects } = boardData;
 
   const pending = pendingAction !== null;
@@ -906,12 +919,15 @@ function WorkbenchPageTicketDialogs(
       {selectedProject ? (
         <WorkbenchTicketDialog
           key={selectedProject.id}
-          open={ticketDialogOpen}
+          open={ticketDialogOpen || routeManualTicket}
           linkedProjects={linkedT3Projects}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
-          onOpenChange={handleTicketDialogOpenChange}
+          onOpenChange={(open) => {
+            handleTicketDialogOpenChange(open);
+            if (!open && routeManualTicket) dialogs.closeTicketConversation();
+          }}
           onCreate={submitTicket}
         />
       ) : null}
