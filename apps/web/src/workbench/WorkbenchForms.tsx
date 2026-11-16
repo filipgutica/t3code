@@ -3579,9 +3579,17 @@ function WorkbenchWorkspaceRepositories({
   remoteProjects: ReadonlyArray<WorkbenchRemoteProject>;
   setRemoteProjects: Dispatch<SetStateAction<ReadonlyArray<WorkbenchRemoteProject>>>;
 }) {
-  const machineIds = [...new Set(projects.map((project) => project.environmentId))].toSorted(
-    (left, right) =>
-      left === environmentId ? -1 : right === environmentId ? 1 : left.localeCompare(right),
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchingProjects = projects.filter(
+    (project) =>
+      project.title.toLowerCase().includes(normalizedQuery) ||
+      project.workspaceRoot.toLowerCase().includes(normalizedQuery),
+  );
+  const machineIds = [
+    ...new Set(matchingProjects.map((project) => project.environmentId)),
+  ].toSorted((left, right) =>
+    left === environmentId ? -1 : right === environmentId ? 1 : left.localeCompare(right),
   );
   return (
     <fieldset className="min-w-0 space-y-2">
@@ -3591,13 +3599,33 @@ function WorkbenchWorkspaceRepositories({
           ? "Already-linked repositories stay selected. Add a directory as a T3 Project first if it is not listed here."
           : "Tickets can target any selected T3 Project."}
       </p>
-      <div className="max-h-60 space-y-1 overflow-y-auto rounded-lg border border-border p-1">
+      {projects.length > 0 ? (
+        <Input
+          type="search"
+          aria-label="Search repositories"
+          placeholder="Search repositories"
+          spellCheck={false}
+          value={query}
+          onChange={(event) => setQuery(event.currentTarget.value)}
+          // Enter would otherwise submit the Board form.
+          onKeyDown={(event) => {
+            if (event.key === "Enter") event.preventDefault();
+          }}
+        />
+      ) : null}
+      {/* A fixed height while searching keeps the centered dialog from jumping as results change. */}
+      <div
+        className={cn(
+          "space-y-1 overflow-y-auto rounded-lg border border-border p-1",
+          normalizedQuery ? "h-60" : "max-h-60",
+        )}
+      >
         {machineIds.map((machineId) => (
           <WorkbenchWorkspaceRepositoryGroup
             key={machineId}
             environmentId={machineId}
             local={machineId === environmentId}
-            projects={projects.filter((project) => project.environmentId === machineId)}
+            projects={matchingProjects.filter((project) => project.environmentId === machineId)}
             pending={pending}
             initialWorkspace={initialWorkspace}
             linkedProjectIds={linkedProjectIds}
@@ -3610,6 +3638,8 @@ function WorkbenchWorkspaceRepositories({
           <p className="p-3 text-sm text-muted-foreground">
             Create a T3 Project before creating a Board.
           </p>
+        ) : matchingProjects.length === 0 ? (
+          <p className="p-3 text-sm text-muted-foreground">No repositories match.</p>
         ) : null}
       </div>
     </fieldset>
