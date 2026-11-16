@@ -17,7 +17,7 @@ import { useState, type FormEvent } from "react";
 import { useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
-import { useEnvironment, useEnvironments } from "../state/environments";
+import { useConnectedEnvironmentIds, useEnvironment } from "../state/environments";
 import { BranchToolbarEnvironmentSelector } from "../components/BranchToolbarEnvironmentSelector";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
@@ -283,11 +283,11 @@ function useWorkbenchStartThreadEnvironment({
   const config = useAtomValue(serverEnvironment.configValueAtom(targetEnvironmentId));
   const canOperate = useEnvironmentScope(targetEnvironmentId, AuthOrchestrationOperateScope);
   const settings = useEnvironmentSettings(targetEnvironmentId);
-  const machineCount = useEnvironments().environments.length;
+  const machineCount = useConnectedEnvironmentIds().length;
   return {
     environmentId: targetEnvironmentId,
     remote,
-    // Like the composer, name the machine once this client knows more than one.
+    // Like the composer, name the machine once this client is connected to more than one.
     showMachine: remote || machineCount > 1,
     machineKind: resolveEnvironmentMachineKind(config ?? null),
     machineLabel: machine?.label ?? "Another machine",
