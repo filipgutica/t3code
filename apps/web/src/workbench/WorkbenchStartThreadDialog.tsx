@@ -6,10 +6,14 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
-import { ProviderInstanceId } from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useState, type FormEvent } from "react";
 
+import { useAtomValue } from "@effect/atom-react";
+import { serverEnvironment } from "../state/server";
+import { useEnvironmentScope } from "../state/session";
+import { useEnvironment } from "../state/environments";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
@@ -259,6 +263,52 @@ const resolveThreadRepositoryChoice = ({
   };
 };
 
+function useWorkbenchStartThreadEnvironment({
+  environmentId,
+  repository,
+  providers,
+}: {
+  environmentId: EnvironmentId;
+  repository: Project | undefined;
+  providers: ReadonlyArray<ServerProvider>;
+}) {
+  const targetEnvironmentId = repository?.environmentId ?? environmentId;
+  const remote = targetEnvironmentId !== environmentId;
+  const machine = useEnvironment(targetEnvironmentId);
+  const config = useAtomValue(serverEnvironment.configValueAtom(targetEnvironmentId));
+  const canOperate = useEnvironmentScope(targetEnvironmentId, AuthOrchestrationOperateScope);
+  const settings = useEnvironmentSettings(targetEnvironmentId);
+  return {
+    environmentId: targetEnvironmentId,
+    remote,
+    machineLabel: machine?.label ?? "Another machine",
+    settings,
+    providers: remote ? (config?.providers ?? []) : providers,
+    available: !remote || (canOperate && machine?.connection.phase === "connected"),
+  };
+}
+
+function workbenchStartThreadDescription({
+  remote,
+  machineLabel,
+  customDescription,
+  additional,
+}: {
+  remote: boolean;
+  machineLabel: string;
+  customDescription: string | undefined;
+  additional: boolean;
+}) {
+  if (remote)
+    return `Runs on ${machineLabel}. The Ticket goes in as the first message for you to send; this Thread can’t read or update the Ticket afterwards.`;
+  return (
+    customDescription ??
+    (additional
+      ? "Start another Thread for this ticket. It can read and update the ticket."
+      : "The Thread can read and update this ticket. Add a message and send when you’re ready.")
+  );
+}
+
 export function WorkbenchStartThreadDialog({
   open,
   onOpenChange,
@@ -311,20 +361,23 @@ export function WorkbenchStartThreadDialog({
     picked: pickedRepositoryProjectId,
     preferred: preferredRepositoryProjectId,
   });
-  const settings = useEnvironmentSettings(environmentId);
+  const repository = projects.find((project) => project.id === repositoryProjectId);
+  const target = useWorkbenchStartThreadEnvironment({ environmentId, repository, providers });
+  const { remote, settings } = target;
   const stickyModelSelection = useComposerDraftStore((store) =>
     store.stickyActiveProvider === null
       ? null
       : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
   );
-  const dialogDescription =
-    customDescription ??
-    (additional
-      ? "Start another Thread for this ticket. It can read and update the ticket."
-      : "The Thread can read and update this ticket. Add a message and send when you’re ready.");
+  const dialogDescription = workbenchStartThreadDescription({
+    remote,
+    machineLabel: target.machineLabel,
+    customDescription,
+    additional,
+  });
   const selection = useWorkbenchStartThreadSelection({
     projectId: repositoryProjectId,
-    providers,
+    providers: target.providers,
     settings,
     defaultModelSelection: resolveWorkbenchDefaultModelSelection({
       settings,
@@ -336,7 +389,13 @@ export function WorkbenchStartThreadDialog({
 
   const { resolvedSelection, selectionAvailable } = selection;
 
-  const cannotStart = disabled || pending || workspaceLocked || !scopeValid || !selectionAvailable;
+  const cannotStart =
+    disabled ||
+    pending ||
+    workspaceLocked ||
+    !scopeValid ||
+    !selectionAvailable ||
+    !target.available;
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (cannotStart || resolvedSelection === null) return;
@@ -371,12 +430,19 @@ export function WorkbenchStartThreadDialog({
                 onChange={setPickedRepositoryProjectId}
               />
               <WorkbenchStartThreadModelPickers
-                environmentId={environmentId}
+                environmentId={target.environmentId}
                 selection={selection}
                 planModeEnabled={settings.planModeEnabled}
               />
             </div>
-            <WorkbenchStartThreadRepositoryNote {...note} locked={workspaceLocked} />
+            {!remote ? (
+              <WorkbenchStartThreadRepositoryNote {...note} locked={workspaceLocked} />
+            ) : null}
+            {!scopeValid ? (
+              <p role="alert" className="text-sm text-destructive">
+                Choose available repositories on one machine.
+              </p>
+            ) : null}
             <WorkbenchStartThreadSelectionStatus selection={selection} />
             {error ? (
               <p role="alert" className="break-words text-sm text-destructive">
@@ -388,7 +454,7 @@ export function WorkbenchStartThreadDialog({
         <WorkbenchStartThreadFooter
           pending={pending}
           disabled={cannotStart}
-          workspaceReady={workspaceReady}
+          workspaceReady={remote || workspaceReady}
           startLabel={startLabel}
           onCancel={() => onOpenChange(false)}
         />

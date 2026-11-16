@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import {
+  AuthOrchestrationOperateScope,
   DEFAULT_SERVER_SETTINGS,
   WorkbenchAssignmentId,
   type EnvironmentId,
@@ -13,9 +14,15 @@ import {
   type WorkbenchAssignment,
   type WorkbenchTicket,
   type WorkbenchTicketId,
+  type WorkbenchProject,
+  type WorkbenchReference,
 } from "@t3tools/contracts";
 import { resolveProjectSettings } from "@t3tools/shared/projectSettings";
 
+import { readEnvironmentScope } from "../state/session";
+import { useOrchestrationCommand } from "../state/use-orchestration-command";
+import { readEnvironment } from "../state/environments";
+import { portableWorkbenchTicketPrompt } from "./workbenchRemoteTicket";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { newThreadId, randomUUID } from "../lib/utils";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
@@ -94,7 +101,7 @@ const reportTicketStartResult = ({
   }
   onError(
     result.stage === "thread"
-      ? `The workspace is prepared, but the Thread could not be created. Try Create thread again to reuse it. ${commandFailureMessage(result.failure)}`
+      ? `The Thread could not be created. Try Create Thread again. ${commandFailureMessage(result.failure)}`
       : commandFailureMessage(result.failure),
   );
 };
@@ -103,6 +110,8 @@ export function useStartWorkbenchTicket({
   environmentId,
   projects,
   providers,
+  workbenchProjects = [],
+  references = [],
   assignmentsByTicket,
   existingThreadIds,
   threadLookupReady,
@@ -114,11 +123,16 @@ export function useStartWorkbenchTicket({
   readonly environmentId: EnvironmentId | null;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly providers: ReadonlyArray<ServerProvider>;
+  readonly workbenchProjects?: ReadonlyArray<WorkbenchProject> | undefined;
+  readonly references?: ReadonlyArray<WorkbenchReference> | undefined;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
   readonly onRefreshThreadLookup: () => void;
-  readonly onOpenAssignedThread: (threadId: ThreadId) => Promise<void>;
+  readonly onOpenAssignedThread: (
+    threadId: ThreadId,
+    environmentId?: EnvironmentId,
+  ) => Promise<void>;
   readonly onPendingChange: (action: string | null) => void;
   readonly onError: (message: string | null) => void;
 }) {
@@ -132,14 +146,18 @@ export function useStartWorkbenchTicket({
   const prepareTicketWorkspace = useAtomCommand(workbenchEnvironment.prepareTicketWorkspace, {
     reportFailure: false,
   });
-  const createThread = useAtomCommand(threadEnvironment.create, { reportFailure: false });
-  const deleteThread = useAtomCommand(threadEnvironment.delete, { reportFailure: false });
+  const createThread = useOrchestrationCommand(threadEnvironment.create, { reportFailure: false });
+  const deleteThread = useOrchestrationCommand(threadEnvironment.delete, { reportFailure: false });
+  const readTicket = useAtomCommand(workbenchEnvironment.readTicket, { reportFailure: false });
 
   /** `openThread` replaces `onOpenAssignedThread` for this start, such as to stay on the page. */
   return async (
     ticket: WorkbenchTicket,
     options?: StartWorkbenchTicketOptions,
-    openThread: (threadId: ThreadId) => Promise<void> = onOpenAssignedThread,
+    openThread: (
+      threadId: ThreadId,
+      environmentId?: EnvironmentId,
+    ) => Promise<void> = onOpenAssignedThread,
   ) => {
     if (environmentId === null) return;
     onPendingChange(`start:${ticket.id}:checking-thread`);
@@ -150,7 +168,13 @@ export function useStartWorkbenchTicket({
           {
             environmentId,
             ticket,
-            projects,
+            projects: projects.filter(
+              (project) =>
+                project.environmentId === environmentId ||
+                readEnvironment(project.environmentId)?.connection.phase === "connected",
+            ),
+            remoteProjects: workbenchProjects.find((board) => board.id === ticket.projectId)
+              ?.remoteProjects,
             assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
             existingThreadIds,
             threadLookupReady,
@@ -162,23 +186,49 @@ export function useStartWorkbenchTicket({
             createAssignment,
             replaceAssignment,
             deleteThread,
-            waitForThread: (threadId) =>
-              waitForWorkbenchThread(scopeThreadRef(environmentId, threadId)),
+            waitForThread: (threadId, targetEnvironmentId) =>
+              waitForWorkbenchThread(scopeThreadRef(targetEnvironmentId, threadId)),
             openThread,
+            seedRemotePrompt: async (threadId, targetEnvironmentId, startedTicket) => {
+              // Snapshot Tickets omit Progress, and the remote Thread gets the Ticket only once.
+              const read = await readTicket({
+                environmentId,
+                input: { ticketId: startedTicket.id },
+              });
+              const savedTicket =
+                read._tag === "Success" && read.value !== null ? read.value : startedTicket;
+              useComposerDraftStore.getState().setPrompt(
+                scopeThreadRef(targetEnvironmentId, threadId),
+                portableWorkbenchTicketPrompt({
+                  ticket: savedTicket,
+                  references: references.filter(
+                    (reference) => reference.ticketId === savedTicket.id,
+                  ),
+                  boardMachine: readEnvironment(environmentId)?.label ?? "the Board machine",
+                }),
+              );
+            },
             resolveRuntimeMode: (project) => {
               const settings =
-                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
-                DEFAULT_SERVER_SETTINGS;
+                appAtomRegistry.get(environmentServerConfigsAtom).get(project.environmentId)
+                  ?.settings ?? DEFAULT_SERVER_SETTINGS;
               return resolveProjectSettings(settings, project.id).settings.defaultRuntimeMode;
             },
             resolveModelSelection: (project) => {
+              if (!readEnvironmentScope(project.environmentId, AuthOrchestrationOperateScope))
+                return null;
+              const projectProviders =
+                project.environmentId === environmentId
+                  ? providers
+                  : (appAtomRegistry.get(environmentServerConfigsAtom).get(project.environmentId)
+                      ?.providers ?? []);
               const settings =
-                appAtomRegistry.get(environmentServerConfigsAtom).get(environmentId)?.settings ??
-                DEFAULT_SERVER_SETTINGS;
+                appAtomRegistry.get(environmentServerConfigsAtom).get(project.environmentId)
+                  ?.settings ?? DEFAULT_SERVER_SETTINGS;
               const { stickyActiveProvider, stickyModelSelectionByProvider } =
                 useComposerDraftStore.getState();
               return resolveDefaultProviderModelSelection(
-                providers,
+                projectProviders,
                 resolveWorkbenchDefaultModelSelection({
                   settings,
                   projectId: project.id,

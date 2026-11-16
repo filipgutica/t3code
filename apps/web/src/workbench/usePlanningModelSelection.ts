@@ -30,8 +30,15 @@ export function usePlanningModelSelection({
       ? null
       : (store.stickyModelSelectionByProvider[store.stickyActiveProvider] ?? null),
   );
-  const anchorProjectId = draft?.anchorProjectId ?? workspace.linkedProjectIds[0] ?? null;
-  const anchorProject = linkedProjects.find((project) => project.id === anchorProjectId);
+  const anchorProjectId =
+    draft?.anchorProjectId ??
+    workspace.linkedProjectIds.find(
+      (id) => !workspace.remoteProjects?.some((remote) => remote.projectId === id),
+    ) ??
+    null;
+  const anchorProject = linkedProjects.find(
+    (project) => project.id === anchorProjectId && project.environmentId === environmentId,
+  );
   const entries = providerInstanceEntriesFor(providers, settings, anchorProjectId);
   const modelSelection = resolveTicketPlanningModelSelection({
     candidates: entries.map((entry) => ({

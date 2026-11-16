@@ -4,6 +4,8 @@ import { useWorkbenchThreadLookup } from "./useWorkbenchThreadLookup";
 import { useAtomMount, useAtomValue } from "@effect/atom-react";
 import type { EnvironmentId } from "@t3tools/contracts";
 import { DEFAULT_RESOLVED_KEYBINDINGS } from "@t3tools/shared/keybindings";
+import { useConnectedEnvironmentIds } from "../state/environments";
+import { getWorkbenchProjects } from "./workbenchRemoteProjects";
 import { useProjects } from "../state/entities";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentQuery } from "../state/query";
@@ -25,15 +27,21 @@ export function useWorkbenchPageData(environmentId: EnvironmentId | null) {
   // Workbench mutations share orchestration:operate in workbenchRpcPermissions.
   const canOperate = useAtomValue(workbenchEnvironment.createTicket.permissionAtom(environmentId));
   const allProjects = useProjects();
+  const connectedEnvironmentIds = useConnectedEnvironmentIds();
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const { providers, keybindings, availableEditors } = workbenchEnvironmentConfig(serverConfig);
   const query = useEnvironmentQuery(
     environmentId === null ? null : workbenchEnvironment.snapshot({ environmentId, input: {} }),
   );
   const refreshWorkbenchSnapshot = query.refresh;
-  const projects = allProjects.filter((project) => project.environmentId === environmentId);
-  const repositoriesById = new Map(projects.map((project) => [project.id, project]));
   const snapshot = query.data;
+  const projects = getWorkbenchProjects({
+    projects: allProjects,
+    environmentId,
+    connectedEnvironmentIds,
+    boards: snapshot?.projects ?? [],
+  });
+  const repositoriesById = new Map(projects.map((project) => [project.id, project]));
   const snapshotProjects = snapshot?.projects ?? null;
   const optimisticStatus = useOptimisticWorkbenchStatus({
     environmentId,

@@ -1,7 +1,10 @@
 import {
+  EnvironmentId,
   RunId,
   WorkbenchAssignment,
   WorkbenchAssignmentId,
+  type WorkbenchRemoteProject,
+  type WorkbenchRemoteThread,
   WorkbenchOperationError,
   WorkbenchProject,
   WorkbenchProjectId,
@@ -71,7 +74,36 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   projectId: WorkbenchProjectId,
   linkedProjectId: ProjectId,
   position: Schema.Number,
+  environmentId: Schema.NullOr(EnvironmentId),
+  remoteTitle: Schema.NullOr(Schema.String),
 });
+type WorkbenchProjectLinkRow = typeof WorkbenchProjectLinkRow.Type;
+
+/** The Board shape of its link rows: every linked ID in order, and which of them are remote. */
+const projectLinkFields = (links: ReadonlyArray<WorkbenchProjectLinkRow>) => {
+  const remoteProjects = links.flatMap((link) =>
+    link.environmentId === null
+      ? []
+      : [
+          {
+            projectId: link.linkedProjectId,
+            environmentId: link.environmentId,
+            title: link.remoteTitle ?? link.linkedProjectId,
+          },
+        ],
+  );
+  return {
+    linkedProjectIds: links.map((link) => link.linkedProjectId),
+    ...(remoteProjects.length > 0 ? { remoteProjects } : {}),
+  };
+};
+
+const WorkbenchAssignmentRow = Schema.Struct({
+  ...WorkbenchAssignment.fields,
+  environmentId: Schema.NullOr(EnvironmentId),
+});
+const toAssignment = ({ environmentId, ...row }: typeof WorkbenchAssignmentRow.Type) =>
+  WorkbenchAssignment.make(environmentId === null ? row : { ...row, environmentId });
 
 const WorkbenchTicketRepositoryRow = Schema.Struct({
   ticketId: WorkbenchTicketId,
@@ -802,7 +834,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         workbench_project_id AS "projectId",
         t3_project_id AS "linkedProjectId",
-        position
+        position,
+        environment_id AS "environmentId",
+        remote_title AS "remoteTitle"
       FROM workbench_project_links
       ORDER BY workbench_project_id ASC, position ASC
     `,
@@ -883,14 +917,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
   const listAssignmentRows = SqlSchema.findAll({
     Request: Schema.Void,
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: () => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId"
       FROM workbench_assignments
       WHERE ticket_id IN (
         SELECT ticket_id
@@ -1091,6 +1126,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       INNER JOIN workbench_tickets AS ticket ON ticket.ticket_id = assignment.ticket_id
       WHERE assignment.thread_id = ${threadId}
         AND assignment.superseded_at IS NULL
+        AND assignment.environment_id IS NULL
         AND ticket.deleted_at IS NULL
       UNION ALL
       SELECT 'draft', draft_id, 1
@@ -1354,6 +1390,38 @@ const makeWorkbenchStore = Effect.gen(function* () {
   }) {
     return yield* native.findProject(linkedProjectId);
   });
+  /** The Board input's remote links, each of which must also be one of its linked IDs. */
+  const remoteLinksByProjectId = Effect.fn("WorkbenchStore.remoteLinksByProjectId")(
+    function* (input: {
+      readonly linkedProjectIds: ReadonlyArray<ProjectId>;
+      readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>;
+    }) {
+      const remoteLinks = new Map<ProjectId, WorkbenchRemoteProject>();
+      for (const remote of input.remoteProjects ?? []) {
+        if (!input.linkedProjectIds.includes(remote.projectId)) {
+          return yield* new WorkbenchOperationError({
+            code: "repository_not_linked",
+            message: "A remote repository must also be one of the Board's linked repositories.",
+          });
+        }
+        remoteLinks.set(remote.projectId, remote);
+      }
+      return remoteLinks;
+    },
+  );
+  const insertProjectLink = (input: {
+    readonly projectId: WorkbenchProjectId;
+    readonly linkedProjectId: ProjectId;
+    readonly position: number;
+    readonly remote: WorkbenchRemoteProject | undefined;
+  }) => sql`
+    INSERT INTO workbench_project_links (
+      workbench_project_id, t3_project_id, position, environment_id, remote_title
+    ) VALUES (
+      ${input.projectId}, ${input.linkedProjectId}, ${input.position},
+      ${input.remote?.environmentId ?? null}, ${input.remote?.title ?? null}
+    )
+  `;
   const validateLinkedProject = Effect.fn("WorkbenchStore.validateLinkedProject")(function* ({
     linkedProjectId,
   }: {
@@ -1402,9 +1470,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             return Option.some(
               WorkbenchProject.make({
                 ...project.value,
-                linkedProjectIds: links
-                  .filter((link) => link.projectId === projectId)
-                  .map((link) => link.linkedProjectId),
+                ...projectLinkFields(links.filter((link) => link.projectId === projectId)),
               }),
             );
           }),
@@ -1481,7 +1547,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         workbench_project_id AS "projectId",
         t3_project_id AS "linkedProjectId",
-        position
+        position,
+        environment_id AS "environmentId",
+        remote_title AS "remoteTitle"
       FROM workbench_project_links
       WHERE workbench_project_id = ${projectId}
         AND t3_project_id = ${linkedProjectId}
@@ -1615,14 +1683,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
   });
   const listActiveAssignmentsByTicket = SqlSchema.findAll({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: ({ ticketId }) => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId"
       FROM workbench_assignments
       WHERE ticket_id = ${ticketId}
         AND superseded_at IS NULL
@@ -1655,6 +1724,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
       WHERE thread_id = ${threadId}
     `,
   });
+  // Another environment's Thread cannot be observed here, so it stays live until unlinked.
+  const isAssignmentLive = (assignment: typeof WorkbenchAssignmentRow.Type) =>
+    assignment.environmentId === null
+      ? native.findThread(assignment.threadId).pipe(Effect.map(Option.isSome))
+      : Effect.succeed(true);
   const findActiveLiveAssignmentByTicket = Effect.fn(
     "WorkbenchStore.findActiveLiveAssignmentByTicket",
   )(function* ({ ticketId }: { readonly ticketId: WorkbenchTicketId }) {
@@ -1662,21 +1736,21 @@ const makeWorkbenchStore = Effect.gen(function* () {
     // transaction. The native adapter uses the same SqlClient connection.
     const assignments = yield* listActiveAssignmentsByTicket({ ticketId });
     for (const assignment of assignments) {
-      const thread = yield* native.findThread(assignment.threadId);
-      if (Option.isSome(thread)) return Option.some(assignment);
+      if (yield* isAssignmentLive(assignment)) return Option.some(toAssignment(assignment));
     }
     return Option.none<WorkbenchAssignment>();
   });
   const listLinkedAssignmentsByTicket = SqlSchema.findAll({
     Request: Schema.Struct({ ticketId: WorkbenchTicketId }),
-    Result: WorkbenchAssignment,
+    Result: WorkbenchAssignmentRow,
     execute: ({ ticketId }) => sql`
       SELECT
         assignment_id AS "id",
         ticket_id AS "ticketId",
         thread_id AS "threadId",
         created_at AS "createdAt",
-        superseded_at AS "supersededAt"
+        superseded_at AS "supersededAt",
+        environment_id AS "environmentId"
       FROM workbench_assignments
       WHERE ticket_id = ${ticketId}
       ORDER BY created_at ASC, assignment_id ASC
@@ -1689,8 +1763,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     // native archived Thread remains live until it is explicitly deleted.
     const assignments = yield* listLinkedAssignmentsByTicket({ ticketId });
     for (const assignment of assignments) {
-      const thread = yield* native.findThread(assignment.threadId);
-      if (Option.isSome(thread)) return Option.some(assignment);
+      if (yield* isAssignmentLive(assignment)) return Option.some(toAssignment(assignment));
     }
     return Option.none<WorkbenchAssignment>();
   });
@@ -1821,13 +1894,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
           listThreadRecapRows(),
           listReferenceRows(),
         ]);
-        const linksByProject = new Map<
-          string,
-          Array<(typeof WorkbenchProjectLinkRow.Type)["linkedProjectId"]>
-        >();
+        const linksByProject = new Map<string, Array<WorkbenchProjectLinkRow>>();
         for (const link of linkRows) {
           const links = linksByProject.get(link.projectId) ?? [];
-          links.push(link.linkedProjectId);
+          links.push(link);
           linksByProject.set(link.projectId, links);
         }
         const repositoriesByTicket = new Map<string, Array<ProjectId>>();
@@ -1852,7 +1922,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
           ),
           projects: projectRows.map((project) => ({
             ...project,
-            linkedProjectIds: linksByProject.get(project.id) ?? [],
+            ...projectLinkFields(linksByProject.get(project.id) ?? []),
           })),
           tickets: ticketRows.map((ticket) => {
             // The Board needs only the counts and review flag; the Ticket read carries the rest.
@@ -1870,7 +1940,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
               ...(compact && ticket.archivedAt !== null ? { markdownOmitted: true } : {}),
             };
           }),
-          assignments,
+          assignments: assignments.map(toAssignment),
           reservedThreadIds: reservedThreadRows.map((row) => row.id),
           ticketWorkspaces: ticketWorkspaceRows.map((workspace) =>
             hydrateTicketWorkspace({
@@ -2532,8 +2602,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.createProject",
   )(function* (input) {
     const linkedProjectIds = [...new Set(input.linkedProjectIds)];
+    const remoteLinks = yield* remoteLinksByProjectId(input);
     for (const linkedProjectId of linkedProjectIds) {
-      yield* validateLinkedProject({ linkedProjectId });
+      if (!remoteLinks.has(linkedProjectId)) yield* validateLinkedProject({ linkedProjectId });
     }
 
     yield* sql
@@ -2544,21 +2615,22 @@ const makeWorkbenchStore = Effect.gen(function* () {
           VALUES (${input.id}, ${input.title}, ${input.createdAt}, ${input.createdAt})
         `;
           for (const [position, linkedProjectId] of linkedProjectIds.entries()) {
-            yield* sql`
-            INSERT INTO workbench_project_links (
-              workbench_project_id,
-              t3_project_id,
-              position
-            ) VALUES (${input.id}, ${linkedProjectId}, ${position})
-          `;
+            yield* insertProjectLink({
+              projectId: input.id,
+              linkedProjectId,
+              position,
+              remote: remoteLinks.get(linkedProjectId),
+            });
           }
         }),
       )
       .pipe(Effect.mapError(persistenceError));
 
+    const { remoteProjects: _remoteProjects, ...fields } = input;
     return WorkbenchProject.make({
-      ...input,
+      ...fields,
       linkedProjectIds,
+      ...(remoteLinks.size > 0 ? { remoteProjects: [...remoteLinks.values()] } : {}),
       archivedAt: null,
       revision: 0,
       updatedAt: input.createdAt,
@@ -2670,9 +2742,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT t3_project_id AS id FROM workbench_project_links WHERE workbench_project_id = ${input.id}
     `.pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError));
     const existingIds = new Set(currentLinks.map((link) => link.id));
+    const remoteLinks = yield* remoteLinksByProjectId(input);
     const validatedRoots = new Map<ProjectId, string>();
     for (const linkedProjectId of linkedProjectIds) {
-      if (!existingIds.has(linkedProjectId)) {
+      if (!existingIds.has(linkedProjectId) && !remoteLinks.has(linkedProjectId)) {
         const project = yield* validateLinkedProject({ linkedProjectId });
         validatedRoots.set(linkedProjectId, project.workspaceRoot);
       }
@@ -2713,6 +2786,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             (linkedProjectId) => !existingProjectIdSet.has(linkedProjectId),
           );
           for (const linkedProjectId of additions) {
+            if (remoteLinks.has(linkedProjectId)) continue;
             const project = yield* findT3Project({ linkedProjectId });
             if (Option.isNone(project)) {
               return yield* new WorkbenchOperationError({
@@ -2738,20 +2812,31 @@ const makeWorkbenchStore = Effect.gen(function* () {
             0,
           );
           for (const [offset, linkedProjectId] of additions.entries()) {
-            yield* sql`
-              INSERT INTO workbench_project_links (
-                workbench_project_id,
-                t3_project_id,
-                position
-              ) VALUES (${input.id}, ${linkedProjectId}, ${nextPosition + offset})
-            `;
+            yield* insertProjectLink({
+              projectId: input.id,
+              linkedProjectId,
+              position: nextPosition + offset,
+              remote: remoteLinks.get(linkedProjectId),
+            });
           }
 
           return WorkbenchProject.make({
             ...current.value,
             title: input.title,
             revision: current.value.revision + 1,
-            linkedProjectIds: [...existingProjectIds, ...additions],
+            ...projectLinkFields([
+              ...currentLinks,
+              ...additions.map((linkedProjectId, offset) => {
+                const remote = remoteLinks.get(linkedProjectId);
+                return {
+                  projectId: input.id,
+                  linkedProjectId,
+                  position: nextPosition + offset,
+                  environmentId: remote?.environmentId ?? null,
+                  remoteTitle: remote?.title ?? null,
+                };
+              }),
+            ]),
             updatedAt: input.updatedAt,
           });
         }),
@@ -2768,6 +2853,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       repositoryProjectIds: ReadonlyArray<ProjectId>;
     }) {
       const normalizedRepositoryProjectIds = [...new Set(repositoryProjectIds)];
+      const environments = new Set<EnvironmentId | null>();
       for (const linkedProjectId of normalizedRepositoryProjectIds) {
         const link = yield* findProjectLink({ projectId, linkedProjectId }).pipe(
           Effect.mapError(persistenceError),
@@ -2778,6 +2864,13 @@ const makeWorkbenchStore = Effect.gen(function* () {
             message: "A Ticket repository is not linked to its Board.",
           });
         }
+        environments.add(link.value.environmentId);
+      }
+      if (environments.size > 1) {
+        return yield* new WorkbenchOperationError({
+          code: "repository_environment_mismatch",
+          message: "A Ticket's repositories must all be on the same machine.",
+        });
       }
       return normalizedRepositoryProjectIds;
     },
@@ -2949,14 +3042,23 @@ const makeWorkbenchStore = Effect.gen(function* () {
     "WorkbenchStore.listActiveThreadProjectIds",
   )(function* (ticketId) {
     // A planning Thread moves to the live scope at Start work, so it does not pin one.
-    const assignments = yield* sql<{ readonly threadId: ThreadId }>`
-          SELECT a.thread_id AS "threadId" FROM workbench_assignments a
+    const assignments = yield* sql<{
+      readonly threadId: ThreadId;
+      readonly remoteProjectId: ProjectId | null;
+    }>`
+          SELECT a.thread_id AS "threadId", a.remote_t3_project_id AS "remoteProjectId"
+          FROM workbench_assignments a
           WHERE a.ticket_id = ${ticketId} AND a.superseded_at IS NULL
             AND NOT EXISTS (SELECT 1 FROM workbench_ticket_drafts d
               WHERE d.thread_id = a.thread_id AND d.phase <> 'working')
         `;
     const projectIds = new Set<ProjectId>();
-    for (const { threadId } of assignments) {
+    for (const { threadId, remoteProjectId } of assignments) {
+      // Whether a remote Thread is archived cannot be seen here; unlinking it releases the lock.
+      if (remoteProjectId !== null) {
+        projectIds.add(remoteProjectId);
+        continue;
+      }
       const thread = yield* native.findThread(threadId);
       if (Option.isSome(thread) && thread.value.archivedAt == null) {
         projectIds.add(thread.value.projectId);
@@ -2979,10 +3081,19 @@ const makeWorkbenchStore = Effect.gen(function* () {
       );
       if (inUse === undefined) return;
       const project = yield* native.findProject(inUse);
-      const name = Option.isSome(project) ? project.value.title : inUse;
+      if (Option.isNone(project)) {
+        const [link] = yield* sql<{ readonly title: string | null }>`
+          SELECT remote_title AS title FROM workbench_project_links
+          WHERE t3_project_id = ${inUse} AND environment_id IS NOT NULL LIMIT 1
+        `;
+        return yield* new WorkbenchOperationError({
+          code: "ticket_repository_scope_locked",
+          message: `${link?.title ?? inUse} can't be removed while a Thread on another machine works in it. Unlink that Thread first.`,
+        });
+      }
       return yield* new WorkbenchOperationError({
         code: "ticket_repository_scope_locked",
-        message: `${name} can't be removed while an active Thread works in it. Archive or delete that Thread first.`,
+        message: `${project.value.title} can't be removed while an active Thread works in it. Archive or delete that Thread first.`,
       });
     },
   );
@@ -3677,32 +3788,49 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  /**
+   * A remote Thread cannot be read here, so its Project comes from the client and must be one
+   * of the Ticket's repositories on that same environment.
+   */
   const requireAssignableThread = Effect.fn("WorkbenchStore.requireAssignableThread")(function* ({
     ticketId,
     threadId,
+    remote,
   }: {
     ticketId: WorkbenchTicketId;
     threadId: ThreadId;
+    remote: WorkbenchRemoteThread | undefined;
   }) {
     const ticket = yield* requireActiveTicket({
       ticketId,
       archivedMessage: "Archived Workbench Tickets cannot receive Agent Threads.",
     });
-    const nativeThread = yield* findNativeThread({ threadId }).pipe(
-      Effect.mapError(persistenceError),
-    );
-    if (Option.isNone(nativeThread)) {
-      return yield* new WorkbenchOperationError({
-        code: "thread_not_found",
-        message: "The native T3 Thread does not exist.",
-      });
+    let threadProjectId = remote?.projectId;
+    if (remote === undefined) {
+      const nativeThread = yield* findNativeThread({ threadId }).pipe(
+        Effect.mapError(persistenceError),
+      );
+      if (Option.isNone(nativeThread)) {
+        return yield* new WorkbenchOperationError({
+          code: "thread_not_found",
+          message: "The native T3 Thread does not exist.",
+        });
+      }
+      threadProjectId = nativeThread.value.projectId;
     }
     const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
     const repositoryProjectIds =
       repositories.length > 0
         ? repositories.map((repository) => repository.repositoryProjectId)
         : [ticket.anchorProjectId];
-    if (!repositoryProjectIds.includes(nativeThread.value.projectId)) {
+    const link =
+      threadProjectId === undefined || !repositoryProjectIds.includes(threadProjectId)
+        ? Option.none()
+        : yield* findProjectLink({
+            projectId: ticket.projectId,
+            linkedProjectId: threadProjectId,
+          }).pipe(Effect.mapError(persistenceError));
+    if (Option.isNone(link) || link.value.environmentId !== (remote?.environmentId ?? null)) {
       return yield* new WorkbenchOperationError({
         code: "thread_project_mismatch",
         message: "The native T3 Thread works in a repository this Ticket does not link.",
@@ -3710,6 +3838,20 @@ const makeWorkbenchStore = Effect.gen(function* () {
     }
     return ticket;
   });
+  const insertAssignment = (input: {
+    readonly assignment: WorkbenchAssignment;
+    readonly remote: WorkbenchRemoteThread | undefined;
+    readonly executionAfterSequence: number;
+  }) => sql`
+    INSERT INTO workbench_assignments (
+      assignment_id, ticket_id, thread_id, created_at, superseded_at, execution_after_sequence,
+      environment_id, remote_t3_project_id
+    ) VALUES (
+      ${input.assignment.id}, ${input.assignment.ticketId}, ${input.assignment.threadId},
+      ${input.assignment.createdAt}, NULL, ${input.executionAfterSequence},
+      ${input.remote?.environmentId ?? null}, ${input.remote?.projectId ?? null}
+    )
+  `;
 
   const createAssignment: WorkbenchStoreShape["createAssignment"] = Effect.fn(
     "WorkbenchStore.createAssignment",
@@ -3743,12 +3885,22 @@ const makeWorkbenchStore = Effect.gen(function* () {
           yield* requireAssignableThread({
             ticketId: input.ticketId,
             threadId: input.threadId,
+            remote: input.remote,
           });
-          yield* sql`
-            INSERT INTO workbench_assignments (assignment_id, ticket_id, thread_id, created_at, execution_after_sequence)
-            VALUES (${input.id}, ${input.ticketId}, ${input.threadId}, ${input.createdAt}, ${yield* native.executionSequence})
-          `;
-          return WorkbenchAssignment.make({ ...input, supersededAt: null });
+          const assignment = WorkbenchAssignment.make({
+            id: input.id,
+            ticketId: input.ticketId,
+            threadId: input.threadId,
+            ...(input.remote ? { environmentId: input.remote.environmentId } : {}),
+            createdAt: input.createdAt,
+            supersededAt: null,
+          });
+          yield* insertAssignment({
+            assignment,
+            remote: input.remote,
+            executionAfterSequence: yield* native.executionSequence,
+          });
+          return assignment;
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
@@ -3795,6 +3947,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       id: input.id ?? WorkbenchAssignmentId.make(yield* random.uuidV4()),
       ticketId: input.ticketId,
       threadId: input.threadId,
+      ...(input.remote ? { environmentId: input.remote.environmentId } : {}),
       createdAt: input.replacedAt,
       supersededAt: null,
     });
@@ -3842,7 +3995,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "This native T3 Thread already belongs to a Workbench Ticket.",
             });
           }
-          yield* requireAssignableThread({ ticketId: input.ticketId, threadId: input.threadId });
+          yield* requireAssignableThread({
+            ticketId: input.ticketId,
+            threadId: input.threadId,
+            remote: input.remote,
+          });
           const superseded = yield* supersedeAssignmentRow(input);
           if (Option.isNone(superseded)) {
             return yield* new WorkbenchOperationError({
@@ -3850,23 +4007,11 @@ const makeWorkbenchStore = Effect.gen(function* () {
               message: "The Workbench Assignment changed before it could be replaced.",
             });
           }
-          yield* sql`
-            INSERT INTO workbench_assignments (
-              assignment_id,
-              ticket_id,
-              thread_id,
-              created_at,
-              superseded_at,
-              execution_after_sequence
-            ) VALUES (
-              ${replacement.id},
-              ${replacement.ticketId},
-              ${replacement.threadId},
-              ${replacement.createdAt},
-              NULL,
-              ${yield* native.executionSequence}
-            )
-          `;
+          yield* insertAssignment({
+            assignment: replacement,
+            remote: input.remote,
+            executionAfterSequence: yield* native.executionSequence,
+          });
           return replacement;
         }),
       )

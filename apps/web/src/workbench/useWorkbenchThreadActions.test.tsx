@@ -59,6 +59,10 @@ vi.mock("./state", () => ({
     prepareTicketWorkspace: "prepareTicketWorkspace",
   },
 }));
+vi.mock("../state/session", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/session")>()),
+  readEnvironmentScope: () => true,
+}));
 vi.mock("../state/use-atom-command", () => ({
   useAtomCommand: (command: keyof typeof commands) => commands[command],
 }));
@@ -382,7 +386,7 @@ describe("linked Thread failure recovery", () => {
     useWorkbenchFloatingChatStore.setState({
       pageChat: { environmentId, ...owner, showThread },
     });
-    const { router } = await mount();
+    const { router } = await mount({ existingThreadIds: new Set([assignment.threadId]) });
     commands.createAssignment.mockResolvedValueOnce(AsyncResult.success(assignment));
     await act(async () => actions.setAttachThreadTicket(ticket));
     await act(async () => actions.attachExistingThread(assignment.threadId));

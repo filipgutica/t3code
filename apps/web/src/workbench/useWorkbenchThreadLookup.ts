@@ -1,6 +1,7 @@
 import type { EnvironmentId } from "@t3tools/contracts";
 
 import { presentThreadShell } from "@t3tools/client-runtime/state/shell";
+import { useConnectedEnvironmentIds } from "../state/environments";
 import { useThreadShells } from "../state/entities";
 
 import { useArchivedThreadSnapshots } from "../lib/archivedThreadsState";
@@ -19,17 +20,35 @@ export function useWorkbenchThreadLookup({
   snapshot: WorkbenchSnapshot | null;
 }) {
   const allThreadShells = useThreadShells();
-  const archivedEnvironmentIds = environmentId === null ? [] : [environmentId];
+  const connectedIds = useConnectedEnvironmentIds();
+  const remoteEnvironmentIds = [
+    ...new Set([
+      ...(snapshot?.assignments.flatMap((assignment) =>
+        assignment.environmentId ? [assignment.environmentId] : [],
+      ) ?? []),
+      ...(snapshot?.projects.flatMap(
+        (board) => board.remoteProjects?.map((remote) => remote.environmentId) ?? [],
+      ) ?? []),
+    ]),
+  ].filter((id) => connectedIds.includes(id));
+  const archivedEnvironmentIds = [
+    ...(environmentId === null ? [] : [environmentId]),
+    ...remoteEnvironmentIds,
+  ];
   const {
     snapshots: archivedSnapshots,
     error: archivedThreadsError,
     isLoading: archivedThreadsLoading,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(archivedEnvironmentIds);
-  const omittedThreads = useWorkbenchOmittedThreads(environmentId, snapshot?.assignments ?? []);
+  const omittedThreads = useWorkbenchOmittedThreads(
+    environmentId,
+    snapshot?.assignments ?? [],
+    remoteEnvironmentIds,
+  );
   const threadsById = new Map(
     allThreadShells
-      .filter((thread) => thread.environmentId === environmentId)
+      .filter((thread) => archivedEnvironmentIds.includes(thread.environmentId))
       .map((thread) => [thread.id, thread]),
   );
   const archivedThreadsById = new Map(

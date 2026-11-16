@@ -6,6 +6,7 @@ import {
   squashAtomCommandFailure,
 } from "@t3tools/client-runtime/state/runtime";
 import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
+import { appAtomRegistry } from "../rpc/atomRegistry";
 import { useState } from "react";
 
 import { stackedThreadToast, toastManager } from "../components/ui/toast";
@@ -19,13 +20,18 @@ export function useWorkbenchThreadSettlement(environmentId: EnvironmentId) {
   const serverConfig = useAtomValue(serverEnvironment.configValueAtom(environmentId));
   const supportsSettlement = serverConfig?.environment.capabilities.threadSettlement === true;
   const toggleThreadSettlement = async (thread: EnvironmentThreadShell) => {
-    if (!supportsSettlement || settlementPendingThreadId !== null) return;
+    if (
+      appAtomRegistry.get(serverEnvironment.configValueAtom(thread.environmentId))?.environment
+        .capabilities.threadSettlement !== true ||
+      settlementPendingThreadId !== null
+    )
+      return;
     const wasSettled = thread.settledOverride === "settled";
     setSettlementPendingThreadId(thread.id);
     return (async () => {
       const result = wasSettled
-        ? await unsettleThread(scopeThreadRef(environmentId, thread.id))
-        : await settleThread(scopeThreadRef(environmentId, thread.id));
+        ? await unsettleThread(scopeThreadRef(thread.environmentId, thread.id))
+        : await settleThread(scopeThreadRef(thread.environmentId, thread.id));
       if (result._tag === "Failure" && !isAtomCommandInterrupted(result)) {
         const error = squashAtomCommandFailure(result);
         toastManager.add(

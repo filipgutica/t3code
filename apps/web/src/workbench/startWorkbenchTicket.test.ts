@@ -130,6 +130,94 @@ function startInput(assignment?: WorkbenchAssignment) {
 }
 
 describe("coordinateWorkbenchTicketStart", () => {
+  it.each([
+    { rejectAssignment: false, replace: false },
+    { rejectAssignment: true, replace: false },
+    { rejectAssignment: false, replace: true },
+  ])(
+    "starts remotely and cleans up on Assignment failure: $rejectAssignment, replace: $replace",
+    async ({ rejectAssignment, replace }) => {
+      const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
+      const remoteProject = { ...project, environmentId: remoteEnvironmentId };
+      const events: string[] = [];
+      const remoteModel = { ...modelSelection, model: "remote-model" };
+      const configs = new Map([
+        [environmentId, { ...DEFAULT_SERVER_SETTINGS, defaultModelSelection: modelSelection }],
+        [
+          remoteEnvironmentId,
+          {
+            ...DEFAULT_SERVER_SETTINGS,
+            defaultModelSelection: remoteModel,
+            defaultRuntimeMode: "full-access" as const,
+          },
+        ],
+      ]);
+      const assign = async ({
+        environmentId: destination,
+        input,
+      }: {
+        environmentId: EnvironmentId;
+        input: { remote?: { environmentId: EnvironmentId; projectId: ProjectId } };
+      }) => {
+        expect(destination).toBe(environmentId);
+        expect(input.remote).toEqual({ environmentId: remoteEnvironmentId, projectId });
+        events.push("assign-thread");
+        return rejectAssignment ? failure : success;
+      };
+      const result = await coordinateWorkbenchTicketStart(
+        {
+          ...startInput(),
+          projects: [project, remoteProject],
+          remoteProjects: [{ projectId, environmentId: remoteEnvironmentId, title: "acme/app" }],
+        },
+        {
+          ...makeDependencies(events),
+          resolveModelSelection: (repository) =>
+            configs.get(repository.environmentId)?.defaultModelSelection ?? null,
+          resolveRuntimeMode: (repository) =>
+            configs.get(repository.environmentId)?.defaultRuntimeMode ?? "auto",
+          createThread: async ({ environmentId: destination, input }) => {
+            expect(destination).toBe(remoteEnvironmentId);
+            expect(input).toMatchObject({
+              branch: null,
+              worktreePath: null,
+              modelSelection: remoteModel,
+              runtimeMode: "full-access",
+            });
+            events.push("create-thread");
+            return success;
+          },
+          createAssignment: assign,
+          replaceAssignment: assign,
+          deleteThread: async ({ environmentId: destination }) => {
+            expect(destination).toBe(remoteEnvironmentId);
+            events.push("delete-thread");
+            return success;
+          },
+          seedRemotePrompt: async (id, destination, snapshot) => {
+            expect([id, destination, snapshot]).toEqual([threadId, remoteEnvironmentId, ticket]);
+            events.push("seed-prompt");
+          },
+          waitForThread: async (id, destination) => {
+            expect([id, destination]).toEqual([threadId, remoteEnvironmentId]);
+            events.push("wait-thread");
+          },
+          openThread: async (id, destination) => {
+            expect([id, destination]).toEqual([threadId, remoteEnvironmentId]);
+            events.push("open-thread");
+          },
+        },
+        replace ? { mode: "replace", previousThreadId: ThreadId.make("thread:old") } : {},
+      );
+      expect(result.state).toBe(rejectAssignment ? "failed" : "opened");
+      expect(events).toEqual([
+        "create-thread",
+        "assign-thread",
+        ...(rejectAssignment ? ["delete-thread"] : ["seed-prompt", "wait-thread", "open-thread"]),
+      ]);
+    },
+  );
+
   // The Thread's repository resolves against the saved Ticket, so a preference the save unlinked yields.
   it("recovers an unavailable preferred repository through the reviewed scope", async () => {
     const replacementId = ProjectId.make("replacement-repository");

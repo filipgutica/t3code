@@ -1,6 +1,7 @@
 import type {
   EnvironmentId,
   ProjectId,
+  WorkbenchProject,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
@@ -18,6 +19,23 @@ export const getWorkbenchRepositoryScope = (ticket: WorkbenchTicket): WorkbenchR
   repositoryProjectIds: ticket.repositoryProjectIds,
 });
 
+/** Remote repositories start Threads on their own machine, so their scope never prepares worktrees here. */
+export const isWorkbenchRemoteRepositoryScope = (
+  scope: WorkbenchRepositoryScope,
+  board: Pick<WorkbenchProject, "remoteProjects"> | undefined,
+) =>
+  scope.repositoryProjectIds.some(
+    (id) => board?.remoteProjects?.some((remote) => remote.projectId === id) ?? false,
+  );
+
+/** Planning drafts run on the Board's machine, so they need one of its own repositories. */
+export const hasWorkbenchLocalRepository = (
+  board: Pick<WorkbenchProject, "linkedProjectIds" | "remoteProjects">,
+) =>
+  board.linkedProjectIds.some(
+    (id) => !board.remoteProjects?.some((remote) => remote.projectId === id),
+  );
+
 export const isWorkbenchRepositoryScopeEqual = (
   left: WorkbenchRepositoryScope,
   right: WorkbenchRepositoryScope,
@@ -30,11 +48,19 @@ export const isWorkbenchRepositoryScopeValid = ({
   projects,
 }: {
   readonly scope: WorkbenchRepositoryScope;
-  readonly projects: ReadonlyArray<{ readonly id: ProjectId }>;
+  readonly projects: ReadonlyArray<{
+    readonly id: ProjectId;
+    readonly environmentId?: EnvironmentId;
+  }>;
 }) =>
   scope.repositoryProjectIds.length > 0 &&
   new Set(scope.repositoryProjectIds).size === scope.repositoryProjectIds.length &&
-  scope.repositoryProjectIds.every((id) => projects.some((project) => project.id === id));
+  scope.repositoryProjectIds.every((id) => projects.some((project) => project.id === id)) &&
+  new Set(
+    scope.repositoryProjectIds.map(
+      (id) => projects.find((project) => project.id === id)?.environmentId,
+    ),
+  ).size === 1;
 
 /**
  * The repository a new Thread works in: `preferred` while the Ticket still links it, else the

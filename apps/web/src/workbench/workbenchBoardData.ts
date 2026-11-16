@@ -1,3 +1,5 @@
+import type { EnvironmentId } from "@t3tools/contracts";
+import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
 import { getAssignmentsForTicket } from "./workbench.logic";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
@@ -5,8 +7,10 @@ import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 export function getWorkbenchBoardData({
   pageData,
   selection,
+  environmentId = null,
 }: {
   readonly pageData: ReturnType<typeof useWorkbenchPageData>;
+  readonly environmentId?: EnvironmentId | null;
   readonly selection: ReturnType<typeof useWorkbenchPageSelection>;
 }) {
   const { projects, snapshot, optimisticStatus } = pageData;
@@ -16,7 +20,7 @@ export function getWorkbenchBoardData({
     (ticket) => ticket.projectId === selectedProject?.id && ticket.archivedAt == null,
   );
   const linkedT3Projects = selectedProject
-    ? projects.filter((project) => selectedProject.linkedProjectIds.includes(project.id))
+    ? getWorkbenchBoardRepositories({ board: selectedProject, projects, environmentId })
     : [];
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)

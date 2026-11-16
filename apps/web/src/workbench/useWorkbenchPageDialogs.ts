@@ -1,7 +1,13 @@
-import { WorkbenchProjectId, type ProjectId, type EnvironmentId } from "@t3tools/contracts";
+import {
+  WorkbenchProjectId,
+  type ProjectId,
+  type EnvironmentId,
+  type WorkbenchRemoteProject,
+} from "@t3tools/contracts";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
+import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { useAtomCommand } from "../state/use-atom-command";
 import { randomUUID } from "../lib/utils";
@@ -44,7 +50,11 @@ export function useWorkbenchPageDialogs({
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const submitProject = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const submitProject = async (
+    title: string,
+    linkedProjectIds: ReadonlyArray<ProjectId>,
+    remoteProjects: ReadonlyArray<WorkbenchRemoteProject> = [],
+  ) => {
     if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
     setError(null);
@@ -55,6 +65,7 @@ export function useWorkbenchPageDialogs({
         id,
         title,
         linkedProjectIds,
+        remoteProjects,
         createdAt: new Date().toISOString(),
       },
     });
@@ -67,7 +78,11 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
-  const saveWorkspace = async (title: string, linkedProjectIds: ReadonlyArray<ProjectId>) => {
+  const saveWorkspace = async (
+    title: string,
+    linkedProjectIds: ReadonlyArray<ProjectId>,
+    remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>,
+  ) => {
     if (
       !canOperate ||
       environmentId === null ||
@@ -84,6 +99,7 @@ export function useWorkbenchPageDialogs({
         expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
+        remoteProjects: remoteProjects ?? selectedProject.remoteProjects ?? [],
         updatedAt: new Date().toISOString(),
       },
     });
@@ -134,6 +150,10 @@ export function useWorkbenchPageDialogs({
     )
       return;
     setError(null);
+    if (!hasWorkbenchLocalRepository(selectedProject)) {
+      setTicketDialogOpen(true);
+      return;
+    }
     void navigate({
       to: "/workbench",
       search: withWorkbenchEnvironmentSearch(environmentId, {

@@ -64,6 +64,10 @@ Migration 25 adds `workbench_tickets.review_base_title` and `review_base_markdow
 
 Migration 27 adds `workbench_tickets.content_updated_at` (a draft's `contentUpdatedAt`), written with provenance whenever the title or brief changes, so a review can say when its edit happened. It stays NULL for Tickets not changed since. Snapshots carry it because clients show it before reading the base.
 
+## Remote repositories (v28)
+
+Migration 28 adds nullable `environment_id` and `remote_title` to `workbench_project_links`, and `environment_id` and `remote_t3_project_id` to `workbench_assignments`. NULL means the Board's own environment, so existing rows stay local without a backfill or rebuild. A remote link keeps the title the linking client saw, because the Board's environment cannot read the Project. A remote Assignment keeps its Thread's Project for scope checks and the repository lock. A Ticket's repositories must share one environment. `thread_id` stays globally unique, because native IDs are random, and owner lookups by Thread ID match only local rows, so a local Thread can never gain a remote Ticket. See [Repositories on another environment](workbench-architecture.md#repositories-on-another-environment).
+
 ## Retired tracker data
 
 Migrations 20, 22, and 24 preserve tracker links as References without rebuilding tables. Migration 24 first copies missing Epic Jira URLs for existing Tickets and drafts into their ordered References, then removes `fields.kind` and `fields.epicId` from its stored JSON. The retired `workbench_epics` table and the Ticket `kind`, `epic_id`, and Jira link columns remain unread by active code. Keep the historical base DDL and migrations: rebuilding these tables can cascade-delete repositories, Assignments, or worktree records. Fresh databases follow the same migration path; new Ticket inserts use the retired columns' existing defaults.

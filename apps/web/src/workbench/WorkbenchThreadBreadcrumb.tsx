@@ -7,24 +7,23 @@ import {
   WorkspaceBreadcrumbSeparator,
 } from "../components/WorkspaceBreadcrumb";
 import { Badge } from "../components/ui/badge";
-import { useEnvironmentQuery } from "../state/query";
-import { workbenchEnvironment } from "./state";
-import { getWorkbenchContextForThread, WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
+import { useWorkbenchThreadContext } from "./useWorkbenchThreadContext";
+import { WORKBENCH_TICKET_STATUS_LABELS } from "./workbench.logic";
 import { workbenchDescriptionLinks } from "./workbenchReferences.logic";
 import { WorkbenchThreadReferencesMenu } from "./WorkbenchThreadReferencesMenu";
 
 export function WorkbenchThreadBreadcrumb({
-  environmentId,
+  environmentId: threadEnvironmentId,
   threadId,
 }: {
   readonly environmentId: EnvironmentId;
   readonly threadId: ThreadId;
 }) {
-  const { data } = useEnvironmentQuery(workbenchEnvironment.snapshot({ environmentId, input: {} }));
-  const context = getWorkbenchContextForThread(data ?? null, threadId);
-  if (!context) return null;
+  const owner = useWorkbenchThreadContext(threadEnvironmentId, threadId);
+  if (!owner) return null;
+  const { environmentId, context, snapshot: data } = owner;
   const { ticket, workspace: project } = context;
-  const references = data?.references.filter((reference) => reference.ticketId === ticket.id) ?? [];
+  const references = data.references.filter((reference) => reference.ticketId === ticket.id);
   const descriptionLinks = workbenchDescriptionLinks(ticket.markdown);
 
   return (
@@ -72,12 +71,14 @@ export function WorkbenchThreadBreadcrumb({
           </Badge>
         </Link>
       </WorkspaceBreadcrumbItem>
-      <WorkbenchThreadReferencesMenu
-        environmentId={environmentId}
-        threadId={threadId}
-        references={references}
-        descriptionLinks={descriptionLinks}
-      />
+      {environmentId === threadEnvironmentId ? (
+        <WorkbenchThreadReferencesMenu
+          environmentId={environmentId}
+          threadId={threadId}
+          references={references}
+          descriptionLinks={descriptionLinks}
+        />
+      ) : null}
       <WorkspaceBreadcrumbSeparator />
     </>
   );

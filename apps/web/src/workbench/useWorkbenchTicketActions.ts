@@ -17,6 +17,7 @@ import {
 import type { useOptimisticWorkbenchStatus } from "./useOptimisticWorkbenchStatus";
 import {
   getWorkbenchRepositoryScope,
+  isWorkbenchRemoteRepositoryScope,
   isWorkbenchRepositoryScopeEqual,
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
@@ -132,6 +133,12 @@ export function useWorkbenchTicketActions({
     setError(null);
     let savedTicket = draft.ticket;
     const changed = !isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
+    const prepare =
+      (draft.prepare || (changed && workspace?.status === "ready")) &&
+      !isWorkbenchRemoteRepositoryScope(
+        draft.value,
+        snapshot?.projects.find((project) => project.id === draft.ticket.projectId),
+      );
     return (async () => {
       if (changed) {
         const saved = await updateTicket({
@@ -149,7 +156,7 @@ export function useWorkbenchTicketActions({
         }
         savedTicket = saved.value;
       }
-      if (draft.prepare || (changed && workspace?.status === "ready")) {
+      if (prepare) {
         setWorkspacePreparationFailure(null);
         setPendingAction(`prepare-workspace:${draft.ticket.id}`);
         const prepared = await prepareTicketWorkspace({

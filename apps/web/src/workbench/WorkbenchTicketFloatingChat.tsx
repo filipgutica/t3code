@@ -51,22 +51,24 @@ const chatThreads = (
     readonly localVisits: Readonly<Record<string, string>>;
   },
 ): WorkbenchFloatingChatThread[] =>
-  assignments.flatMap(({ threadId }) => {
-    const thread = threadsById.get(threadId);
-    return thread
-      ? [
-          {
-            threadId,
-            title: thread.title,
-            status: getWorkbenchThreadExecutionStatus(thread),
-            unread: hasWorkbenchUnreadReply(thread, localVisits),
-            ticket,
-            recap: recaps.get(threadId) ?? null,
-            settledAt: thread.settledAt ?? null,
-          },
-        ]
-      : [];
-  });
+  assignments
+    .filter((assignment) => assignment.environmentId === undefined)
+    .flatMap(({ threadId }) => {
+      const thread = threadsById.get(threadId);
+      return thread
+        ? [
+            {
+              threadId,
+              title: thread.title,
+              status: getWorkbenchThreadExecutionStatus(thread),
+              unread: hasWorkbenchUnreadReply(thread, localVisits),
+              ticket,
+              recap: recaps.get(threadId) ?? null,
+              settledAt: thread.settledAt ?? null,
+            },
+          ]
+        : [];
+    });
 
 interface WorkbenchTicketFloatingChatProps {
   readonly enabled: boolean;

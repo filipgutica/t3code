@@ -1,3 +1,4 @@
+import { useEnvironment } from "../state/environments";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import {
   workbenchProgressCounts,
@@ -119,12 +120,23 @@ const sharedContextInputs = (
 export function WorkbenchTicketSharedContext({
   environmentId,
   ticket,
+  remoteEnvironmentId = null,
   ...sources
 }: SharedContextSources & {
   environmentId: EnvironmentId;
   ticket: WorkbenchTicket;
+  remoteEnvironmentId?: EnvironmentId | null | undefined;
 }) {
+  const machine = useEnvironment(remoteEnvironmentId);
   const [expanded, setExpanded] = useState(false);
+  if (remoteEnvironmentId !== null)
+    return (
+      <p className="px-4 text-xs text-muted-foreground">
+        Runs on {machine?.label ?? "Another machine"}. Its Threads get the Ticket once, in their
+        first message. Ticket changes, Workbench tools, recaps, and automatic status don't reach
+        them.
+      </p>
+    );
   return (
     <section className="min-w-0 shrink-0 overflow-hidden rounded-xl border border-border/60 bg-card/30">
       <WorkbenchTicketPanelHeader

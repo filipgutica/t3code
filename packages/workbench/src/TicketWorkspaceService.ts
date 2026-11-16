@@ -1138,6 +1138,18 @@ const makeTicketWorkspaceService = Effect.gen(function* () {
         message: "Archived Tickets cannot prepare worktrees.",
       });
     }
+    const remoteProjectIds = new Set(
+      snapshot.projects
+        .find((project) => project.id === ticket.projectId)
+        ?.remoteProjects?.map((remote) => remote.projectId),
+    );
+    if (ticket.repositoryProjectIds.some((projectId) => remoteProjectIds.has(projectId))) {
+      return yield* new WorkbenchOperationError({
+        code: "repository_remote_unsupported",
+        message:
+          "This Ticket's repositories are on another machine, so Workbench cannot prepare its worktrees here.",
+      });
+    }
     const existing = yield* store.getTicketWorkspace(input.ticketId);
     const repositoryStates = yield* store.getTicketWorkspaceRepositoryStates(input.ticketId);
     yield* handleExistingWorkspace({

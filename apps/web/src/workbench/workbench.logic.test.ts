@@ -1,10 +1,12 @@
 import { describe, expect, it } from "@effect/vitest";
 import {
+  EnvironmentId,
   ProjectId,
   ThreadId,
   WorkbenchAssignmentId,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  type WorkbenchAssignment,
 } from "@t3tools/contracts";
 import {
   getActiveAssignmentsByTicket,
@@ -19,6 +21,7 @@ import {
   getWorkbenchOmittedThreadIds,
   getWorkbenchOmittedThreadsStatus,
   isWorkbenchThreadArchived,
+  resolveWorkbenchTicketThreadTarget,
 } from "./workbench.logic";
 
 describe("Workbench ticket helpers", () => {
@@ -488,5 +491,41 @@ describe("Workbench ticket helpers", () => {
     expect(status([merged, cached])).toBe("pending");
     expect(status([ThreadId.make("thread-pending")])).toBe("pending");
     expect(status([merged, cached, failed])).toBe("failed");
+  });
+});
+
+it("keeps an invisible remote Assignment unavailable instead of missing", () => {
+  const assignment: WorkbenchAssignment = {
+    id: WorkbenchAssignmentId.make("assignment:remote"),
+    ticketId: WorkbenchTicketId.make("ticket:remote"),
+    createdAt: "2026-10-01T00:00:00.000Z",
+    supersededAt: null,
+    threadId: ThreadId.make("remote-thread"),
+    environmentId: EnvironmentId.make("environment:remote-box"),
+  };
+  const { environmentId: _remoteEnvironmentId, ...localAssignment } = assignment;
+  expect(
+    getActiveAssignmentsByTicket({
+      assignments: [
+        {
+          ...localAssignment,
+          id: WorkbenchAssignmentId.make("assignment:missing"),
+          threadId: ThreadId.make("thread:missing"),
+          createdAt: "2026-10-02T00:00:00.000Z",
+        },
+        assignment,
+      ],
+      liveThreadIds: new Set(),
+      archivedThreadIds: new Set(),
+    }).get(assignment.ticketId),
+  ).toBe(assignment);
+  expect(getVisibleWorkbenchAssignments([assignment], new Set(), new Set(), true)).toEqual([
+    assignment,
+  ]);
+  expect(getWorkbenchThreadPresentation(true, false, null, false, true, true).state).toBe(
+    "unavailable",
+  );
+  expect(resolveWorkbenchTicketThreadTarget(assignment, new Set(), true)).toEqual({
+    state: "thread-status-unavailable",
   });
 });

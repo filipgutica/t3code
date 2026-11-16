@@ -16,8 +16,6 @@ import { threadFamilies } from "../state/threads";
 
 import { getWorkbenchOmittedThreadIds, getWorkbenchOmittedThreadsStatus } from "./workbench.logic";
 
-const NO_OMITTED_THREADS = Atom.make("[]").pipe(Atom.withLabel("workbench-omitted-threads:none"));
-
 // A string result re-renders callers only when the omitted set changes, not on every shell delta.
 const omittedThreadIdsAtom = Atom.family((key: string) => {
   const [environmentId, threadIds] = JSON.parse(key) as [EnvironmentId, ThreadId[]];
@@ -60,48 +58,75 @@ const omittedThreadsReadAtom = Atom.family((key: string) => {
   }).pipe(Atom.withLabel(`workbench-omitted-threads-read:${key}`));
 });
 
-/**
- * Keeps assigned Threads the shell left out as older settled in the Thread rows, and reports
- * whether they have all been read and merged, so callers do not show one as deleted. A failed
- * read stays failed until `retry` reads it again.
- */
+const omittedGroupsAtom = Atom.family((key: string) =>
+  Atom.make((get) => {
+    const groups = JSON.parse(key) as Array<[EnvironmentId, ThreadId[]]>;
+    return JSON.stringify(
+      groups.map(([environmentId, threadIds]) => [
+        environmentId,
+        JSON.parse(
+          get(omittedThreadIdsAtom(JSON.stringify([environmentId, threadIds]))),
+        ) as ThreadId[],
+      ]),
+    );
+  }),
+);
+
+const omittedGroupsStatusAtom = Atom.family((key: string) =>
+  Atom.make((get): OmittedThreadsStatus => {
+    const groups = JSON.parse(key) as Array<[EnvironmentId, ThreadId[]]>;
+    const statuses = groups.map((group) => get(omittedThreadsReadAtom(JSON.stringify(group))));
+    return statuses.includes("failed")
+      ? "failed"
+      : statuses.includes("pending")
+        ? "pending"
+        : "ready";
+  }),
+);
+
+/** Holds native family subscriptions only for connected Assignment environments. */
 export function useWorkbenchOmittedThreads(
   environmentId: EnvironmentId | null,
-  assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId">>,
+  assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId" | "environmentId">>,
+  connectedRemoteEnvironmentIds: ReadonlyArray<EnvironmentId> = [],
 ): { readonly status: OmittedThreadsStatus; readonly retry: () => void } {
-  const assignedKey = JSON.stringify([
-    environmentId,
-    [...new Set(assignments.map((assignment) => assignment.threadId))].toSorted(),
-  ]);
-  const omittedThreadIds = useAtomValue(
-    environmentId === null ? NO_OMITTED_THREADS : omittedThreadIdsAtom(assignedKey),
+  const environments = [
+    ...new Set([...(environmentId ? [environmentId] : []), ...connectedRemoteEnvironmentIds]),
+  ];
+  const assignedKey = JSON.stringify(
+    environments.map((id) => [
+      id,
+      [
+        ...new Set(
+          assignments
+            .filter((assignment) => (assignment.environmentId ?? environmentId) === id)
+            .map((assignment) => assignment.threadId),
+        ),
+      ].toSorted(),
+    ]),
   );
-  const omittedKey = `[${JSON.stringify(environmentId)},${omittedThreadIds}]`;
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds native Thread-family subscriptions for assigned records omitted from the shell and releases every lease on unmount
+  const omittedKey = useAtomValue(omittedGroupsAtom(assignedKey));
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- holds native Thread-family subscriptions for assigned records omitted from connected shells
   useEffect(() => {
-    const [mountedEnvironmentId, threadIds] = JSON.parse(omittedKey) as [
-      EnvironmentId | null,
-      ThreadId[],
-    ];
-    if (mountedEnvironmentId === null) return;
-    const releases = threadIds.map((threadId) =>
-      threadFamilies.mount(appAtomRegistry, mountedEnvironmentId, threadId),
+    const groups = JSON.parse(omittedKey) as Array<[EnvironmentId, ThreadId[]]>;
+    const releases = groups.flatMap(([id, threadIds]) =>
+      threadIds.map((threadId) => threadFamilies.mount(appAtomRegistry, id, threadId)),
     );
     return () => {
       for (const release of releases) release();
     };
   }, [omittedKey]);
-  const status = useAtomValue(omittedThreadsReadAtom(omittedKey));
+  const status = useAtomValue(omittedGroupsStatusAtom(omittedKey));
   const retry = () => {
-    const [retryEnvironmentId, threadIds] = JSON.parse(omittedKey) as [
-      EnvironmentId | null,
-      ThreadId[],
-    ];
-    if (retryEnvironmentId === null) return;
-    for (const threadId of threadIds) {
-      const read = appAtomRegistry.get(threadFamilies.familyAtom(retryEnvironmentId, threadId));
-      if (threadFamilyRead(read) === "failed") {
-        threadFamilies.refresh(appAtomRegistry, retryEnvironmentId, threadId);
+    const groups = JSON.parse(omittedKey) as Array<[EnvironmentId, ThreadId[]]>;
+    for (const [id, threadIds] of groups) {
+      for (const threadId of threadIds) {
+        if (
+          threadFamilyRead(appAtomRegistry.get(threadFamilies.familyAtom(id, threadId))) ===
+          "failed"
+        ) {
+          threadFamilies.refresh(appAtomRegistry, id, threadId);
+        }
       }
     }
   };

@@ -146,8 +146,10 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
         code: "project_archived",
         message: "Restore this Board before preparing a Ticket.",
       });
+    // A local planning Thread plans drafts, so only this environment's repositories qualify.
     const links = yield* sql<{ readonly id: ProjectId }>`SELECT t3_project_id AS id
-      FROM workbench_project_links WHERE workbench_project_id = ${projectId} ORDER BY position`;
+      FROM workbench_project_links
+      WHERE workbench_project_id = ${projectId} AND environment_id IS NULL ORDER BY position`;
     return links.map((link) => link.id);
   });
   const requireActiveDraftTicket = Effect.fn("TicketDraftPersistence.requireActiveDraftTicket")(
@@ -179,7 +181,7 @@ export const makeTicketDraftPersistence = Effect.gen(function* () {
     if (new Set(selected).size !== selected.length || selected.some((id) => !linked.includes(id))) {
       return yield* new WorkbenchOperationError({
         code: "repository_not_linked",
-        message: "Choose repositories linked to this Board.",
+        message: "Choose repositories on this machine that are linked to this Board.",
       });
     }
     for (const id of selected) {

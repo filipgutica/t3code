@@ -92,6 +92,7 @@ export function getWorkbenchThreadPresentation(
   nativeStateLabel?: string | null,
   archived = false,
   threadLookupReady = true,
+  remote = false,
 ) {
   if (!hasAssignment) {
     return {
@@ -107,6 +108,14 @@ export function getWorkbenchThreadPresentation(
       pendingActionLabel: "Restoring Thread…",
       stateLabel: "Archived",
       state: "archived",
+    } as const;
+  }
+  if (!threadExists && remote) {
+    return {
+      actionLabel: "Thread unavailable",
+      pendingActionLabel: "Checking Thread…",
+      stateLabel: "Unavailable",
+      state: "unavailable",
     } as const;
   }
   if (!threadExists && !threadLookupReady) {
@@ -157,9 +166,9 @@ export function getActiveAssignmentsByTicket({
   readonly archivedThreadIds?: ReadonlySet<ThreadId>;
   readonly workingThreadIds?: ReadonlySet<ThreadId>;
 }): ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment> {
-  const getThreadAvailabilityRank = (threadId: ThreadId) => {
+  const getThreadAvailabilityRank = ({ threadId, environmentId }: WorkbenchAssignment) => {
     if (liveThreadIds?.has(threadId)) return workingThreadIds?.has(threadId) ? 3 : 2;
-    return archivedThreadIds?.has(threadId) ? 1 : 0;
+    return archivedThreadIds?.has(threadId) ? 1 : environmentId ? 2 : 0;
   };
   const activeAssignments = new Map<WorkbenchTicketId, WorkbenchAssignment>();
   for (const assignment of assignments.toSorted(
@@ -168,10 +177,7 @@ export function getActiveAssignmentsByTicket({
   )) {
     if (assignment.supersededAt !== null) continue;
     const current = activeAssignments.get(assignment.ticketId);
-    if (
-      !current ||
-      getThreadAvailabilityRank(assignment.threadId) > getThreadAvailabilityRank(current.threadId)
-    ) {
+    if (!current || getThreadAvailabilityRank(assignment) > getThreadAvailabilityRank(current)) {
       activeAssignments.set(assignment.ticketId, assignment);
     }
   }
@@ -285,7 +291,9 @@ export function getVisibleWorkbenchAssignments(
   if (!threadLookupReady) return assignments;
   return assignments.filter(
     (assignment) =>
-      liveThreadIds.has(assignment.threadId) || archivedThreadIds.has(assignment.threadId),
+      assignment.environmentId !== undefined ||
+      liveThreadIds.has(assignment.threadId) ||
+      archivedThreadIds.has(assignment.threadId),
   );
 }
 
@@ -299,14 +307,15 @@ export function getAssignmentsForTicket(
 }
 
 export function resolveWorkbenchTicketThreadTarget(
-  assignment: Pick<WorkbenchAssignment, "threadId"> | undefined,
+  assignment: Pick<WorkbenchAssignment, "threadId" | "environmentId"> | undefined,
   existingThreadIds: ReadonlySet<ThreadId>,
   threadLookupReady = true,
 ) {
   if (assignment && existingThreadIds.has(assignment.threadId)) {
     return { state: "open", threadId: assignment.threadId } as const;
   }
-  if (assignment && !threadLookupReady) return { state: "thread-status-unavailable" } as const;
+  if (assignment && (assignment.environmentId !== undefined || !threadLookupReady))
+    return { state: "thread-status-unavailable" } as const;
   return { state: "start" } as const;
 }
 

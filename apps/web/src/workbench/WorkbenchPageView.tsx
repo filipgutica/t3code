@@ -6,10 +6,11 @@ import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { useWorkbenchPageData } from "./useWorkbenchPageData";
 import { useWorkbenchTicketActions } from "./useWorkbenchTicketActions";
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
+import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
 import type { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 
 import { EnvironmentId, type WorkbenchProjectId, type WorkbenchTicketId } from "@t3tools/contracts";
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 
 import {
   AlertCircleIcon,
@@ -66,6 +67,7 @@ import {
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
@@ -538,7 +540,6 @@ function WorkbenchPageBoard(
     pendingAction,
   } = props;
   const {
-    repositoriesById,
     snapshot,
     optimisticStatus,
     threadsById,
@@ -591,7 +592,9 @@ function WorkbenchPageBoard(
             />
           }
           selectedTicketId={null}
-          repositoriesById={repositoriesById}
+          repositoriesById={
+            new Map(boardData.linkedT3Projects.map((project) => [project.id, project]))
+          }
           repositoryProjectIds={selectedProject.linkedProjectIds}
           repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
@@ -642,19 +645,23 @@ function WorkbenchPageBoardChat({
   readonly onOpenDraft: (draftId: WorkbenchTicketId) => void;
 }) {
   const { snapshot } = pageData;
+  // Board chat Threads and planning drafts run on the Board's own environment.
+  const localProjects = boardData.linkedT3Projects.filter(
+    (project) => project.environmentId === environmentId,
+  );
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
       workspace={workspace}
       providers={pageData.providers}
-      linkedProjects={boardData.linkedT3Projects}
+      linkedProjects={localProjects}
       tickets={boardData.projectTickets}
       assignments={snapshot?.assignments ?? []}
       referencesByTicket={pageData.referencesByTicket}
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}
-      createContext={{ linkedProjects: boardData.linkedT3Projects }}
+      createContext={{ linkedProjects: localProjects }}
       canStartDrafts={
         pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
       }
@@ -677,6 +684,19 @@ function WorkbenchPageBoardChat({
       }
     />
   );
+}
+
+/** How the route's New Ticket request opens: a planning draft, or the manual form when no repository is on this machine. */
+function getRouteTicketCreation({
+  createTicket,
+  pageData,
+  selection,
+}: Pick<WorkbenchPageViewProps, "createTicket" | "pageData" | "selection">) {
+  const board = selection.selectedProject;
+  // An archived Board is read-only, so it never starts a conversation.
+  if (createTicket !== true || !pageData.canOperate || !board || board.archivedAt != null)
+    return null;
+  return hasWorkbenchLocalRepository(board) ? "draft" : "manual";
 }
 
 function WorkbenchPageWorkspace(
@@ -703,9 +723,7 @@ function WorkbenchPageWorkspace(
     workspaceId: selectedProject?.id ?? null,
     selectedTicketId: selection.selectedTicketId,
     ticketExists: selectedTicket !== null,
-    // An archived Board is read-only, so it never starts a conversation.
-    createTicket:
-      props.createTicket === true && pageData.canOperate && selectedProject?.archivedAt == null,
+    createTicket: getRouteTicketCreation(props) === "draft",
     awaitingTicketId: selection.awaitingTicketId,
   });
 
@@ -751,7 +769,13 @@ function WorkbenchPageWorkspace(
 function WorkbenchPageWorkspaceDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "createWorkspace" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    | "environmentId"
+    | "createWorkspace"
+    | "dialogs"
+    | "error"
+    | "pageData"
+    | "pendingAction"
+    | "selection"
   >,
 ) {
   const { pageData, selection, dialogs, createWorkspace, error, pendingAction } = props;
@@ -767,6 +791,7 @@ function WorkbenchPageWorkspaceDialogs(
         <WorkbenchWorkspaceDialog
           open={createWorkspace}
           projects={projects}
+          environmentId={props.environmentId}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
@@ -779,6 +804,7 @@ function WorkbenchPageWorkspaceDialogs(
           key={selectedProject.id}
           open
           projects={projects}
+          environmentId={props.environmentId}
           initialWorkspace={selectedProject}
           pending={pending}
           disabled={!pageData.canOperate}
@@ -818,11 +844,13 @@ function WorkbenchPageThreadDialogs(
           open
           request={{
             ticket: startThreadRequest.ticket,
-            projects: pageData.projects.filter((project) =>
-              snapshot?.projects
-                .find((workspace) => workspace.id === startThreadRequest.ticket.projectId)
-                ?.linkedProjectIds.includes(project.id),
-            ),
+            projects: getWorkbenchBoardRepositories({
+              board: snapshot?.projects.find(
+                (board) => board.id === startThreadRequest.ticket.projectId,
+              ) ?? { linkedProjectIds: [] },
+              projects: pageData.projects,
+              environmentId,
+            }),
             workspace: snapshot?.ticketWorkspaces.find(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
@@ -849,6 +877,11 @@ function WorkbenchPageThreadDialogs(
           threads={[...threadsById.values()].filter(
             (thread) =>
               attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
+              thread.environmentId ===
+                (snapshot?.projects
+                  .find((board) => board.id === attachThreadTicket.projectId)
+                  ?.remoteProjects?.find((remote) => remote.projectId === thread.projectId)
+                  ?.environmentId ?? environmentId) &&
               !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,
@@ -868,7 +901,7 @@ function WorkbenchPageThreadDialogs(
 function WorkbenchPageTicketDialogs(
   props: Pick<
     WorkbenchPageViewProps,
-    "boardData" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
+    "boardData" | "createTicket" | "dialogs" | "error" | "pageData" | "pendingAction" | "selection"
   >,
 ) {
   const { pageData, selection, dialogs, boardData, error, pendingAction } = props;
@@ -876,6 +909,9 @@ function WorkbenchPageTicketDialogs(
   const { selectedProject } = selection;
 
   const { ticketDialogOpen, submitTicket, handleTicketDialogOpenChange } = dialogs;
+  const routeManualTicket = getRouteTicketCreation(props) === "manual";
+  // A created Ticket has already replaced create=ticket with its own route.
+  const created = useRef(false);
   const { linkedT3Projects } = boardData;
 
   const pending = pendingAction !== null;
@@ -885,13 +921,17 @@ function WorkbenchPageTicketDialogs(
       {selectedProject ? (
         <WorkbenchTicketDialog
           key={selectedProject.id}
-          open={ticketDialogOpen}
+          open={ticketDialogOpen || routeManualTicket}
           linkedProjects={linkedT3Projects}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}
-          onOpenChange={handleTicketDialogOpenChange}
-          onCreate={submitTicket}
+          onOpenChange={(open) => {
+            handleTicketDialogOpenChange(open);
+            if (!open && routeManualTicket && !created.current) dialogs.closeTicketConversation();
+            created.current = false;
+          }}
+          onCreate={async (draft) => (created.current = await submitTicket(draft))}
         />
       ) : null}
     </>

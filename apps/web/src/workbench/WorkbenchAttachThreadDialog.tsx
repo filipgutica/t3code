@@ -2,7 +2,8 @@ import type {
   EnvironmentProject,
   EnvironmentThreadShell,
 } from "@t3tools/client-runtime/state/shell";
-import type { ThreadId } from "@t3tools/contracts";
+import { useEnvironment } from "../state/environments";
+import type { EnvironmentId, ThreadId } from "@t3tools/contracts";
 import { CheckIcon, LinkIcon } from "lucide-react";
 import { useState } from "react";
 
@@ -19,7 +20,9 @@ import {
 import { Input } from "../components/ui/input";
 import { getWorkbenchRepositoryTitle } from "./WorkbenchThreadRepositoryPicker";
 
-type LinkableThread = Pick<EnvironmentThreadShell, "id" | "title" | "projectId" | "branch">;
+type LinkableThread = Pick<EnvironmentThreadShell, "id" | "title" | "projectId" | "branch"> & {
+  readonly environmentId?: EnvironmentId;
+};
 type RepositoryProject = Pick<EnvironmentProject, "id" | "title">;
 
 function WorkbenchLinkThreadList({
@@ -64,6 +67,7 @@ function WorkbenchLinkThreadList({
               <span className="min-w-0 flex-1 truncate text-left">{thread.title}</span>
               <span className="max-w-1/2 truncate text-xs text-muted-foreground">
                 {[repository, thread.branch].filter(Boolean).join(" · ")}
+                <WorkbenchThreadMachine environmentId={thread.environmentId} />
               </span>
               {selected ? <CheckIcon aria-hidden="true" /> : null}
             </Button>
@@ -170,4 +174,9 @@ export function WorkbenchAttachThreadDialog({
       </DialogPopup>
     </Dialog>
   );
+}
+
+function WorkbenchThreadMachine({ environmentId }: { environmentId: EnvironmentId | undefined }) {
+  const machine = useEnvironment(environmentId ?? null);
+  return environmentId ? <span> · {machine?.label ?? "Another machine"}</span> : null;
 }

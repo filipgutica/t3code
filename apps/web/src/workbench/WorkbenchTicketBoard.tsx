@@ -1,3 +1,4 @@
+import { useEnvironment } from "../state/environments";
 import { matchesWorkbenchAttention, type WorkbenchAttentionMode } from "./workbenchAttention.logic";
 import { useWorkbenchAttentionData } from "./WorkbenchAttentionProvider";
 import { WorkbenchProgressCount } from "./WorkbenchProgressCount";
@@ -677,6 +678,7 @@ function getWorkbenchBoardTicketPresentation({
     nativeStatus?.presentation.label ?? null,
     archivedThread !== undefined,
     threadLookupReady,
+    assignment?.environmentId !== undefined,
   );
   const threadActionPending =
     isWorkbenchTicketStartPending(pendingAction, ticket.id) ||
@@ -792,13 +794,14 @@ function renderWorkbenchBoardTicketThreadAction(
   const { ticket, board, assignment, thread, threadActionPending, threadActionLabel } =
     presentation;
   const { pending, pendingTicketIds, onOpenThread } = board;
+  const needsNewThread = thread.state === "unassigned" || thread.state === "missing";
   return (
     <div className="mt-3 flex min-w-0 flex-wrap items-center justify-between gap-2 border-t border-border/50 pt-2">
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {renderWorkbenchBoardTicketThreadStatus(presentation)}
         <WorkbenchProgressCount done={ticket.progressDone ?? 0} total={ticket.progressTotal ?? 0} />
       </div>
-      {ticket.status !== "done" || (thread.state !== "unassigned" && thread.state !== "missing") ? (
+      {ticket.status !== "done" || !needsNewThread ? (
         <Button
           aria-busy={threadActionPending}
           aria-label={`${threadActionLabel ?? thread.actionLabel} for ${ticket.title}`}
@@ -806,10 +809,10 @@ function renderWorkbenchBoardTicketThreadAction(
           className="relative z-10"
           disabled={
             pending ||
+            thread.state === "unavailable" ||
             pendingTicketIds.has(ticket.id) ||
             (board.threadRestoreDisabled === true && thread.state === "archived") ||
-            (board.readOnly === true &&
-              (thread.state === "unassigned" || thread.state === "missing"))
+            (board.readOnly === true && needsNewThread)
           }
           onClick={() => onOpenThread(ticket, assignment?.threadId)}
           size="xs"
@@ -901,6 +904,12 @@ function renderWorkbenchBoardTicketThreadStatus(
 ) {
   const { ticket, board, nativeStatus, thread } = presentation;
   const { threadCounts } = board;
+  if (presentation.thread.state === "unavailable")
+    return (
+      <WorkbenchBoardRemoteUnavailable
+        environmentId={presentation.assignment?.environmentId ?? null}
+      />
+    );
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-xs text-foreground">
       {nativeStatus ? (
@@ -1234,4 +1243,17 @@ function getWorkbenchBoardAccessibility({
       onDragCancel: () => "Status change canceled.",
     },
   };
+}
+
+function WorkbenchBoardRemoteUnavailable({
+  environmentId,
+}: {
+  environmentId: EnvironmentId | null;
+}) {
+  const machine = useEnvironment(environmentId);
+  return (
+    <span className="text-xs text-muted-foreground">
+      Unavailable · {machine?.label ?? "Another machine"}
+    </span>
+  );
 }

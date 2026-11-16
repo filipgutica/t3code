@@ -179,13 +179,15 @@ export function getWorkbenchTicketPullRequests({
   includeBranchPullRequest = true,
 }: {
   readonly includeBranchPullRequest?: boolean;
-  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId">>;
+  readonly assignments: ReadonlyArray<Pick<WorkbenchAssignment, "threadId" | "environmentId">>;
   readonly threadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
   readonly archivedThreadsById: ReadonlyMap<ThreadId, WorkbenchPullRequestThread>;
 }): ReadonlyArray<WorkbenchTicketPullRequest> {
   const seen = new Set<string>();
   const pullRequests: WorkbenchTicketPullRequest[] = [];
   for (const assignment of assignments) {
+    // PR reads and links resolve on the Board's machine, so remote Threads keep theirs.
+    if (assignment.environmentId !== undefined) continue;
     const thread =
       threadsById.get(assignment.threadId) ?? archivedThreadsById.get(assignment.threadId);
     if (thread === undefined) continue;

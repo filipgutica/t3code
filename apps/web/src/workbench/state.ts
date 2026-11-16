@@ -89,6 +89,12 @@ export const workbenchEnvironment = {
     scheduler,
     concurrency: serialPerEnvironment,
   }),
+  readTicket: createEnvironmentRpcCommand(connectionAtomRuntime, {
+    label: "environment-data:workbench:read-ticket",
+    tag: WS_METHODS.workbenchGetTicket,
+    scheduler,
+    concurrency: serialPerEnvironment,
+  }),
   ticketPreparations,
   ticketWorktrees,
   // One read per host tells attention which review discussions you answered last.
