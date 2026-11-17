@@ -924,6 +924,7 @@ export function useThreadActions() {
 
   const confirmAndDeleteThread = async (
     target: ScopedThreadRef,
+    knownTitle?: string,
     options: { preserveWorktree?: boolean } = {},
   ) => {
     const permissionFailure = threadOperationFailure(target);
@@ -932,7 +933,7 @@ export function useThreadActions() {
     const resolved = resolveThreadTarget(target);
 
     if (confirmThreadDelete && localApi) {
-      const title = resolved?.thread.title ?? "this thread";
+      const title = resolved?.thread.title ?? knownTitle ?? "this thread";
       const confirmationResult = await settlePromise(() =>
         localApi.dialogs.confirm(
           [
