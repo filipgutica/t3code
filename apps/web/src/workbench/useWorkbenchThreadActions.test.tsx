@@ -451,6 +451,7 @@ describe("linked Thread failure recovery", () => {
     expect(nativeDelete).toHaveBeenCalledOnce();
     expect(nativeDelete).toHaveBeenCalledWith(
       { environmentId, threadId: assignment.threadId },
+      undefined,
       { preserveWorktree: true },
     );
     await act(async () => actions.requestNewThread(ticket));

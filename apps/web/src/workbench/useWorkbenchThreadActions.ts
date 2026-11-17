@@ -294,6 +294,7 @@ export function useWorkbenchThreadActions({
     return (async () => {
       const result = await confirmAndDeleteThread(
         scopeThreadRef(assignmentEnvironment(threadId) ?? environmentId, threadId),
+        undefined,
         {
           preserveWorktree: true,
         },
