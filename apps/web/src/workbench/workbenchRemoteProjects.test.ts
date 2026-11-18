@@ -117,6 +117,16 @@ describe("Workbench repositories across machines", () => {
         ticketProjectIds: [desktopApp.id],
       }),
     ).toEqual([desktopApp]);
+    // A Ticket naming two checkouts of one repository keeps both.
+    const laptopCopy = checkout({ id: "laptop-copy", environmentId: laptop, root: "/tmp/app" });
+    expect(
+      getWorkbenchBoardRepositories({
+        board: { linkedProjectIds: [laptopApp.id, laptopCopy.id] },
+        projects: [...projects, laptopCopy],
+        environmentId: laptop,
+        ticketProjectIds: [laptopApp.id, laptopCopy.id],
+      }),
+    ).toEqual([laptopApp, laptopCopy]);
   });
 
   it("keeps a new Ticket's repositories on the machine that links all of them", () => {

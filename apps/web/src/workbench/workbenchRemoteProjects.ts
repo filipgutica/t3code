@@ -99,7 +99,10 @@ function collapseByRepository<T extends EnvironmentProject>({
     if (current === undefined || rank(project) < rank(current)) chosen.set(key, project);
   }
   const kept = new Set(chosen.values());
-  return projects.filter((project) => kept.has(project));
+  // A Ticket's saved checkouts all stay, even two of one repository, so its scope still validates.
+  return projects.filter(
+    (project) => kept.has(project) || preferredProjectIds.includes(project.id),
+  );
 }
 
 /** Every Project the Board links, each on its own link's machine. */
