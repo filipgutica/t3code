@@ -36,7 +36,8 @@ export function WorkbenchBoardDefaultMachine({
       ...(value === undefined ? [] : [value]),
     ]),
   ];
-  if (machineIds.length < 2) return null;
+  // A saved default stays visible so it can be reset to Automatic.
+  if (machineIds.length < 2 && value === undefined) return null;
   const labelOf = (id: EnvironmentId) =>
     id === environmentId
       ? "This machine"
