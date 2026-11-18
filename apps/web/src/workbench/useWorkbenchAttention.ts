@@ -13,7 +13,7 @@ import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useWorkbenchAttentionQueries, workbenchPullRequestRef } from "./WorkbenchAttentionQueries";
 import { pullRequestEnvironment } from "../state/pullRequests";
 import { environmentThreadDetails } from "../state/threads";
@@ -36,6 +36,7 @@ import {
 } from "./workbenchAttention.logic";
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
+const FOCUS_REFRESH_MIN_AWAY_MS = 5_000;
 
 const getObservedPullRequestRow = ({
   row,
@@ -226,7 +227,10 @@ export function useWorkbenchAttention({
       : observations.get(workbenchAttentionIdentity(environmentId, reference));
   // Changes made on the host, such as resolving a review thread, send no refresh signal,
   // so a refresh re-reads flagged PRs past the server cache. Atom commands settle without throwing.
+  const refreshing = useRef(false);
   const refreshAttention = useStableCallback(() => {
+    if (refreshing.current) return;
+    refreshing.current = true;
     const flagged =
       environmentId === null
         ? []
@@ -238,22 +242,30 @@ export function useWorkbenchAttention({
                 input: { reference: workbenchPullRequestRef(reference) },
               }),
             );
-    void Promise.all(flagged).then(() => setAttentionRefresh((previous) => previous + 1));
+    void Promise.all(flagged).then(() => {
+      refreshing.current = false;
+      setAttentionRefresh((previous) => previous + 1);
+    });
   });
+  // Only a real absence, such as a visit to the PR host, spends host requests; alt-tab glances
+  // and clicks into embedded frames also blur the window.
+  const blurredAt = useRef<number | null>(null);
   const refreshAttentionOnFocus = useStableCallback(() => {
-    if (
-      attentionReferences.length === 0 ||
-      attentionReferences.some(
-        (reference) => observationOf(reference)?.inspectionStatus === "loading",
-      )
-    )
-      return;
-    refreshAttention();
+    const awayMs = blurredAt.current === null ? 0 : Date.now() - blurredAt.current;
+    blurredAt.current = null;
+    if (attentionReferences.length > 0 && awayMs >= FOCUS_REFRESH_MIN_AWAY_MS) refreshAttention();
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window focus: returning from the PR host is when its state most likely changed
   useEffect(() => {
+    const onBlur = () => {
+      blurredAt.current = Date.now();
+    };
+    window.addEventListener("blur", onBlur);
     window.addEventListener("focus", refreshAttentionOnFocus);
-    return () => window.removeEventListener("focus", refreshAttentionOnFocus);
+    return () => {
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", refreshAttentionOnFocus);
+    };
   }, [refreshAttentionOnFocus]);
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
@@ -269,7 +281,7 @@ export function useWorkbenchAttention({
         if (environmentId === null) continue;
         const reference = row.pullRequest;
         const observation =
-          observations.get(workbenchAttentionIdentity(environmentId, reference)) ??
+          observationOf(reference) ??
           getWorkbenchPullRequestAttention({
             reference,
             summary: null,
@@ -310,7 +322,7 @@ export function useWorkbenchAttention({
   const attentionInspectionsByTicket = new Map(
     [...attentionByTicket].map(([id, result]) => [id, result.inspections]),
   );
-  const attentionCoverage = `${attentionReferences.filter((reference) => environmentId !== null && observations.get(workbenchAttentionIdentity(environmentId, reference))?.inspected).length} of ${attentionReferences.length} linked PRs inspected`;
+  const attentionCoverage = `${attentionReferences.filter((reference) => observationOf(reference)?.inspected).length} of ${attentionReferences.length} linked PRs inspected`;
   return {
     attentionRefresh,
     refreshAttention,
