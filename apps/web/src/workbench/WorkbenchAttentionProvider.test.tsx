@@ -45,6 +45,7 @@ vi.mock("../state/threads", () => ({ environmentThreadDetails: {} }));
 let renderer: ReactTestRenderer;
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", new EventTarget());
   state.route = null;
   shells.length = 0;
   snapshot.projects[0]!.archivedAt = null;

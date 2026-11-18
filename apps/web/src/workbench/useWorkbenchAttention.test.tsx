@@ -74,10 +74,13 @@ vi.mock("../state/pullRequests", () => ({
     native.summaryQuery(target),
   pullRequestEnvironment: {
     activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+    invalidate: {},
   },
   sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
     native.sharedSummary(...args),
 }));
+const invalidatePullRequest = vi.hoisted(() => vi.fn(async () => ({ _tag: "Success" })));
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => invalidatePullRequest }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
     pullRequestViewer: (target: Parameters<typeof native.viewerQuery>[0]) =>
@@ -202,9 +205,11 @@ async function publishInput(input: Parameters<typeof getWorkbenchPullRequestAtte
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", new EventTarget());
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
   native = createAttentionNativeFixture();
   registry = native.registry;
+  invalidatePullRequest.mockClear();
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -488,7 +493,18 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionScope).toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("complete");
-  await act(async () => result.refreshAttention());
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidatePullRequest).toHaveBeenCalledExactlyOnceWith({
+    environmentId,
+    input: {
+      reference: {
+        projectId: reference.projectId,
+        repository: reference.repository,
+        number: reference.number,
+        host: "github.com",
+      },
+    },
+  });
   expect(result.attentionScope).not.toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",

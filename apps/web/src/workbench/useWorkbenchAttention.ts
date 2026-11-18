@@ -13,13 +13,16 @@ import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
-import { useState } from "react";
-import { useWorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
+import { useEffect, useState } from "react";
+import { useWorkbenchAttentionQueries, workbenchPullRequestRef } from "./WorkbenchAttentionQueries";
+import { pullRequestEnvironment } from "../state/pullRequests";
 import { environmentThreadDetails } from "../state/threads";
+import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import {
   getWorkbenchTicketPullRequests,
+  type TicketPullRequestReference,
   type WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
 import {
@@ -146,7 +149,9 @@ export function useWorkbenchAttention({
   readonly activeThreadRef: ScopedThreadRef | null;
 }) {
   const [attentionRefresh, setAttentionRefresh] = useState(0);
-  const refreshAttention = useStableCallback(() => setAttentionRefresh((previous) => previous + 1));
+  const invalidatePullRequest = useAtomCommand(pullRequestEnvironment.invalidate, {
+    reportFailure: false,
+  });
   const activeAssignments = activeWorkbenchAttentionAssignments({
     assignments,
     threadsById,
@@ -215,6 +220,41 @@ export function useWorkbenchAttention({
     references: attentionReferences,
     refreshGeneration: attentionRefresh,
   });
+  const observationOf = (reference: TicketPullRequestReference) =>
+    environmentId === null
+      ? undefined
+      : observations.get(workbenchAttentionIdentity(environmentId, reference));
+  // Changes made on the host, such as resolving a review thread, send no refresh signal,
+  // so a refresh re-reads flagged PRs past the server cache. Atom commands settle without throwing.
+  const refreshAttention = useStableCallback(() => {
+    const flagged =
+      environmentId === null
+        ? []
+        : attentionReferences
+            .filter((reference) => (observationOf(reference)?.signalKinds.length ?? 0) > 0)
+            .map((reference) =>
+              invalidatePullRequest({
+                environmentId,
+                input: { reference: workbenchPullRequestRef(reference) },
+              }),
+            );
+    void Promise.all(flagged).then(() => setAttentionRefresh((previous) => previous + 1));
+  });
+  const refreshAttentionOnFocus = useStableCallback(() => {
+    if (
+      attentionReferences.length === 0 ||
+      attentionReferences.some(
+        (reference) => observationOf(reference)?.inspectionStatus === "loading",
+      )
+    )
+      return;
+    refreshAttention();
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window focus: returning from the PR host is when its state most likely changed
+  useEffect(() => {
+    window.addEventListener("focus", refreshAttentionOnFocus);
+    return () => window.removeEventListener("focus", refreshAttentionOnFocus);
+  }, [refreshAttentionOnFocus]);
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
       const { signals, reasons } = getTicketThreadAttention({
