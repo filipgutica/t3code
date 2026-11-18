@@ -1395,6 +1395,145 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("runs a Ticket repository on any machine that checks it out", () =>
+    Effect.gen(function* () {
+      const sql = yield* SqlClient.SqlClient;
+      const store = yield* WorkbenchStore;
+      const orbitProjectId = ProjectId.make("t3-project-orbit");
+      const beaconProjectId = ProjectId.make("t3-project-beacon");
+      const remoteOrbitProjectId = ProjectId.make("t3-project-orbit-remote");
+      const legacyProjectId = ProjectId.make("t3-project-legacy");
+      const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
+      const projectId = WorkbenchProjectId.make("workbench-project-1");
+      const ticketId = WorkbenchTicketId.make("ticket-1");
+      const remoteThreadId = ThreadId.make("remote-thread");
+      const orbitKey = "github.com/acme/orbit";
+      const createdAt = "2026-09-03T12:00:00.000Z";
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at
+        ) VALUES
+          (${orbitProjectId}, 'Orbit', '/tmp/orbit', '[]', ${createdAt}, ${createdAt}, NULL),
+          (${beaconProjectId}, 'Beacon', '/tmp/beacon', '[]', ${createdAt}, ${createdAt}, NULL)
+      `;
+      const board = yield* store.createProject({
+        id: projectId,
+        title: "Agent Workbench",
+        linkedProjectIds: [orbitProjectId, beaconProjectId, legacyProjectId],
+        remoteProjects: [
+          { projectId: legacyProjectId, environmentId: remoteEnvironmentId, title: "Legacy" },
+        ],
+        repositoryKeys: [{ projectId: orbitProjectId, repositoryKey: orbitKey }],
+        defaultEnvironmentId: remoteEnvironmentId,
+        createdAt,
+      });
+      expect(board.defaultEnvironmentId).toBe(remoteEnvironmentId);
+      yield* store.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Orbit work",
+        markdown: "",
+        repositoryProjectIds: [orbitProjectId],
+        createdAt,
+      });
+
+      const remote = { environmentId: remoteEnvironmentId, projectId: remoteOrbitProjectId };
+      const otherRepository = yield* Effect.flip(
+        store.createAssignment({
+          id: WorkbenchAssignmentId.make("assignment-other"),
+          ticketId,
+          threadId: remoteThreadId,
+          remote,
+          repository: { repositoryKey: "github.com/acme/other", title: "Other" },
+          createdAt,
+        }),
+      );
+      expect(otherRepository.code).toBe("thread_project_mismatch");
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-1"),
+        ticketId,
+        threadId: remoteThreadId,
+        remote,
+        repository: { repositoryKey: orbitKey, title: "Orbit" },
+        createdAt,
+      });
+
+      // A Thread in a Ticket's unkeyed repository cannot give that repository another identity.
+      const legacyTicketId = WorkbenchTicketId.make("ticket-legacy");
+      yield* store.createTicket({
+        id: legacyTicketId,
+        projectId,
+        title: "Legacy work",
+        markdown: "",
+        repositoryProjectIds: [legacyProjectId],
+        createdAt,
+      });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-legacy"),
+        ticketId: legacyTicketId,
+        threadId: ThreadId.make("legacy-thread"),
+        remote: { environmentId: remoteEnvironmentId, projectId: legacyProjectId },
+        repository: { repositoryKey: orbitKey, title: "Orbit" },
+        createdAt,
+      });
+      const widened = yield* Effect.flip(
+        store.createAssignment({
+          id: WorkbenchAssignmentId.make("assignment-widened"),
+          ticketId: legacyTicketId,
+          threadId: ThreadId.make("orbit-thread-2"),
+          remote,
+          createdAt,
+        }),
+      );
+      expect(widened.code).toBe("thread_project_mismatch");
+
+      const linked = Option.getOrThrow(yield* store.getProject(projectId));
+      expect(linked.linkedProjectIds).toEqual([
+        orbitProjectId,
+        beaconProjectId,
+        legacyProjectId,
+        remoteOrbitProjectId,
+      ]);
+      expect(linked.repositoryKeys).toEqual([
+        { projectId: orbitProjectId, repositoryKey: orbitKey },
+        { projectId: remoteOrbitProjectId, repositoryKey: orbitKey },
+      ]);
+      // The Thread on the other machine still pins Orbit on this Ticket.
+      const locked = yield* Effect.flip(
+        store.updateTicket({
+          id: ticketId,
+          expectedRevision: 0,
+          repositoryProjectIds: [beaconProjectId],
+          updatedAt: createdAt,
+          writer: { kind: "user" },
+        }),
+      );
+      expect(locked).toMatchObject({
+        code: "ticket_repository_scope_locked",
+        message: expect.stringContaining("Orbit"),
+      });
+
+      const updated = yield* store.updateProject({
+        id: projectId,
+        title: "Agent Workbench",
+        linkedProjectIds: [orbitProjectId, beaconProjectId],
+        repositoryKeys: [
+          { projectId: orbitProjectId, repositoryKey: "github.com/acme/renamed" },
+          { projectId: beaconProjectId, repositoryKey: "github.com/acme/beacon" },
+        ],
+        defaultEnvironmentId: null,
+        updatedAt: createdAt,
+      });
+      expect(updated.defaultEnvironmentId).toBeUndefined();
+      // A stored identity is kept; a missing one is filled.
+      expect(updated.repositoryKeys).toEqual([
+        { projectId: orbitProjectId, repositoryKey: orbitKey },
+        { projectId: beaconProjectId, repositoryKey: "github.com/acme/beacon" },
+        { projectId: remoteOrbitProjectId, repositoryKey: orbitKey },
+      ]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("reloads Workbench data after the SQLite layer restarts", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-store-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");

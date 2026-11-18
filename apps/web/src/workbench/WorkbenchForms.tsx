@@ -1,4 +1,6 @@
 import { useEnvironment } from "../state/environments";
+import { WorkbenchBoardDefaultMachine } from "./WorkbenchBoardDefaultMachine";
+import { getWorkbenchRepositoryChoices } from "./workbenchRemoteProjects";
 import { WorkbenchTicketProgress, WorkbenchTicketSharedContext } from "./WorkbenchTicketPlanning";
 import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
 import {
@@ -193,6 +195,14 @@ import {
 
 const NO_TICKET_WORKTREES: ReadonlyArray<WorkbenchTicketWorktree> = [];
 
+export interface WorkbenchBoardSave {
+  readonly title: string;
+  readonly linkedProjectIds: ReadonlyArray<ProjectId>;
+  readonly remoteProjects: ReadonlyArray<WorkbenchRemoteProject>;
+  /** Undefined means Automatic. */
+  readonly defaultEnvironmentId: EnvironmentId | undefined;
+}
+
 export function WorkbenchWorkspaceDialog({
   open,
   projects,
@@ -216,15 +226,18 @@ export function WorkbenchWorkspaceDialog({
         readonly title: string;
         readonly linkedProjectIds: ReadonlyArray<ProjectId>;
         readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>;
+        readonly defaultEnvironmentId?: EnvironmentId;
       }
     | undefined;
-  readonly onSave: (
-    title: string,
-    linkedProjectIds: ReadonlyArray<ProjectId>,
-    remoteProjects: ReadonlyArray<WorkbenchRemoteProject>,
-  ) => Promise<boolean>;
+  readonly onSave: (board: WorkbenchBoardSave) => Promise<boolean>;
 }) {
-  const initial = initialWorkspace ?? { title: "", linkedProjectIds: [], remoteProjects: [] };
+  const initial = initialWorkspace ?? {
+    title: "",
+    linkedProjectIds: [],
+    remoteProjects: [],
+    defaultEnvironmentId: undefined,
+  };
+  const [defaultEnvironmentId, setDefaultEnvironmentId] = useState(initial.defaultEnvironmentId);
   const [title, setTitle] = useState(initial.title);
   const [linkedProjectIds, setLinkedProjectIds] = useState<ReadonlyArray<ProjectId>>(
     initial.linkedProjectIds,
@@ -256,7 +269,10 @@ export function WorkbenchWorkspaceDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (cannotSave) return;
-    if (await onSave(title.trim(), linkedProjectIds, remoteProjects)) onOpenChange(false);
+    if (
+      await onSave({ title: title.trim(), linkedProjectIds, remoteProjects, defaultEnvironmentId })
+    )
+      onOpenChange(false);
   };
 
   return (
@@ -289,6 +305,13 @@ export function WorkbenchWorkspaceDialog({
               setLinkedProjectIds={setLinkedProjectIds}
               remoteProjects={remoteProjects}
               setRemoteProjects={setRemoteProjects}
+            />
+            <WorkbenchBoardDefaultMachine
+              environmentId={environmentId}
+              projects={projects}
+              value={defaultEnvironmentId}
+              pending={pending}
+              onChange={setDefaultEnvironmentId}
             />
           </form>
         </DialogPanel>
@@ -3581,7 +3604,11 @@ function WorkbenchWorkspaceRepositories({
 }) {
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLowerCase();
-  const matchingProjects = projects.filter(
+  const matchingProjects = getWorkbenchRepositoryChoices({
+    projects,
+    environmentId,
+    linkedProjectIds,
+  }).filter(
     (project) =>
       project.title.toLowerCase().includes(normalizedQuery) ||
       project.workspaceRoot.toLowerCase().includes(normalizedQuery),
@@ -3597,7 +3624,9 @@ function WorkbenchWorkspaceRepositories({
       <p className="text-xs text-muted-foreground">
         {initialWorkspace
           ? "Already-linked repositories stay selected. Add a directory as a T3 Project first if it is not listed here."
-          : "Tickets can target any selected T3 Project."}
+          : "Tickets can target any selected T3 Project."}{" "}
+        A repository checked out on several machines appears once, and Threads can run on any of
+        them.
       </p>
       {projects.length > 0 ? (
         <Input

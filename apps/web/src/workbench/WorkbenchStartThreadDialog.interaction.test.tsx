@@ -150,6 +150,8 @@ const render = async ({
           environmentId,
           ticket: savedTicket,
           projects: availableProjects,
+          machineProjects: availableProjects,
+          board: undefined,
           workspace: unprepared ? undefined : preparedWorkspace,
           initialRepositoryScope: repositoryScope,
           repositoryProjectId,

@@ -337,6 +337,13 @@ and its Tickets stay on the machine that holds the Board.
 2. Choose **Edit Board** and select its Projects, listed under that machine's name.
 3. Create a Ticket whose repositories are all on that machine, then start work.
 
+A repository checked out on several machines, with the same git remote and path,
+is one Board repository. Link it once on any machine. When you create a Thread,
+choose any connected machine that has all of the Ticket's repositories. To set the
+machine new Threads use first, choose **Edit Board** and pick a **Default
+machine**. **Automatic** uses the Board's machine. Ticket worktrees are always
+prepared on the Board's machine.
+
 Starting work creates the Thread on the other machine and puts the Ticket in its
 composer as the first message. Choose that Thread's workspace mode before you
 send it. After that the Thread works like any native Thread on that machine:

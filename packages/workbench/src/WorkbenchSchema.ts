@@ -1325,6 +1325,14 @@ export const ensureWorkbenchSchema = Effect.gen(function* () {
       yield* sql`ALTER TABLE workbench_assignments ADD COLUMN remote_t3_project_id TEXT`;
     }),
   );
+  yield* applyMigration(
+    29,
+    Effect.gen(function* () {
+      // Links sharing a repository_key are one repository on several machines; NULL stays per-link.
+      yield* sql`ALTER TABLE workbench_project_links ADD COLUMN repository_key TEXT`;
+      yield* sql`ALTER TABLE workbench_projects ADD COLUMN default_environment_id TEXT`;
+    }),
+  );
   yield* sql`
     INSERT OR IGNORE INTO workbench_schema_migrations (version)
     VALUES (1), (2), (3), (4), (5), (6), (7), (8), (9), (10), (11), (12), (13), (14)

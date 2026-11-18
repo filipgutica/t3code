@@ -67,7 +67,10 @@ import {
 import { WorkbenchTicketBoard } from "./WorkbenchTicketBoard";
 import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
-import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
+import {
+  getWorkbenchBoardRepositories,
+  matchWorkbenchTicketThread,
+} from "./workbenchRemoteProjects";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
 import { WorkbenchPageRow, useWorkbenchControlsHostRef } from "./WorkbenchPagePanel";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
@@ -836,6 +839,9 @@ function WorkbenchPageThreadDialogs(
     getActiveThreadRepository,
   } = threadActions;
   const pending = pendingAction !== null;
+  const startThreadBoard = snapshot?.projects.find(
+    (board) => board.id === startThreadRequest?.ticket.projectId,
+  );
   return (
     <>
       {startThreadRequest && environmentId && startThreadRequest.environmentId === environmentId ? (
@@ -845,12 +851,16 @@ function WorkbenchPageThreadDialogs(
           request={{
             ticket: startThreadRequest.ticket,
             projects: getWorkbenchBoardRepositories({
-              board: snapshot?.projects.find(
-                (board) => board.id === startThreadRequest.ticket.projectId,
-              ) ?? { linkedProjectIds: [] },
+              board: startThreadBoard ?? { linkedProjectIds: [] },
               projects: pageData.projects,
               environmentId,
+              ticketProjectIds: [
+                ...startThreadRequest.ticket.repositoryProjectIds,
+                ...(startThreadRequest.repositoryScope?.repositoryProjectIds ?? []),
+              ],
             }),
+            machineProjects: pageData.projects,
+            board: startThreadBoard,
             workspace: snapshot?.ticketWorkspaces.find(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
@@ -876,12 +886,16 @@ function WorkbenchPageThreadDialogs(
           projects={pageData.projects}
           threads={[...threadsById.values()].filter(
             (thread) =>
-              attachThreadTicket.repositoryProjectIds.includes(thread.projectId) &&
-              thread.environmentId ===
-                (snapshot?.projects
-                  .find((board) => board.id === attachThreadTicket.projectId)
-                  ?.remoteProjects?.find((remote) => remote.projectId === thread.projectId)
-                  ?.environmentId ?? environmentId) &&
+              environmentId !== null &&
+              matchWorkbenchTicketThread({
+                board: snapshot?.projects.find(
+                  (board) => board.id === attachThreadTicket.projectId,
+                ),
+                boardEnvironmentId: environmentId,
+                repositoryProjectIds: attachThreadTicket.repositoryProjectIds,
+                projects: pageData.projects,
+                thread,
+              }) !== null &&
               !reservedThreadIds.has(thread.id) &&
               !(snapshot?.assignments ?? []).some(
                 (assignment) => assignment.threadId === thread.id,

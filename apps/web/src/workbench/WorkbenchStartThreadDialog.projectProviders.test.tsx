@@ -109,6 +109,8 @@ const mount = () =>
           environmentId,
           ticket,
           projects,
+          machineProjects: projects,
+          board: undefined,
           workspace: undefined,
           initialRepositoryScope: undefined,
           repositoryProjectId: undefined,

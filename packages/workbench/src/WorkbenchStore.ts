@@ -4,6 +4,8 @@ import {
   WorkbenchAssignment,
   WorkbenchAssignmentId,
   type WorkbenchRemoteProject,
+  type WorkbenchProjectRepositoryKey,
+  type WorkbenchThreadRepository,
   type WorkbenchRemoteThread,
   WorkbenchOperationError,
   WorkbenchProject,
@@ -65,6 +67,7 @@ import { ensureWorkbenchSchema } from "./WorkbenchSchema.ts";
 const WorkbenchProjectRow = Schema.Struct({
   id: WorkbenchProjectId,
   title: WorkbenchProject.fields.title,
+  defaultEnvironmentId: Schema.NullOr(EnvironmentId),
   archivedAt: Schema.NullOr(IsoDateTime),
   revision: Schema.Number,
   createdAt: WorkbenchProject.fields.createdAt,
@@ -76,8 +79,14 @@ const WorkbenchProjectLinkRow = Schema.Struct({
   position: Schema.Number,
   environmentId: Schema.NullOr(EnvironmentId),
   remoteTitle: Schema.NullOr(Schema.String),
+  repositoryKey: Schema.NullOr(Schema.String),
 });
 type WorkbenchProjectLinkRow = typeof WorkbenchProjectLinkRow.Type;
+
+/** Links with the same key are one repository; a link without a known identity stands alone. */
+const effectiveRepositoryKey = (
+  link: Pick<WorkbenchProjectLinkRow, "linkedProjectId" | "repositoryKey">,
+) => link.repositoryKey ?? `\0project:${link.linkedProjectId}`;
 
 /** The Board shape of its link rows: every linked ID in order, and which of them are remote. */
 const projectLinkFields = (links: ReadonlyArray<WorkbenchProjectLinkRow>) => {
@@ -92,11 +101,27 @@ const projectLinkFields = (links: ReadonlyArray<WorkbenchProjectLinkRow>) => {
           },
         ],
   );
+  const repositoryKeys = links.flatMap((link) =>
+    link.repositoryKey === null
+      ? []
+      : [{ projectId: link.linkedProjectId, repositoryKey: link.repositoryKey }],
+  );
   return {
     linkedProjectIds: links.map((link) => link.linkedProjectId),
     ...(remoteProjects.length > 0 ? { remoteProjects } : {}),
+    ...(repositoryKeys.length > 0 ? { repositoryKeys } : {}),
   };
 };
+
+const toWorkbenchProject = (
+  { defaultEnvironmentId, ...row }: typeof WorkbenchProjectRow.Type,
+  links: ReadonlyArray<WorkbenchProjectLinkRow>,
+) =>
+  WorkbenchProject.make({
+    ...row,
+    ...(defaultEnvironmentId === null ? {} : { defaultEnvironmentId }),
+    ...projectLinkFields(links),
+  });
 
 const WorkbenchAssignmentRow = Schema.Struct({
   ...WorkbenchAssignment.fields,
@@ -818,6 +843,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         project_id AS "id",
         title,
+        default_environment_id AS "defaultEnvironmentId",
         archived_at AS "archivedAt",
         revision,
         created_at AS "createdAt",
@@ -836,7 +862,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         t3_project_id AS "linkedProjectId",
         position,
         environment_id AS "environmentId",
-        remote_title AS "remoteTitle"
+        remote_title AS "remoteTitle",
+        repository_key AS "repositoryKey"
       FROM workbench_project_links
       ORDER BY workbench_project_id ASC, position ASC
     `,
@@ -1409,18 +1436,48 @@ const makeWorkbenchStore = Effect.gen(function* () {
       return remoteLinks;
     },
   );
+  const repositoryKeysByProjectId = Effect.fn("WorkbenchStore.repositoryKeysByProjectId")(
+    function* (input: {
+      readonly linkedProjectIds: ReadonlyArray<ProjectId>;
+      readonly repositoryKeys?: ReadonlyArray<WorkbenchProjectRepositoryKey>;
+    }) {
+      const keys = new Map<ProjectId, string>();
+      for (const { projectId, repositoryKey } of input.repositoryKeys ?? []) {
+        if (!input.linkedProjectIds.includes(projectId)) {
+          return yield* new WorkbenchOperationError({
+            code: "repository_not_linked",
+            message: "A repository identity must belong to one of the Board's linked repositories.",
+          });
+        }
+        keys.set(projectId, repositoryKey);
+      }
+      return keys;
+    },
+  );
   const insertProjectLink = (input: {
     readonly projectId: WorkbenchProjectId;
     readonly linkedProjectId: ProjectId;
     readonly position: number;
     readonly remote: WorkbenchRemoteProject | undefined;
+    readonly repositoryKey: string | undefined;
   }) => sql`
     INSERT INTO workbench_project_links (
-      workbench_project_id, t3_project_id, position, environment_id, remote_title
+      workbench_project_id, t3_project_id, position, environment_id, remote_title, repository_key
     ) VALUES (
       ${input.projectId}, ${input.linkedProjectId}, ${input.position},
-      ${input.remote?.environmentId ?? null}, ${input.remote?.title ?? null}
+      ${input.remote?.environmentId ?? null}, ${input.remote?.title ?? null},
+      ${input.repositoryKey ?? null}
     )
+  `;
+  // A link's identity is set once, so a later client cannot move existing work to another repository.
+  const fillLinkRepositoryKey = (input: {
+    readonly projectId: WorkbenchProjectId;
+    readonly linkedProjectId: ProjectId;
+    readonly repositoryKey: string;
+  }) => sql`
+    UPDATE workbench_project_links SET repository_key = ${input.repositoryKey}
+    WHERE workbench_project_id = ${input.projectId} AND t3_project_id = ${input.linkedProjectId}
+      AND repository_key IS NULL
   `;
   const validateLinkedProject = Effect.fn("WorkbenchStore.validateLinkedProject")(function* ({
     linkedProjectId,
@@ -1451,6 +1508,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
       SELECT
         project_id AS "id",
         title,
+        default_environment_id AS "defaultEnvironmentId",
         archived_at AS "archivedAt",
         revision,
         created_at AS "createdAt",
@@ -1468,10 +1526,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
             if (Option.isNone(project)) return Option.none<WorkbenchProject>();
             const links = yield* listProjectLinkRows();
             return Option.some(
-              WorkbenchProject.make({
-                ...project.value,
-                ...projectLinkFields(links.filter((link) => link.projectId === projectId)),
-              }),
+              toWorkbenchProject(
+                project.value,
+                links.filter((link) => link.projectId === projectId),
+              ),
             );
           }),
         )
@@ -1549,7 +1607,8 @@ const makeWorkbenchStore = Effect.gen(function* () {
         t3_project_id AS "linkedProjectId",
         position,
         environment_id AS "environmentId",
-        remote_title AS "remoteTitle"
+        remote_title AS "remoteTitle",
+        repository_key AS "repositoryKey"
       FROM workbench_project_links
       WHERE workbench_project_id = ${projectId}
         AND t3_project_id = ${linkedProjectId}
@@ -1920,10 +1979,9 @@ const makeWorkbenchStore = Effect.gen(function* () {
             Effect.provideService(WorkbenchNativeAccess, native),
             Effect.provideService(SqlClient.SqlClient, sql),
           ),
-          projects: projectRows.map((project) => ({
-            ...project,
-            ...projectLinkFields(linksByProject.get(project.id) ?? []),
-          })),
+          projects: projectRows.map((project) =>
+            toWorkbenchProject(project, linksByProject.get(project.id) ?? []),
+          ),
           tickets: ticketRows.map((ticket) => {
             // The Board needs only the counts and review flag; the Ticket read carries the rest.
             const {
@@ -2603,6 +2661,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
   )(function* (input) {
     const linkedProjectIds = [...new Set(input.linkedProjectIds)];
     const remoteLinks = yield* remoteLinksByProjectId(input);
+    const repositoryKeys = yield* repositoryKeysByProjectId(input);
     for (const linkedProjectId of linkedProjectIds) {
       if (!remoteLinks.has(linkedProjectId)) yield* validateLinkedProject({ linkedProjectId });
     }
@@ -2611,8 +2670,12 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .withTransaction(
         Effect.gen(function* () {
           yield* sql`
-          INSERT INTO workbench_projects (project_id, title, created_at, updated_at)
-          VALUES (${input.id}, ${input.title}, ${input.createdAt}, ${input.createdAt})
+          INSERT INTO workbench_projects (
+            project_id, title, default_environment_id, created_at, updated_at
+          ) VALUES (
+            ${input.id}, ${input.title}, ${input.defaultEnvironmentId ?? null},
+            ${input.createdAt}, ${input.createdAt}
+          )
         `;
           for (const [position, linkedProjectId] of linkedProjectIds.entries()) {
             yield* insertProjectLink({
@@ -2620,21 +2683,39 @@ const makeWorkbenchStore = Effect.gen(function* () {
               linkedProjectId,
               position,
               remote: remoteLinks.get(linkedProjectId),
+              repositoryKey: repositoryKeys.get(linkedProjectId),
             });
           }
         }),
       )
       .pipe(Effect.mapError(persistenceError));
 
-    const { remoteProjects: _remoteProjects, ...fields } = input;
-    return WorkbenchProject.make({
-      ...fields,
-      linkedProjectIds,
-      ...(remoteLinks.size > 0 ? { remoteProjects: [...remoteLinks.values()] } : {}),
-      archivedAt: null,
-      revision: 0,
-      updatedAt: input.createdAt,
-    });
+    const {
+      remoteProjects: _remoteProjects,
+      repositoryKeys: _repositoryKeys,
+      defaultEnvironmentId,
+      ...fields
+    } = input;
+    return toWorkbenchProject(
+      {
+        ...fields,
+        defaultEnvironmentId: defaultEnvironmentId ?? null,
+        archivedAt: null,
+        revision: 0,
+        updatedAt: input.createdAt,
+      },
+      linkedProjectIds.map((linkedProjectId, position) => {
+        const remote = remoteLinks.get(linkedProjectId);
+        return {
+          projectId: input.id,
+          linkedProjectId,
+          position,
+          environmentId: remote?.environmentId ?? null,
+          remoteTitle: remote?.title ?? null,
+          repositoryKey: repositoryKeys.get(linkedProjectId) ?? null,
+        };
+      }),
+    );
   });
 
   const archiveProject: WorkbenchStoreShape["archiveProject"] = Effect.fn(
@@ -2743,6 +2824,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
     `.pipe(NodeSqliteClient.readOnly, Effect.mapError(persistenceError));
     const existingIds = new Set(currentLinks.map((link) => link.id));
     const remoteLinks = yield* remoteLinksByProjectId(input);
+    const repositoryKeys = yield* repositoryKeysByProjectId(input);
     const validatedRoots = new Map<ProjectId, string>();
     for (const linkedProjectId of linkedProjectIds) {
       if (!existingIds.has(linkedProjectId) && !remoteLinks.has(linkedProjectId)) {
@@ -2802,9 +2884,14 @@ const makeWorkbenchStore = Effect.gen(function* () {
             }
           }
 
+          const defaultEnvironmentId =
+            input.defaultEnvironmentId === undefined
+              ? current.value.defaultEnvironmentId
+              : input.defaultEnvironmentId;
           yield* sql`
             UPDATE workbench_projects
-            SET title = ${input.title}, updated_at = ${input.updatedAt}, revision = revision + 1
+            SET title = ${input.title}, default_environment_id = ${defaultEnvironmentId},
+              updated_at = ${input.updatedAt}, revision = revision + 1
             WHERE project_id = ${input.id}
           `;
           const nextPosition = currentLinks.reduce(
@@ -2817,28 +2904,24 @@ const makeWorkbenchStore = Effect.gen(function* () {
               linkedProjectId,
               position: nextPosition + offset,
               remote: remoteLinks.get(linkedProjectId),
+              repositoryKey: repositoryKeys.get(linkedProjectId),
             });
           }
+          for (const [linkedProjectId, repositoryKey] of repositoryKeys) {
+            if (!existingProjectIdSet.has(linkedProjectId)) continue;
+            yield* fillLinkRepositoryKey({ projectId: input.id, linkedProjectId, repositoryKey });
+          }
 
-          return WorkbenchProject.make({
-            ...current.value,
-            title: input.title,
-            revision: current.value.revision + 1,
-            ...projectLinkFields([
-              ...currentLinks,
-              ...additions.map((linkedProjectId, offset) => {
-                const remote = remoteLinks.get(linkedProjectId);
-                return {
-                  projectId: input.id,
-                  linkedProjectId,
-                  position: nextPosition + offset,
-                  environmentId: remote?.environmentId ?? null,
-                  remoteTitle: remote?.title ?? null,
-                };
-              }),
-            ]),
-            updatedAt: input.updatedAt,
-          });
+          return toWorkbenchProject(
+            {
+              ...current.value,
+              title: input.title,
+              defaultEnvironmentId,
+              revision: current.value.revision + 1,
+              updatedAt: input.updatedAt,
+            },
+            (yield* listProjectLinkRows()).filter((link) => link.projectId === input.id),
+          );
         }),
       )
       .pipe(Effect.mapError(workbenchStoreError));
@@ -3070,14 +3153,29 @@ const makeWorkbenchStore = Effect.gen(function* () {
   // Runs inside the Ticket write, so a Thread linked after the caller read the Ticket still counts.
   const requireRemovedRepositoriesIdle = Effect.fn("WorkbenchStore.requireRemovedRepositoriesIdle")(
     function* (input: {
+      readonly projectId: WorkbenchProjectId;
       readonly ticketId: WorkbenchTicketId;
       readonly current: ReadonlyArray<ProjectId>;
       readonly requested: ReadonlyArray<ProjectId> | undefined;
     }) {
       const { requested } = input;
       if (requested === undefined) return;
-      const inUse = (yield* listActiveThreadProjectIds(input.ticketId)).find(
-        (id) => input.current.includes(id) && !requested.includes(id),
+      // Compare repositories, not Projects: a Thread on any machine pins its repository.
+      const keyByProjectId = new Map(
+        (yield* listBoardLinks(input.projectId)).map((link) => [
+          link.linkedProjectId,
+          effectiveRepositoryKey(link),
+        ]),
+      );
+      const keyOf = (id: ProjectId) =>
+        keyByProjectId.get(id) ??
+        effectiveRepositoryKey({ linkedProjectId: id, repositoryKey: null });
+      const requestedKeys = new Set(requested.map(keyOf));
+      const removedKeys = new Set(
+        input.current.map(keyOf).filter((key) => !requestedKeys.has(key)),
+      );
+      const inUse = (yield* listActiveThreadProjectIds(input.ticketId)).find((id) =>
+        removedKeys.has(keyOf(id)),
       );
       if (inUse === undefined) return;
       const project = yield* native.findProject(inUse);
@@ -3155,6 +3253,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             });
           }
           yield* requireRemovedRepositoriesIdle({
+            projectId: current.projectId,
             ticketId: input.id,
             current: currentRepositoryProjectIds,
             requested: input.repositoryProjectIds,
@@ -3788,18 +3887,73 @@ const makeWorkbenchStore = Effect.gen(function* () {
       .pipe(Effect.mapError(workbenchStoreError));
   });
 
+  const listBoardLinks = (projectId: WorkbenchProjectId) =>
+    listProjectLinkRows().pipe(
+      Effect.map((links) => links.filter((link) => link.projectId === projectId)),
+    );
+
   /**
-   * A remote Thread cannot be read here, so its Project comes from the client and must be one
-   * of the Ticket's repositories on that same environment.
+   * The Thread's Project must check out one of the Ticket's repositories, on any machine. A
+   * Project the Board has not linked yet joins the Ticket repository whose key the client names.
    */
+  const requireThreadInTicketRepository = Effect.fn(
+    "WorkbenchStore.requireThreadInTicketRepository",
+  )(function* ({
+    ticket,
+    threadProjectId,
+    remote,
+    repository,
+  }: {
+    ticket: {
+      readonly id: WorkbenchTicketId;
+      readonly projectId: WorkbenchProjectId;
+      readonly anchorProjectId: ProjectId;
+    };
+    threadProjectId: ProjectId;
+    remote: WorkbenchRemoteThread | undefined;
+    repository: WorkbenchThreadRepository | undefined;
+  }) {
+    const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId: ticket.id });
+    const repositoryProjectIds =
+      repositories.length > 0
+        ? repositories.map((row) => row.repositoryProjectId)
+        : [ticket.anchorProjectId];
+    const boardLinks = yield* listBoardLinks(ticket.projectId);
+    const ticketKeys = new Set(
+      boardLinks
+        .filter((link) => repositoryProjectIds.includes(link.linkedProjectId))
+        .map(effectiveRepositoryKey),
+    );
+    const link = boardLinks.find((candidate) => candidate.linkedProjectId === threadProjectId);
+    if (link === undefined) {
+      if (repository === undefined || !ticketKeys.has(repository.repositoryKey)) return false;
+      yield* insertProjectLink({
+        projectId: ticket.projectId,
+        linkedProjectId: threadProjectId,
+        position: boardLinks.reduce((position, row) => Math.max(position, row.position + 1), 0),
+        remote: remote && { ...remote, title: repository.title },
+        repositoryKey: repository.repositoryKey,
+      });
+      return true;
+    }
+    // A linked Project keeps its stored identity; an Assignment never redefines it.
+    return (
+      link.environmentId === (remote?.environmentId ?? null) &&
+      ticketKeys.has(effectiveRepositoryKey(link))
+    );
+  });
+
+  /** A remote Thread cannot be read here, so its Project comes from the client. */
   const requireAssignableThread = Effect.fn("WorkbenchStore.requireAssignableThread")(function* ({
     ticketId,
     threadId,
     remote,
+    repository,
   }: {
     ticketId: WorkbenchTicketId;
     threadId: ThreadId;
     remote: WorkbenchRemoteThread | undefined;
+    repository: WorkbenchThreadRepository | undefined;
   }) {
     const ticket = yield* requireActiveTicket({
       ticketId,
@@ -3818,19 +3972,15 @@ const makeWorkbenchStore = Effect.gen(function* () {
       }
       threadProjectId = nativeThread.value.projectId;
     }
-    const repositories = yield* listTicketRepositoryRowsByTicket({ ticketId });
-    const repositoryProjectIds =
-      repositories.length > 0
-        ? repositories.map((repository) => repository.repositoryProjectId)
-        : [ticket.anchorProjectId];
-    const link =
-      threadProjectId === undefined || !repositoryProjectIds.includes(threadProjectId)
-        ? Option.none()
-        : yield* findProjectLink({
-            projectId: ticket.projectId,
-            linkedProjectId: threadProjectId,
-          }).pipe(Effect.mapError(persistenceError));
-    if (Option.isNone(link) || link.value.environmentId !== (remote?.environmentId ?? null)) {
+    const inTicketRepository =
+      threadProjectId !== undefined &&
+      (yield* requireThreadInTicketRepository({
+        ticket,
+        threadProjectId,
+        remote,
+        repository,
+      }).pipe(Effect.mapError(persistenceError)));
+    if (!inTicketRepository) {
       return yield* new WorkbenchOperationError({
         code: "thread_project_mismatch",
         message: "The native T3 Thread works in a repository this Ticket does not link.",
@@ -3886,6 +4036,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticketId: input.ticketId,
             threadId: input.threadId,
             remote: input.remote,
+            repository: input.repository,
           });
           const assignment = WorkbenchAssignment.make({
             id: input.id,
@@ -3999,6 +4150,7 @@ const makeWorkbenchStore = Effect.gen(function* () {
             ticketId: input.ticketId,
             threadId: input.threadId,
             remote: input.remote,
+            repository: input.repository,
           });
           const superseded = yield* supersedeAssignmentRow(input);
           if (Option.isNone(superseded)) {

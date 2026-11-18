@@ -173,8 +173,9 @@ export function useStartWorkbenchTicket({
                 project.environmentId === environmentId ||
                 readEnvironment(project.environmentId)?.connection.phase === "connected",
             ),
-            remoteProjects: workbenchProjects.find((board) => board.id === ticket.projectId)
-              ?.remoteProjects,
+            ...workbenchBoardStartFields(
+              workbenchProjects.find((board) => board.id === ticket.projectId),
+            ),
             assignment: options?.assignment ?? assignmentsByTicket.get(ticket.id),
             existingThreadIds,
             threadLookupReady,
@@ -264,3 +265,9 @@ export function useStartWorkbenchTicket({
     return result;
   };
 }
+
+const workbenchBoardStartFields = (board: WorkbenchProject | undefined) => ({
+  remoteProjects: board?.remoteProjects,
+  repositoryKeys: board?.repositoryKeys,
+  defaultEnvironmentId: board?.defaultEnvironmentId,
+});

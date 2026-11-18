@@ -20,7 +20,12 @@ export function getWorkbenchBoardData({
     (ticket) => ticket.projectId === selectedProject?.id && ticket.archivedAt == null,
   );
   const linkedT3Projects = selectedProject
-    ? getWorkbenchBoardRepositories({ board: selectedProject, projects, environmentId })
+    ? getWorkbenchBoardRepositories({
+        board: selectedProject,
+        projects,
+        environmentId,
+        ticketProjectIds: selectedTicket?.repositoryProjectIds,
+      })
     : [];
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
