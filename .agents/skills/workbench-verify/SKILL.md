@@ -41,8 +41,14 @@ Tickets or Threads or send messages in this environment.
 5. **Prepare.** Create the state the check needs in the copy, such as a
    Board that links the Projects under test. Name it so it reads as a test.
 6. **Hand over.** Show the tab (`preview_open` with its `tabId` and
-   `open: true`). Tell the developer what is connected, what you created,
-   and what to check.
+   `open: true`). The startup token is used up by now, so also issue a fresh
+   one: run `node apps/server/src/bin.ts auth pairing create --base-dir <worktree>/.t3 --ttl 2h --label verify-handover --base-url <shared origin> --json`
+   from `apps/server`. Give the developer its link in the
+   `/pair?token=<token>` form, never the bare origin. Tell them three things:
+   - what is connected, and that the other machines are paired only in the
+     Browser panel's profile;
+   - what you created;
+   - what to check.
 
 ## Tear down
 
