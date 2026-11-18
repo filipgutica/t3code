@@ -124,6 +124,7 @@ vi.mock("../state/pullRequests", () => ({
     native.summaryQuery(target),
   pullRequestEnvironment: {
     activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+    invalidate: {},
   },
   sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
     native.sharedSummary(...args),
@@ -150,6 +151,7 @@ function TicketAttention() {
 
 it("clears resolved discussion attention after closing the docked PR without a metadata change", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", new EventTarget());
   native = createAttentionNativeFixture();
   const reviewThreads: PullRequestReviewThread[] = [
     {

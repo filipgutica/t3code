@@ -80,6 +80,7 @@ vi.mock("../state/environments", () => ({
 }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => null,
+  pullRequestEnvironment: { invalidate: {} },
   useSharedPullRequestSummary: () => null,
 }));
 vi.mock("../state/query", () => ({
@@ -164,6 +165,7 @@ describe("Workbench pull request navigation", () => {
     "opens %s beside the active thread without changing its route",
     async (repository) => {
       vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+      vi.stubGlobal("window", new EventTarget());
       location.href = "/local/thread/reading";
       location.environmentId = "local";
       location.threadId = "reading";
@@ -220,6 +222,7 @@ describe("Workbench pull request navigation", () => {
 
   it("opens a page pull request in the panel of the Thread the floating chat shows", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", new EventTarget());
     const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
     useWorkbenchFloatingChatStore.setState({ shownThread });
     let renderer: ReactTestRenderer | undefined;
@@ -262,6 +265,7 @@ describe("Workbench pull request navigation", () => {
 
   it("opens a pull request link in a brief in the page's preview, and other links in a tab", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", new EventTarget());
     let renderer: ReactTestRenderer | undefined;
     try {
       await act(() => {
@@ -293,6 +297,7 @@ describe("Workbench pull request navigation", () => {
 
   it("opens a brief's pull request from another repository on the host in the chat Thread's panel", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", new EventTarget());
     const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
     useWorkbenchFloatingChatStore.setState({ shownThread });
     let renderer: ReactTestRenderer | undefined;
@@ -323,6 +328,7 @@ describe("Workbench pull request navigation", () => {
 
   it("opens a brief's file link in the side panel of the Thread the floating chat shows", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", new EventTarget());
     const shownThread = scopeThreadRef(EnvironmentId.make("local"), ThreadId.make("chat"));
     useWorkbenchFloatingChatStore.setState({ shownThread });
     let renderer: ReactTestRenderer | undefined;
@@ -354,6 +360,7 @@ describe("Workbench pull request navigation", () => {
 
   it("preserves ticket context until navigation, then dismisses the pull request", async () => {
     vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("window", new EventTarget());
     let renderer: ReactTestRenderer | undefined;
     try {
       await act(() => {
