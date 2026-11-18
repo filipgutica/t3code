@@ -368,7 +368,7 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
   expect(result.attentionReasonsByTicket.get(ticket.id)).toContain("PR attention unavailable");
 });
 
-it("retains feedback across reference-set and same-PR metadata changes, then prunes a closed PR", async () => {
+it("retains feedback across reference-set and same-PR metadata changes, prunes a closed PR, and re-reads metadata flags on return", async () => {
   const link: ThreadPullRequestLink = {
     host: "github.com",
     repository: reference.repository,
@@ -471,6 +471,30 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
   expect(
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("unresolved-feedback");
+  const settle: Array<() => void> = [];
+  const held = () =>
+    new Promise<{ _tag: string }>((resolve) => settle.push(() => resolve({ _tag: "Success" })));
+  invalidatePullRequest.mockImplementationOnce(held).mockImplementationOnce(held);
+  // Inspection takes three PRs at a time and that batch never settles here, so PR 14 is
+  // known only from its link metadata.
+  const pullRequests = [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
+    ...link,
+    number,
+    url: `https://github.com/acme/web/pull/${number}`,
+    snapshot: { ...link.snapshot!, checksState: number > 12 ? "failing" : "passing" },
+  }));
+  await act(async () =>
+    renderer.update(
+      <Harness threads={new Map(threadsById).set(waiting.id, { ...waiting, pullRequests })} />,
+    ),
+  );
+  const invalidated = () =>
+    invalidatePullRequest.mock.calls.map(([command]) => command.input.reference.number);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidated()).toEqual([13]);
+  await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14]);
+  await act(async () => settle.shift()?.());
 });
 
 it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
@@ -582,62 +606,6 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   );
   expect(result.attentionSignalsByTicket.get(ticket.id)).toEqual([]);
   expect(result.attentionInspectionsByTicket.get(ticket.id)).toEqual([]);
-});
-
-it("re-reads PRs that link metadata flags before inspection reaches them, one at a time", async () => {
-  const settle: Array<() => void> = [];
-  const held = () =>
-    new Promise<{ _tag: string }>((resolve) => settle.push(() => resolve({ _tag: "Success" })));
-  invalidatePullRequest.mockImplementationOnce(held).mockImplementationOnce(held);
-  const link = (number: number, checksState: "passing" | "failing"): ThreadPullRequestLink => ({
-    host: "github.com",
-    repository: reference.repository,
-    number,
-    url: `https://github.com/acme/web/pull/${number}`,
-    source: "manual",
-    linkedAt: "2026-09-29T00:00:00.000Z",
-    stack: null,
-    snapshot: {
-      state: "open",
-      title: `PR ${number}`,
-      headBranch: `branch-${number}`,
-      baseBranch: "main",
-      isDraft: false,
-      updatedAt: null,
-      syncedAt: "2026-09-29T00:00:00.000Z",
-      checksState,
-      reviewDecision: "approved",
-    },
-  });
-  // Inspection runs three PRs at a time, and the first batch never settles here, so PR 14 is
-  // shown from its link metadata only.
-  const threads = new Map(threadsById).set(waiting.id, {
-    ...waiting,
-    pullRequests: [
-      link(11, "passing"),
-      link(12, "passing"),
-      link(13, "failing"),
-      link(14, "failing"),
-    ],
-  });
-  await act(async () => {
-    renderer = create(<Harness threads={threads} />);
-  });
-  expect(
-    result.attentionSignalsByTicket
-      .get(ticket.id)
-      ?.filter((signal) => signal.kind === "failed-checks")
-      .map(
-        (signal) => signal.source.type === "pull-request" && signal.source.row.pullRequest.number,
-      ),
-  ).toEqual([13, 14]);
-  const invalidated = () =>
-    invalidatePullRequest.mock.calls.map(([command]) => command.input.reference.number);
-  await act(async () => window.dispatchEvent(new Event("focus")));
-  expect(invalidated()).toEqual([13]);
-  await act(async () => settle.shift()?.());
-  expect(invalidated()).toEqual([13, 14]);
-  await act(async () => settle.shift()?.());
 });
 
 it("uses native server visits to clear questions and reacts to new requests rather than metadata", async () => {
