@@ -206,6 +206,7 @@ async function publishInput(input: Parameters<typeof getWorkbenchPullRequestAtte
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", new EventTarget());
+  vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
   native = createAttentionNativeFixture();
   registry = native.registry;
@@ -493,18 +494,7 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionScope).toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("complete");
-  using now = vi.spyOn(Date, "now").mockReturnValue(0);
-  await act(async () => window.dispatchEvent(new Event("blur")));
-  now.mockReturnValue(1_000);
   await act(async () => window.dispatchEvent(new Event("focus")));
-  expect(invalidatePullRequest).not.toHaveBeenCalled();
-  expect(result.attentionScope).toBe(scope);
-  await act(async () => window.dispatchEvent(new Event("blur")));
-  now.mockReturnValue(6_000);
-  await act(async () => {
-    window.dispatchEvent(new Event("focus"));
-    result.refreshAttention();
-  });
   expect(invalidatePullRequest).toHaveBeenCalledExactlyOnceWith({
     environmentId,
     input: {
@@ -573,12 +563,18 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   ).not.toContain("failed-checks");
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   invalidatePullRequest.mockClear();
-  await act(async () => result.refreshAttention());
+  await act(async () => window.dispatchEvent(new Event("focus")));
   expect(invalidatePullRequest).not.toHaveBeenCalled();
   await publishInput(observations);
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
+  expect(invalidatePullRequest).not.toHaveBeenCalled();
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(invalidatePullRequest).toHaveBeenCalledOnce();
   await act(async () =>
     renderer.update(<Harness environment={EnvironmentId.make("empty-environment")} />),
   );

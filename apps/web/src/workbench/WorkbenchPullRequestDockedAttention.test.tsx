@@ -151,7 +151,6 @@ function TicketAttention() {
 
 it("clears resolved discussion attention after closing the docked PR without a metadata change", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
-  vi.stubGlobal("window", new EventTarget());
   native = createAttentionNativeFixture();
   const reviewThreads: PullRequestReviewThread[] = [
     {

@@ -17,6 +17,7 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkbenchAttentionQueries, workbenchPullRequestRef } from "./WorkbenchAttentionQueries";
 import { pullRequestEnvironment } from "../state/pullRequests";
 import { environmentThreadDetails } from "../state/threads";
+import { subscribeDocumentReturn } from "../lib/documentActivity";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
@@ -36,7 +37,6 @@ import {
 } from "./workbenchAttention.logic";
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
-const FOCUS_REFRESH_MIN_AWAY_MS = 5_000;
 
 const getObservedPullRequestRow = ({
   row,
@@ -150,6 +150,7 @@ export function useWorkbenchAttention({
   readonly activeThreadRef: ScopedThreadRef | null;
 }) {
   const [attentionRefresh, setAttentionRefresh] = useState(0);
+  const refreshAttention = useStableCallback(() => setAttentionRefresh((previous) => previous + 1));
   const invalidatePullRequest = useAtomCommand(pullRequestEnvironment.invalidate, {
     reportFailure: false,
   });
@@ -225,48 +226,29 @@ export function useWorkbenchAttention({
     environmentId === null
       ? undefined
       : observations.get(workbenchAttentionIdentity(environmentId, reference));
-  // Changes made on the host, such as resolving a review thread, send no refresh signal,
-  // so a refresh re-reads flagged PRs past the server cache. Atom commands settle without throwing.
-  const refreshing = useRef(false);
-  const refreshAttention = useStableCallback(() => {
-    if (refreshing.current) return;
-    refreshing.current = true;
-    const flagged =
-      environmentId === null
-        ? []
-        : attentionReferences
-            .filter((reference) => (observationOf(reference)?.signalKinds.length ?? 0) > 0)
-            .map((reference) =>
-              invalidatePullRequest({
-                environmentId,
-                input: { reference: workbenchPullRequestRef(reference) },
-              }),
-            );
+  // Changes made on the host, such as resolving a review thread, send no refresh signal, so a
+  // return to the window re-reads flagged PRs past the server cache, one round at a time.
+  // Atom commands settle without throwing.
+  const refreshingOnReturn = useRef(false);
+  const refreshAttentionOnReturn = useStableCallback(() => {
+    if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)
+      return;
+    refreshingOnReturn.current = true;
+    const flagged = attentionReferences
+      .filter((reference) => (observationOf(reference)?.signalKinds.length ?? 0) > 0)
+      .map((reference) =>
+        invalidatePullRequest({
+          environmentId,
+          input: { reference: workbenchPullRequestRef(reference) },
+        }),
+      );
     void Promise.all(flagged).then(() => {
-      refreshing.current = false;
-      setAttentionRefresh((previous) => previous + 1);
+      refreshingOnReturn.current = false;
+      refreshAttention();
     });
   });
-  // Only a real absence, such as a visit to the PR host, spends host requests; alt-tab glances
-  // and clicks into embedded frames also blur the window.
-  const blurredAt = useRef<number | null>(null);
-  const refreshAttentionOnFocus = useStableCallback(() => {
-    const awayMs = blurredAt.current === null ? 0 : Date.now() - blurredAt.current;
-    blurredAt.current = null;
-    if (attentionReferences.length > 0 && awayMs >= FOCUS_REFRESH_MIN_AWAY_MS) refreshAttention();
-  });
-  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window focus: returning from the PR host is when its state most likely changed
-  useEffect(() => {
-    const onBlur = () => {
-      blurredAt.current = Date.now();
-    };
-    window.addEventListener("blur", onBlur);
-    window.addEventListener("focus", refreshAttentionOnFocus);
-    return () => {
-      window.removeEventListener("blur", onBlur);
-      window.removeEventListener("focus", refreshAttentionOnFocus);
-    };
-  }, [refreshAttentionOnFocus]);
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window returns: coming back from the PR host is when its state most likely changed
+  useEffect(() => subscribeDocumentReturn(refreshAttentionOnReturn), [refreshAttentionOnReturn]);
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
       const { signals, reasons } = getTicketThreadAttention({
