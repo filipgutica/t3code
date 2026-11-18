@@ -208,7 +208,10 @@ async function publishInput(input: Parameters<typeof getWorkbenchPullRequestAtte
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.stubGlobal("window", new EventTarget());
-  vi.stubGlobal("document", Object.assign(new EventTarget(), { visibilityState: "visible" }));
+  vi.stubGlobal(
+    "document",
+    Object.assign(new EventTarget(), { visibilityState: "visible", hasFocus: () => true }),
+  );
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
   native = createAttentionNativeFixture();
   registry = native.registry;
@@ -474,7 +477,10 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   const settle: Array<() => void> = [];
   const held = () =>
     new Promise<{ _tag: string }>((resolve) => settle.push(() => resolve({ _tag: "Success" })));
-  invalidatePullRequest.mockImplementationOnce(held).mockImplementationOnce(held);
+  invalidatePullRequest
+    .mockImplementationOnce(held)
+    .mockImplementationOnce(held)
+    .mockImplementationOnce(held);
   // Inspection takes three PRs at a time and that batch never settles here, so PR 14 is
   // known only from its link metadata.
   const pullRequests = [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
@@ -494,6 +500,14 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   expect(invalidated()).toEqual([13]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14]);
+  // Leaving and coming back while 14 is pending re-reads 13 again once the round ends.
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  await act(async () => window.dispatchEvent(new Event("blur")));
+  hasFocus.mockReturnValue(true);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidated()).toEqual([13, 14]);
+  await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14, 13]);
   await act(async () => settle.shift()?.());
 });
 

@@ -17,7 +17,11 @@ import { useEffect, useRef, useState } from "react";
 import { useWorkbenchAttentionQueries, workbenchPullRequestRef } from "./WorkbenchAttentionQueries";
 import { pullRequestEnvironment } from "../state/pullRequests";
 import { environmentThreadDetails } from "../state/threads";
-import { subscribeDocumentReturn } from "../lib/documentActivity";
+import {
+  getDocumentActivity,
+  subscribeDocumentActivity,
+  subscribeDocumentReturn,
+} from "../lib/documentActivity";
 import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
@@ -37,6 +41,11 @@ import {
 } from "./workbenchAttention.logic";
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
+
+const isDocumentActive = () => {
+  const { visible, focused } = getDocumentActivity();
+  return visible && focused;
+};
 
 const getObservedPullRequestRow = ({
   row,
@@ -238,6 +247,7 @@ export function useWorkbenchAttention({
   // return to the window re-reads flagged PRs past the server cache, one round at a time.
   // Atom commands settle without throwing.
   const refreshingOnReturn = useRef(false);
+  const leftDuringRefresh = useRef(false);
   const refreshAttentionOnReturn = useStableCallback(() => {
     if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)
       return;
@@ -247,18 +257,31 @@ export function useWorkbenchAttention({
     );
     // One at a time, so a reply or thread resolution queued on the same environment runs between.
     void (async () => {
-      for (const reference of flagged) {
-        await invalidatePullRequest({
-          environmentId,
-          input: { reference: workbenchPullRequestRef(reference) },
-        });
-      }
+      do {
+        leftDuringRefresh.current = false;
+        for (const reference of flagged) {
+          await invalidatePullRequest({
+            environmentId,
+            input: { reference: workbenchPullRequestRef(reference) },
+          });
+        }
+        // A visit that left and came back during the round may have changed a PR it already re-read.
+      } while (leftDuringRefresh.current && isDocumentActive());
       refreshingOnReturn.current = false;
       refreshAttention();
     })();
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window returns: coming back from the PR host is when its state most likely changed
-  useEffect(() => subscribeDocumentReturn(refreshAttentionOnReturn), [refreshAttentionOnReturn]);
+  useEffect(() => {
+    const unsubscribeReturn = subscribeDocumentReturn(refreshAttentionOnReturn);
+    const unsubscribeActivity = subscribeDocumentActivity(() => {
+      if (!isDocumentActive()) leftDuringRefresh.current = true;
+    });
+    return () => {
+      unsubscribeReturn();
+      unsubscribeActivity();
+    };
+  }, [refreshAttentionOnReturn]);
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
       const { signals, reasons } = getTicketThreadAttention({
