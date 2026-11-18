@@ -102,6 +102,26 @@ function collapseByRepository<T extends EnvironmentProject>({
   return projects.filter((project) => kept.has(project));
 }
 
+/** Every Project the Board links, each on its own link's machine. */
+export function getWorkbenchBoardLinkedProjects({
+  board,
+  projects,
+  environmentId,
+}: {
+  board: WorkbenchBoardLinks;
+  projects: ReadonlyArray<EnvironmentProject>;
+  environmentId: EnvironmentId | null;
+}) {
+  return projects.filter(
+    (project) =>
+      board.linkedProjectIds.includes(project.id) &&
+      (environmentId === null ||
+        project.environmentId ===
+          (board.remoteProjects?.find((remote) => remote.projectId === project.id)?.environmentId ??
+            environmentId)),
+  );
+}
+
 export function getWorkbenchBoardRepositories({
   board,
   projects,
@@ -114,14 +134,7 @@ export function getWorkbenchBoardRepositories({
   /** The selected Ticket's repositories, which stay visible so its scope remains valid. */
   ticketProjectIds?: ReadonlyArray<ProjectId> | undefined;
 }) {
-  const linked = projects.filter(
-    (project) =>
-      board.linkedProjectIds.includes(project.id) &&
-      (environmentId === null ||
-        project.environmentId ===
-          (board.remoteProjects?.find((remote) => remote.projectId === project.id)?.environmentId ??
-            environmentId)),
-  );
+  const linked = getWorkbenchBoardLinkedProjects({ board, projects, environmentId });
   const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
   return collapseByRepository({
     projects: linked,

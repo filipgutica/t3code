@@ -596,10 +596,9 @@ function WorkbenchPageBoard(
             />
           }
           selectedTicketId={null}
-          repositoriesById={
-            new Map(boardData.linkedT3Projects.map((project) => [project.id, project]))
-          }
-          repositoryProjectIds={selectedProject.linkedProjectIds}
+          repositoriesById={boardData.repositoriesById}
+          repositoryProjectIds={boardData.repositoryFilterIds}
+          repositoryKeyOf={boardData.repositoryKeyOf}
           repositoriesReady={repositoriesReady}
           assignmentsByTicket={assignmentsByTicket}
           referencesByTicket={pageData.referencesByTicket}
