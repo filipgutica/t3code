@@ -222,10 +222,18 @@ export function useWorkbenchAttention({
     references: attentionReferences,
     refreshGeneration: attentionRefresh,
   });
+  // Before inspection reaches a PR, its link metadata supplies what the board shows.
   const observationOf = (reference: TicketPullRequestReference) =>
-    environmentId === null
+    (environmentId === null
       ? undefined
-      : observations.get(workbenchAttentionIdentity(environmentId, reference));
+      : observations.get(workbenchAttentionIdentity(environmentId, reference))) ??
+    getWorkbenchPullRequestAttention({
+      reference,
+      summary: null,
+      activity: null,
+      loading: true,
+      error: false,
+    });
   // Changes made on the host, such as resolving a review thread, send no refresh signal, so a
   // return to the window re-reads flagged PRs past the server cache, one round at a time.
   // Atom commands settle without throwing.
@@ -234,18 +242,20 @@ export function useWorkbenchAttention({
     if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)
       return;
     refreshingOnReturn.current = true;
-    const flagged = attentionReferences
-      .filter((reference) => (observationOf(reference)?.signalKinds.length ?? 0) > 0)
-      .map((reference) =>
-        invalidatePullRequest({
+    const flagged = attentionReferences.filter(
+      (reference) => observationOf(reference).signalKinds.length > 0,
+    );
+    // One at a time, so a reply or thread resolution queued on the same environment runs between.
+    void (async () => {
+      for (const reference of flagged) {
+        await invalidatePullRequest({
           environmentId,
           input: { reference: workbenchPullRequestRef(reference) },
-        }),
-      );
-    void Promise.all(flagged).then(() => {
+        });
+      }
       refreshingOnReturn.current = false;
       refreshAttention();
-    });
+    })();
   });
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window returns: coming back from the PR host is when its state most likely changed
   useEffect(() => subscribeDocumentReturn(refreshAttentionOnReturn), [refreshAttentionOnReturn]);
@@ -262,15 +272,7 @@ export function useWorkbenchAttention({
       for (const row of attentionReferencesByTicket.get(ticket.id) ?? []) {
         if (environmentId === null) continue;
         const reference = row.pullRequest;
-        const observation =
-          observationOf(reference) ??
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: null,
-            activity: null,
-            loading: true,
-            error: false,
-          });
+        const observation = observationOf(reference);
         observation.reasons.forEach((reason) => reasons.add(reason));
         const observedRow = getObservedPullRequestRow({
           row,
@@ -304,7 +306,7 @@ export function useWorkbenchAttention({
   const attentionInspectionsByTicket = new Map(
     [...attentionByTicket].map(([id, result]) => [id, result.inspections]),
   );
-  const attentionCoverage = `${attentionReferences.filter((reference) => observationOf(reference)?.inspected).length} of ${attentionReferences.length} linked PRs inspected`;
+  const attentionCoverage = `${attentionReferences.filter((reference) => observationOf(reference).inspected).length} of ${attentionReferences.length} linked PRs inspected`;
   return {
     attentionRefresh,
     refreshAttention,
