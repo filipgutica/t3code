@@ -1,19 +1,25 @@
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type { EnvironmentId } from "@t3tools/contracts";
+import { resolveEnvironmentMachineKind, type EnvironmentId } from "@t3tools/contracts";
 
+import { ComposerSelectControl } from "../components/chat/ComposerControl";
+import { ComposerContextLabel } from "../components/ComposerContextLabel";
+import { EnvironmentMachineIcon } from "../components/EnvironmentMachineIcon";
 import { Label } from "../components/ui/label";
 import {
   Select,
+  SelectGroup,
+  SelectGroupLabel,
   SelectItem,
   SelectPopup,
-  SelectTrigger,
-  SelectValue,
 } from "../components/ui/select";
 import { useEnvironments } from "../state/environments";
 
 const AUTOMATIC = "automatic";
 
-/** Where new Threads start when a Board's repositories are checked out on several machines. */
+/**
+ * Where new Threads start when a Board's repositories are checked out on several machines.
+ * Styled like the composer's Run on picker.
+ */
 export function WorkbenchBoardDefaultMachine({
   environmentId,
   projects,
@@ -38,31 +44,50 @@ export function WorkbenchBoardDefaultMachine({
   ];
   // A saved default stays visible so it can be reset to Automatic.
   if (machineIds.length < 2 && value === undefined) return null;
-  const labelOf = (id: EnvironmentId) =>
-    id === environmentId
-      ? "This machine"
-      : (environments.find((environment) => environment.environmentId === id)?.label ??
-        "Another machine");
+  const machineOf = (id: EnvironmentId | null | undefined) => {
+    const environment = environments.find((candidate) => candidate.environmentId === id);
+    return {
+      label: environment?.label ?? (id === environmentId ? "This machine" : "Another machine"),
+      kind: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
+    };
+  };
+  const selected = machineOf(value ?? environmentId);
   return (
     <div className="space-y-1.5">
       <Label htmlFor="workbench-default-machine">Default machine</Label>
       <Select
+        modal={false}
         value={value ?? AUTOMATIC}
         disabled={pending}
         onValueChange={(next) => {
           if (next) onChange(next === AUTOMATIC ? undefined : (next as EnvironmentId));
         }}
       >
-        <SelectTrigger id="workbench-default-machine" size="sm" className="max-w-72">
-          <SelectValue>{value === undefined ? "Automatic" : labelOf(value)}</SelectValue>
-        </SelectTrigger>
+        <ComposerSelectControl
+          id="workbench-default-machine"
+          size="xs"
+          className="min-w-0 max-w-full"
+        >
+          <EnvironmentMachineIcon kind={selected.kind} className="size-3 shrink-0" />
+          <ComposerContextLabel>
+            {value === undefined ? "Automatic" : selected.label}
+          </ComposerContextLabel>
+        </ComposerSelectControl>
         <SelectPopup alignItemWithTrigger={false}>
-          <SelectItem value={AUTOMATIC}>Automatic</SelectItem>
-          {machineIds.map((id) => (
-            <SelectItem key={id} value={id}>
-              {labelOf(id)}
-            </SelectItem>
-          ))}
+          <SelectGroup>
+            <SelectGroupLabel>Run on</SelectGroupLabel>
+            {[AUTOMATIC, ...machineIds].map((id) => {
+              const machine = machineOf(id === AUTOMATIC ? environmentId : (id as EnvironmentId));
+              return (
+                <SelectItem key={id} value={id}>
+                  <span className="inline-flex items-center gap-1.5">
+                    <EnvironmentMachineIcon kind={machine.kind} className="size-3" />
+                    {id === AUTOMATIC ? "Automatic" : machine.label}
+                  </span>
+                </SelectItem>
+              );
+            })}
+          </SelectGroup>
         </SelectPopup>
       </Select>
       <p className="text-xs text-muted-foreground">
