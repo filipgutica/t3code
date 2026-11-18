@@ -37,9 +37,11 @@ export function useWorkbenchRepositoryKeyBackfill({
         board.id,
         ...repositoryKeys.map(({ projectId, repositoryKey }) => `${projectId}=${repositoryKey}`),
       ].join("\0");
+      // A failed write, such as a stale revision, retries once the Board's revision changes.
+      const failed = `${attempt}\0${board.revision}`;
       if (repositoryKeys.length === 0 || attempted.current.has(attempt)) continue;
+      if (attempted.current.has(failed)) continue;
       attempted.current.add(attempt);
-      // A stale revision fails harmlessly; the next snapshot retries with the new one.
       void updateProject({
         environmentId,
         input: {
@@ -51,6 +53,10 @@ export function useWorkbenchRepositoryKeyBackfill({
           repositoryKeys,
           updatedAt: new Date().toISOString(),
         },
+      }).then((result) => {
+        if (result._tag !== "Failure") return;
+        attempted.current.delete(attempt);
+        attempted.current.add(failed);
       });
     }
   }, [boards, canOperate, environmentId, projects, updateProject]);

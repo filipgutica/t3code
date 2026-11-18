@@ -372,3 +372,20 @@ export function matchWorkbenchTicketThread({
     return null;
   return { repository: { repositoryKey, title: project.title } };
 }
+
+/** The saved Ticket repository a Thread's checkout stands for, which may be on another machine. */
+export function matchWorkbenchSavedRepository({
+  board,
+  projects,
+  projectId,
+  savedProjectIds,
+}: {
+  board: WorkbenchBoardLinks | undefined;
+  projects: ReadonlyArray<EnvironmentProject>;
+  projectId: ProjectId | undefined;
+  savedProjectIds: ReadonlyArray<ProjectId>;
+}) {
+  if (projectId === undefined || savedProjectIds.includes(projectId)) return projectId;
+  const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
+  return savedProjectIds.find((savedId) => keyOf(savedId) === keyOf(projectId)) ?? projectId;
+}

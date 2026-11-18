@@ -69,6 +69,7 @@ import { WorkbenchBoardFloatingChat, WorkbenchDraftThread } from "./WorkbenchBoa
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 import {
   getWorkbenchBoardRepositories,
+  matchWorkbenchSavedRepository,
   matchWorkbenchTicketThread,
 } from "./workbenchRemoteProjects";
 import { WorkbenchAttachThreadDialog } from "./WorkbenchAttachThreadDialog";
@@ -649,8 +650,12 @@ function WorkbenchPageBoardChat({
 }) {
   const { snapshot } = pageData;
   // Board chat Threads and planning drafts run on the Board's own environment.
-  const localProjects = boardData.linkedT3Projects.filter(
-    (project) => project.environmentId === environmentId,
+  // Taken before repository collapsing, which may show another machine's checkout instead.
+  const localProjects = pageData.projects.filter(
+    (project) =>
+      project.environmentId === environmentId &&
+      workspace.linkedProjectIds.includes(project.id) &&
+      !workspace.remoteProjects?.some((remote) => remote.projectId === project.id),
   );
   return (
     <WorkbenchBoardFloatingChat
@@ -865,7 +870,12 @@ function WorkbenchPageThreadDialogs(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
             initialRepositoryScope: startThreadRequest.repositoryScope,
-            repositoryProjectId: getActiveThreadRepository(startThreadRequest.ticket.id),
+            repositoryProjectId: matchWorkbenchSavedRepository({
+              board: startThreadBoard,
+              projects: pageData.projects,
+              projectId: getActiveThreadRepository(startThreadRequest.ticket.id),
+              savedProjectIds: startThreadRequest.ticket.repositoryProjectIds,
+            }),
             environmentId,
             additional: startThreadRequest.mode === "additional",
           }}

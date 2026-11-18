@@ -65,8 +65,8 @@ export function WorkbenchBoardDefaultMachine({
         </SelectPopup>
       </Select>
       <p className="text-xs text-muted-foreground">
-        New Threads start on this machine when it has the Ticket's repositories. Automatic uses the
-        Board's machine. Ticket worktrees are always prepared on the Board's machine.
+        New Threads start on this machine when it has the Ticket's repositories. Automatic prefers
+        the Board's machine. Ticket worktrees are always prepared on the Board's machine.
       </p>
     </div>
   );

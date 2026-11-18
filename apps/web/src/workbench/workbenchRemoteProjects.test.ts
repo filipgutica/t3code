@@ -8,6 +8,7 @@ import {
   getWorkbenchRepositoryChoices,
   getWorkbenchRepositoryKey,
   getWorkbenchThreadMachines,
+  matchWorkbenchSavedRepository,
   matchWorkbenchTicketThread,
 } from "./workbenchRemoteProjects";
 
@@ -242,5 +243,14 @@ describe("Workbench repositories across machines", () => {
       repository: { repositoryKey: getWorkbenchRepositoryKey(laptopApp), title: "desktop-app" },
     });
     expect(match(desktopDocs.id)).toBeNull();
+    // A new Thread defaults to the saved repository the last Thread's checkout stands for.
+    expect(
+      matchWorkbenchSavedRepository({
+        board: { linkedProjectIds: [laptopApp.id] },
+        projects,
+        projectId: desktopApp.id,
+        savedProjectIds: [desktopDocs.id, laptopApp.id],
+      }),
+    ).toBe(laptopApp.id);
   });
 });

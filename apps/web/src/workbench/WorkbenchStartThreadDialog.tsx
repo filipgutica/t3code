@@ -324,14 +324,17 @@ const resolveThreadMachineChoice = ({
       ? undefined
       : machine?.projectsByRepository.get(repositoryProjectId);
   const selectionProject = threadProject ?? repository;
-  const targetEnvironmentId = selectionProject?.environmentId ?? environmentId;
+  // A picked machine that lost a repository blocks rather than starting somewhere else.
+  const machineUnavailable = picked !== undefined && machine === undefined;
+  const targetEnvironmentId = machineUnavailable
+    ? picked
+    : (selectionProject?.environmentId ?? environmentId);
   return {
     machines,
     selectionProject,
     selectionProjectId: selectionProject?.id ?? repositoryProjectId,
     targetEnvironmentId,
-    // A picked machine that lost a repository blocks rather than starting somewhere else.
-    machineUnavailable: picked !== undefined && machine === undefined,
+    machineUnavailable,
     // Ticket worktrees exist only for repositories the Ticket names on the Board's machine.
     checkoutOnly: targetEnvironmentId !== environmentId || linkEnvironmentId !== environmentId,
   };
@@ -381,9 +384,10 @@ function WorkbenchStartThreadMachine({
 }) {
   const { environments } = useEnvironments();
   if (!target.showMachine) return null;
-  const machineIds = machines.some((machine) => machine.environmentId === target.environmentId)
-    ? machines.map((machine) => machine.environmentId)
-    : [target.environmentId];
+  // An ineligible current machine stays listed beside the eligible ones, so the user can move off it.
+  const machineIds = [
+    ...new Set([target.environmentId, ...machines.map((machine) => machine.environmentId)]),
+  ];
   const options = machineIds.map((id) => {
     const environment = environments.find((candidate) => candidate.environmentId === id);
     return {
