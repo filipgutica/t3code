@@ -43,9 +43,10 @@ Tell the developer both before handover.
    off startup auto-pull, which would pull the real checkouts. From
    `apps/server`:
    `node -e 'new (require("node:sqlite").DatabaseSync)(process.argv[1]).exec("UPDATE projection_projects SET auto_pull = 0")' <run home>/userdata/statev2.sqlite`.
-   If the live server's `server-runtime.json` shows a `managedPolicy` that
-   locks `defaultAutoPull` on, stop and tell the developer instead of
-   launching.
+   Then, from the repository root, run
+   `node apps/server/src/bin.ts policy show --base-dir <run home>`. If it
+   fails or prints `defaultAutoPull = true (locked)`, stop and tell the
+   developer instead of launching.
 2. **Start** `vp run dev --share --home-dir <run home>` in the background,
    outside the sandbox, and record the runner's PID from launch. Read the
    shared origin from the `[dev-runner]` line.
