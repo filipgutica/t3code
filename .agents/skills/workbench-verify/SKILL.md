@@ -14,7 +14,7 @@ Tickets or Threads or send messages in this environment.
 
 Pick a run id such as `verify-<yyyymmdd>-<4 random chars>`. Every credential
 this run creates carries it in its label. Record each resource in
-`<run home>/run.json` as you create it: pairing ids, session ids, the runner
+`~/.t3-verify/<run id>.json` as you create it: pairing ids, session ids, the runner
 PID, the tab id, and remote Thread links. Teardown works from that record and
 from the run label.
 
@@ -33,7 +33,11 @@ Tell the developer both before handover.
 
 1. **Seed** into a new owner-only home outside the checkout, such as
    `~/.t3-verify/<run id>` (mode 700). Pass its absolute path everywhere below:
-   `vp run migrate-dev-db --base-dir <run home> --projects <n>`. Pick `n`
+   `vp run migrate-dev-db --source <live statev2.sqlite> --base-dir <run home> --projects <n>`.
+   The source is the database of the developer's local server: find its
+   state directory (`~/.t3/userdata`, or `~/.t3-workbench/userdata` for
+   packaged Workbench) and check that its `environment-id` matches the
+   environment this thread runs in. Pick `n`
    large enough to keep every Project the check needs; the output lists
    what it kept. The live database is only read. Before first launch, turn
    off startup auto-pull, which would pull the real checkouts. From
@@ -90,21 +94,21 @@ When the developer is done, or setup failed:
 
 1. In the tab, remove each machine under Settings → Connections, then close
    the tab with `t3_preview_close`.
-2. Confirm that every setup delegate has finished, or cancel it with
-   `task_cancel` and wait until it is terminal; a running one can still
-   issue a credential. Then, on each machine you attempted, delegate with
-   that machine's verified `--base-dir`:
+2. Confirm that every setup delegate's remote Thread has stopped running
+   (`t3_thread_read` with that machine's `environmentId`), cancelling it
+   with `task_cancel` first if needed; a running one can still issue a
+   credential. A parent task reported cancelled is not enough. Then, on each
+   machine you attempted, delegate with that machine's verified
+   `--base-dir`:
    - `auth session list --json`, then revoke every session whose
      `client.label` contains the run id, whether or not you recorded it;
    - `auth pairing list --json`, then revoke every pairing labeled with the run id;
    - list both again and confirm nothing with the run id remains.
 3. Stop the dev runner by its recorded PID. Never kill by pattern. Confirm
    its ports and its tailnet share are gone.
-4. Delete `<run home>`. If the developer wants the copy kept, first clear
-   every credential in it, including the unlabeled startup pairing: with
-   the runner stopped, from `apps/server`, run
-   `node -e 'new (require("node:sqlite").DatabaseSync)(process.argv[1]).exec("DELETE FROM auth_pairing_links; DELETE FROM auth_sessions")' <run home>/userdata/statev2.sqlite`.
+4. Delete `<run home>`. Never keep it: it holds credentials, and a fresh
+   run is one command away.
 
-Keep `run.json` until every check passes. Report each check's result and the
+Keep the run record until every check passes, then delete it. Report each check's result and the
 remote Thread links. Name any machine you could not reach: it may still hold
 a live session.
