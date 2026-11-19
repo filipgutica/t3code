@@ -92,6 +92,8 @@ function previewMerge(productSha: string, upstreamSha: string) {
         "--",
         ".github/workflows",
         ".github/actions",
+        // Active workflows run these scripts from the trusted base, so they need the same review.
+        ".github/scripts",
       ],
       { encoding: "utf8", env },
     );

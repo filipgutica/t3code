@@ -106,7 +106,7 @@ describe("workbench upstream sync merge preview", () => {
     assert.deepEqual(mixed.output.conflictPaths, ["pnpm-lock.yaml", "source.txt"]);
   });
 
-  it("publishes upstream changes to inert CI but holds active CI for review", () => {
+  it("publishes upstream changes to inert CI but holds active CI and its scripts for review", () => {
     const inert = preview([], {
       ".github/workflows/ci.yml": "name: CI\n",
       ".github/actions/ci-only/action.yml": "name: CI only\n",
@@ -126,6 +126,10 @@ describe("workbench upstream sync merge preview", () => {
       ".github/workflows/relay-preview.yml",
     ]);
     assert.include(active.result.stderr, "Upstream changes active CI");
+
+    const script = preview([], { ".github/scripts/test-delta.cjs": "module.exports = {};\n" });
+    assert.equal(script.result.status, 2);
+    assert.deepEqual(script.output.ciReviewPaths, [".github/scripts/test-delta.cjs"]);
 
     // Publication follows the product's policy, so upstream cannot exempt its own workflows.
     const claimed = preview([], {

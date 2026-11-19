@@ -24,6 +24,7 @@ export function ThreadLinkPicker({
   onSelect: (threadId: ThreadId) => void;
 }) {
   const gt = useGT();
+  // Workbench hides draft Threads from link pickers; remove with native visibility extensions (U10).
   const threads = useVisibleThreads(useVisibleThreadShells());
   const projects = useProjects();
   const [query, setQuery] = useState("");
