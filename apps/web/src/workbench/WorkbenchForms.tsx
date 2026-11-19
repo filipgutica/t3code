@@ -280,8 +280,15 @@ export function WorkbenchWorkspaceDialog({
     event.preventDefault();
     if (cannotSave) return;
     // Machines that connected after a repository was linked get their checkouts linked too.
-    const links = linkWorkbenchRepositoryCheckouts({ board, projects, environmentId });
-    if (await onSave({ title: title.trim(), ...links, defaultEnvironmentId })) onOpenChange(false);
+    const { linkedProjectIds, remoteProjects } = linkWorkbenchRepositoryCheckouts({
+      board,
+      projects,
+      environmentId,
+    });
+    if (
+      await onSave({ title: title.trim(), linkedProjectIds, remoteProjects, defaultEnvironmentId })
+    )
+      onOpenChange(false);
   };
 
   return (

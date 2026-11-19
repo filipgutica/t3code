@@ -93,13 +93,11 @@ export function WorkbenchBoardRepositories({
               <Checkbox
                 id={inputId}
                 className="mt-0.5"
-                checked={choice.checkouts.some((checkout) =>
-                  board.linkedProjectIds.includes(checkout.id),
-                )}
+                checked={choice.linkedProjectIds.length > 0}
                 disabled={
                   pending ||
                   reachable.length === 0 ||
-                  choice.checkouts.some((checkout) => lockedProjectIds.includes(checkout.id))
+                  choice.linkedProjectIds.some((id) => lockedProjectIds.includes(id))
                 }
                 onCheckedChange={(checked) =>
                   onChange({

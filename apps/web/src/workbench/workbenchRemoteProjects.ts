@@ -243,32 +243,45 @@ export function resolveWorkbenchTicketRepositories({
 export type WorkbenchRepositoryChoice = {
   readonly key: string;
   readonly checkouts: ReadonlyArray<EnvironmentProject>;
+  /** Every Board link of this repository, including ones on machines that are offline. */
+  readonly linkedProjectIds: ReadonlyArray<ProjectId>;
 };
 
 /**
- * Lists each repository once for Edit Board. A machine's linked checkout stands for it there;
- * a placeholder for an offline machine's link stays in its repository's row.
+ * Lists each repository once for Edit Board. On each machine a reachable checkout stands for
+ * it, a linked one first, so a replaced Project can be linked while its old link stays.
  */
 export function getWorkbenchRepositoryChoices({
   board,
   projects,
   environmentId,
 }: {
-  board: Pick<WorkbenchBoardLinks, "linkedProjectIds" | "repositoryKeys">;
+  board: Pick<WorkbenchBoardLinks, "linkedProjectIds" | "remoteProjects" | "repositoryKeys">;
   projects: ReadonlyArray<EnvironmentProject>;
   environmentId: EnvironmentId | null;
 }): ReadonlyArray<WorkbenchRepositoryChoice> {
   const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
-  const linked = (project: EnvironmentProject) => board.linkedProjectIds.includes(project.id);
+  // A link selected in this draft has no placeholder yet if its machine disconnects.
+  const offline = (board.remoteProjects ?? []).flatMap((remote) =>
+    board.linkedProjectIds.includes(remote.projectId) &&
+    !projects.some(
+      (project) =>
+        project.id === remote.projectId && project.environmentId === remote.environmentId,
+    )
+      ? [unavailableWorkbenchRepository(remote, "")]
+      : [],
+  );
+  const rank = (project: EnvironmentProject) =>
+    (project.workspaceRoot === "" ? 2 : 0) + (board.linkedProjectIds.includes(project.id) ? 0 : 1);
   const rows = new Map<string, EnvironmentProject[]>();
-  for (const project of projects) {
+  for (const project of [...projects, ...offline]) {
     const key = keyOf(project.id);
     const checkouts = rows.get(key) ?? [];
     const index = checkouts.findIndex(
       (checkout) => checkout.environmentId === project.environmentId,
     );
     if (index === -1) checkouts.push(project);
-    else if (linked(project) && !linked(checkouts[index]!)) checkouts[index] = project;
+    else if (rank(project) < rank(checkouts[index]!)) checkouts[index] = project;
     rows.set(key, checkouts);
   }
   return Array.from(rows, ([key, checkouts]) => ({
@@ -278,12 +291,14 @@ export function getWorkbenchRepositoryChoices({
         Number(right.environmentId === environmentId) -
         Number(left.environmentId === environmentId),
     ),
+    linkedProjectIds: board.linkedProjectIds.filter((id) => keyOf(id) === key),
   }));
 }
 
 /**
  * Links every reachable checkout of each repository the Board links, so a Ticket can run on any
- * machine that checks out all of its repositories. `checked` adds or removes one row's checkouts.
+ * machine that checks out all of its repositories. `row` selects or clears one repository. Keys
+ * of new links are kept so a link stays in its row if its machine disconnects.
  */
 export function linkWorkbenchRepositoryCheckouts({
   board,
@@ -296,25 +311,23 @@ export function linkWorkbenchRepositoryCheckouts({
   environmentId: EnvironmentId | null;
   row?: { readonly choice: WorkbenchRepositoryChoice; readonly checked: boolean } | undefined;
 }) {
-  const removed = new Set(
-    row && !row.checked ? row.choice.checkouts.map((checkout) => checkout.id) : [],
-  );
+  const removed = new Set(row && !row.checked ? row.choice.linkedProjectIds : []);
   const linkedProjectIds = board.linkedProjectIds.filter((id) => !removed.has(id));
   const linkedSet = new Set(linkedProjectIds);
-  const added = getWorkbenchRepositoryChoices({ board, projects, environmentId }).flatMap(
-    (choice) =>
-      (row?.checked && row.choice.key === choice.key) ||
-      choice.checkouts.some((checkout) => linkedSet.has(checkout.id))
-        ? choice.checkouts.filter(
-            (checkout) => checkout.workspaceRoot !== "" && !linkedSet.has(checkout.id),
-          )
-        : [],
+  const choices = getWorkbenchRepositoryChoices({ board, projects, environmentId });
+  const added = choices.flatMap((choice) =>
+    (row?.checked && row.choice.key === choice.key) ||
+    choice.linkedProjectIds.some((id) => linkedSet.has(id))
+      ? choice.checkouts
+          .filter((checkout) => checkout.workspaceRoot !== "" && !linkedSet.has(checkout.id))
+          .map((checkout) => ({ checkout, key: choice.key }))
+      : [],
   );
   return {
-    linkedProjectIds: [...linkedProjectIds, ...added.map((checkout) => checkout.id)],
+    linkedProjectIds: [...linkedProjectIds, ...added.map(({ checkout }) => checkout.id)],
     remoteProjects: [
       ...(board.remoteProjects ?? []).filter((remote) => !removed.has(remote.projectId)),
-      ...added.flatMap((checkout) =>
+      ...added.flatMap(({ checkout }) =>
         checkout.environmentId === environmentId
           ? []
           : [
@@ -325,6 +338,10 @@ export function linkWorkbenchRepositoryCheckouts({
               },
             ],
       ),
+    ],
+    repositoryKeys: [
+      ...(board.repositoryKeys ?? []).filter((entry) => !removed.has(entry.projectId)),
+      ...added.map(({ checkout, key }) => ({ projectId: checkout.id, repositoryKey: key })),
     ],
   };
 }
@@ -369,11 +386,17 @@ export function getWorkbenchThreadMachines({
   projects: ReadonlyArray<EnvironmentProject>;
 }): ReadonlyArray<WorkbenchThreadMachine> {
   const storedKeyOf = makeWorkbenchStoredKeyOf(board);
-  // A linked checkout keeps its stored key; an unlinked one joins under the key it derives.
-  const checkoutKeyOf = (project: EnvironmentProject) =>
-    board?.linkedProjectIds.includes(project.id)
-      ? storedKeyOf(project.id)
-      : getWorkbenchRepositoryKey(project);
+  // A linked checkout keeps its stored key, on its link's machine only; an unlinked one joins
+  // under the key it derives.
+  const checkoutKeyOf = (project: EnvironmentProject) => {
+    if (!board?.linkedProjectIds.includes(project.id)) return getWorkbenchRepositoryKey(project);
+    const linkEnvironmentId = getWorkbenchLinkEnvironment({
+      board,
+      boardEnvironmentId,
+      projectId: project.id,
+    });
+    return linkEnvironmentId === project.environmentId ? storedKeyOf(project.id) : null;
+  };
   const reachable = projects.filter((project) => project.workspaceRoot !== "");
   const environmentIds = [...new Set(reachable.map((project) => project.environmentId))];
   const checkoutOn = (environmentId: EnvironmentId, repositoryProjectId: ProjectId) => {

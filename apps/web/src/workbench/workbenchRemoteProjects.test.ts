@@ -245,23 +245,31 @@ describe("Workbench repositories across machines", () => {
 
   it("links every machine's checkout of a Board repository, so a Ticket can use one machine", () => {
     const board = { linkedProjectIds: [laptopApp.id] };
+    const keyOf = (project: EnvironmentProject) => getWorkbenchRepositoryKey(project)!;
     const remote = (project: EnvironmentProject) => ({
       projectId: project.id,
       environmentId: desktop,
       title: project.title,
     });
-    const docs = getWorkbenchRepositoryChoices({ board, projects, environmentId: laptop }).find(
-      ({ checkouts }) => checkouts.includes(desktopDocs),
-    )!;
+    const docsRow = (current: typeof board, available: ReadonlyArray<EnvironmentProject>) =>
+      getWorkbenchRepositoryChoices({
+        board: current,
+        projects: available,
+        environmentId: laptop,
+      }).find(({ key }) => key === keyOf(desktopDocs))!;
     const linked = linkWorkbenchRepositoryCheckouts({
       board,
       projects,
       environmentId: laptop,
-      row: { choice: docs, checked: true },
+      row: { choice: docsRow(board, projects), checked: true },
     });
     expect(linked).toEqual({
       linkedProjectIds: [laptopApp.id, desktopApp.id, desktopDocs.id],
       remoteProjects: [remote(desktopApp), remote(desktopDocs)],
+      repositoryKeys: [
+        { projectId: desktopApp.id, repositoryKey: keyOf(desktopApp) },
+        { projectId: desktopDocs.id, repositoryKey: keyOf(desktopDocs) },
+      ],
     });
     expect(
       resolveWorkbenchTicketRepositories({
@@ -271,18 +279,44 @@ describe("Workbench repositories across machines", () => {
         projectIds: [laptopApp.id, desktopDocs.id],
       }),
     ).toEqual([desktopApp.id, desktopDocs.id]);
-    // Unchecking a row unlinks its checkout on every machine.
+    // Unchecking clears the repository on every machine, even one that has disconnected.
+    const offline = [laptopApp, desktopApp];
     expect(
       linkWorkbenchRepositoryCheckouts({
         board: linked,
-        projects,
+        projects: offline,
         environmentId: laptop,
-        row: { choice: docs, checked: false },
+        row: { choice: docsRow(linked, offline), checked: false },
       }),
     ).toEqual({
       linkedProjectIds: [laptopApp.id, desktopApp.id],
       remoteProjects: [remote(desktopApp)],
+      repositoryKeys: [{ projectId: desktopApp.id, repositoryKey: keyOf(desktopApp) }],
     });
+  });
+
+  it("offers a reachable checkout in place of an offline link on the same machine", () => {
+    const desktopAppAgain = { ...desktopApp, id: ProjectId.make("desktop-app-again") };
+    const board = {
+      linkedProjectIds: [laptopApp.id, desktopApp.id],
+      remoteProjects: [{ projectId: desktopApp.id, environmentId: desktop, title: "app" }],
+      repositoryKeys: [
+        { projectId: desktopApp.id, repositoryKey: getWorkbenchRepositoryKey(desktopApp)! },
+      ],
+    };
+    const removed = { ...desktopApp, workspaceRoot: "", repositoryIdentity: null };
+    const available = [laptopApp, removed, desktopAppAgain];
+    const [app] = getWorkbenchRepositoryChoices({
+      board,
+      projects: available,
+      environmentId: laptop,
+    });
+    expect(app?.checkouts).toEqual([laptopApp, desktopAppAgain]);
+    expect(app?.linkedProjectIds).toEqual([laptopApp.id, desktopApp.id]);
+    expect(
+      linkWorkbenchRepositoryCheckouts({ board, projects: available, environmentId: laptop })
+        .linkedProjectIds,
+    ).toEqual([laptopApp.id, desktopApp.id, desktopAppAgain.id]);
   });
 
   it("offers machines that check out every Ticket repository, preferring the Board default", () => {
@@ -310,6 +344,16 @@ describe("Workbench repositories across machines", () => {
       projects,
     });
     expect(unkeyedLink.map((machine) => machine.environmentId)).toEqual([laptop]);
+    // A linked Project ID seen on another machine is not that link.
+    const sameIdElsewhere = { ...desktopApp, id: laptopApp.id };
+    expect(
+      getWorkbenchThreadMachines({
+        board: { linkedProjectIds: [laptopApp.id], repositoryKeys },
+        boardEnvironmentId: laptop,
+        repositoryProjectIds: [laptopApp.id],
+        projects: [laptopApp, sameIdElsewhere],
+      }).map((machine) => machine.environmentId),
+    ).toEqual([laptop]);
     const appOnly = getWorkbenchThreadMachines({
       board: { linkedProjectIds: [laptopApp.id], repositoryKeys },
       boardEnvironmentId: laptop,
