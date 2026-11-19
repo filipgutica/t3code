@@ -1,6 +1,6 @@
 import { ChevronDownIcon } from "lucide-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import { resolveEnvironmentMachineKind, type EnvironmentId } from "@t3tools/contracts";
+import type { EnvironmentId } from "@t3tools/contracts";
 
 import { ComposerSelectControl } from "../components/chat/ComposerControl";
 import { ComposerContextLabel } from "../components/ComposerContextLabel";
@@ -13,7 +13,7 @@ import {
   SelectItem,
   SelectPopup,
 } from "../components/ui/select";
-import { useEnvironments } from "../state/environments";
+import { useWorkbenchMachineOf } from "./useWorkbenchMachineOf";
 
 const AUTOMATIC = "automatic";
 
@@ -34,7 +34,7 @@ export function WorkbenchBoardDefaultMachine({
   readonly pending: boolean;
   readonly onChange: (environmentId: EnvironmentId | undefined) => void;
 }) {
-  const { environments } = useEnvironments();
+  const machineOf = useWorkbenchMachineOf(environmentId);
   const machineIds = [
     ...new Set([
       ...projects.flatMap((project) =>
@@ -45,13 +45,6 @@ export function WorkbenchBoardDefaultMachine({
   ];
   // A saved default stays visible so it can be reset to Automatic.
   if (machineIds.length < 2 && value === undefined) return null;
-  const machineOf = (id: EnvironmentId | null | undefined) => {
-    const environment = environments.find((candidate) => candidate.environmentId === id);
-    return {
-      label: environment?.label ?? (id === environmentId ? "This machine" : "Another machine"),
-      kind: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
-    };
-  };
   const selected = machineOf(value ?? environmentId);
   return (
     <div className="space-y-1.5">

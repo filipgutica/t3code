@@ -8,6 +8,7 @@ import {
   getWorkbenchRepositoryChoices,
   getWorkbenchRepositoryKey,
   getWorkbenchThreadMachines,
+  linkWorkbenchRepositoryCheckouts,
   matchWorkbenchSavedRepository,
   matchWorkbenchTicketThread,
   resolveWorkbenchTicketRepositories,
@@ -197,14 +198,14 @@ describe("Workbench repositories across machines", () => {
         ticketProjectIds: [laptopApp.id],
       }),
     ).toEqual([laptopApp, laptopDocs, desktopCli]);
-    // Linked twice, a repository still shows once in the Board picker.
+    // Linked twice, a repository still shows once in Edit Board, with both machines.
     expect(
       getWorkbenchRepositoryChoices({
+        board: { linkedProjectIds: [laptopApp.id, desktopApp.id] },
         projects,
         environmentId: laptop,
-        linkedProjectIds: [laptopApp.id, desktopApp.id],
-      }),
-    ).toEqual([laptopApp, desktopDocs]);
+      }).map(({ checkouts }) => checkouts),
+    ).toEqual([[laptopApp, desktopApp], [desktopDocs]]);
   });
 
   it("saves a Ticket's chosen repositories on one machine, preferring the Board's", () => {
@@ -242,21 +243,46 @@ describe("Workbench repositories across machines", () => {
     expect(resolve(laptopWeb, desktopDocs)).toBeNull();
   });
 
-  it("offers the Board machine's checkout of a repository linked only elsewhere", () => {
+  it("links every machine's checkout of a Board repository, so a Ticket can use one machine", () => {
+    const board = { linkedProjectIds: [laptopApp.id] };
+    const remote = (project: EnvironmentProject) => ({
+      projectId: project.id,
+      environmentId: desktop,
+      title: project.title,
+    });
+    const docs = getWorkbenchRepositoryChoices({ board, projects, environmentId: laptop }).find(
+      ({ checkouts }) => checkouts.includes(desktopDocs),
+    )!;
+    const linked = linkWorkbenchRepositoryCheckouts({
+      board,
+      projects,
+      environmentId: laptop,
+      row: { choice: docs, checked: true },
+    });
+    expect(linked).toEqual({
+      linkedProjectIds: [laptopApp.id, desktopApp.id, desktopDocs.id],
+      remoteProjects: [remote(desktopApp), remote(desktopDocs)],
+    });
     expect(
-      getWorkbenchRepositoryChoices({
+      resolveWorkbenchTicketRepositories({
+        board: linked,
         projects,
         environmentId: laptop,
-        linkedProjectIds: [desktopApp.id],
+        projectIds: [laptopApp.id, desktopDocs.id],
       }),
-    ).toEqual([laptopApp, desktopApp, desktopDocs]);
+    ).toEqual([desktopApp.id, desktopDocs.id]);
+    // Unchecking a row unlinks its checkout on every machine.
     expect(
-      getWorkbenchRepositoryChoices({
+      linkWorkbenchRepositoryCheckouts({
+        board: linked,
         projects,
         environmentId: laptop,
-        linkedProjectIds: [laptopApp.id],
+        row: { choice: docs, checked: false },
       }),
-    ).toEqual([laptopApp, desktopDocs]);
+    ).toEqual({
+      linkedProjectIds: [laptopApp.id, desktopApp.id],
+      remoteProjects: [remote(desktopApp)],
+    });
   });
 
   it("offers machines that check out every Ticket repository, preferring the Board default", () => {

@@ -239,45 +239,94 @@ export function resolveWorkbenchTicketRepositories({
   return null;
 }
 
+/** One Edit Board row: a repository and its checkout on each machine, the Board's machine first. */
+export type WorkbenchRepositoryChoice = {
+  readonly key: string;
+  readonly checkouts: ReadonlyArray<EnvironmentProject>;
+};
+
 /**
- * Shows each repository once in the Board picker. A linked Project stands for its repository,
- * otherwise the Board's machine does; that checkout stays offered when the link is elsewhere.
+ * Lists each repository once for Edit Board. A machine's linked checkout stands for it there;
+ * a placeholder for an offline machine's link stays in its repository's row.
  */
 export function getWorkbenchRepositoryChoices({
+  board,
   projects,
   environmentId,
-  linkedProjectIds,
 }: {
+  board: Pick<WorkbenchBoardLinks, "linkedProjectIds" | "repositoryKeys">;
   projects: ReadonlyArray<EnvironmentProject>;
-  environmentId: EnvironmentId | null | undefined;
-  linkedProjectIds: ReadonlyArray<ProjectId>;
+  environmentId: EnvironmentId | null;
+}): ReadonlyArray<WorkbenchRepositoryChoice> {
+  const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
+  const linked = (project: EnvironmentProject) => board.linkedProjectIds.includes(project.id);
+  const rows = new Map<string, EnvironmentProject[]>();
+  for (const project of projects) {
+    const key = keyOf(project.id);
+    const checkouts = rows.get(key) ?? [];
+    const index = checkouts.findIndex(
+      (checkout) => checkout.environmentId === project.environmentId,
+    );
+    if (index === -1) checkouts.push(project);
+    else if (linked(project) && !linked(checkouts[index]!)) checkouts[index] = project;
+    rows.set(key, checkouts);
+  }
+  return Array.from(rows, ([key, checkouts]) => ({
+    key,
+    checkouts: checkouts.toSorted(
+      (left, right) =>
+        Number(right.environmentId === environmentId) -
+        Number(left.environmentId === environmentId),
+    ),
+  }));
+}
+
+/**
+ * Links every reachable checkout of each repository the Board links, so a Ticket can run on any
+ * machine that checks out all of its repositories. `checked` adds or removes one row's checkouts.
+ */
+export function linkWorkbenchRepositoryCheckouts({
+  board,
+  projects,
+  environmentId,
+  row,
+}: {
+  board: Pick<WorkbenchBoardLinks, "linkedProjectIds" | "remoteProjects" | "repositoryKeys">;
+  projects: ReadonlyArray<EnvironmentProject>;
+  environmentId: EnvironmentId | null;
+  row?: { readonly choice: WorkbenchRepositoryChoice; readonly checked: boolean } | undefined;
 }) {
-  const keyOf = makeWorkbenchRepositoryKeyOf({ board: undefined, projects });
-  const linked = projects.filter((project) => linkedProjectIds.includes(project.id));
-  const linkedKeys = new Set(linked.map((project) => keyOf(project.id)));
-  const linkedHere = new Set(
-    linked
-      .filter((project) => project.environmentId === environmentId)
-      .map((project) => keyOf(project.id)),
+  const removed = new Set(
+    row && !row.checked ? row.choice.checkouts.map((checkout) => checkout.id) : [],
   );
-  // The Board's own checkout stays offered so a Ticket can keep its repositories on one machine.
-  const offered = (project: EnvironmentProject) =>
-    !linkedKeys.has(keyOf(project.id)) ||
-    (project.environmentId === environmentId && !linkedHere.has(keyOf(project.id)));
-  return [
-    ...collapseByRepository({
-      projects: linked,
-      keyOf,
-      preferredEnvironmentIds: [environmentId],
-    }),
-    ...collapseByRepository({
-      projects: projects.filter(
-        (project) => !linkedProjectIds.includes(project.id) && offered(project),
+  const linkedProjectIds = board.linkedProjectIds.filter((id) => !removed.has(id));
+  const linkedSet = new Set(linkedProjectIds);
+  const added = getWorkbenchRepositoryChoices({ board, projects, environmentId }).flatMap(
+    (choice) =>
+      (row?.checked && row.choice.key === choice.key) ||
+      choice.checkouts.some((checkout) => linkedSet.has(checkout.id))
+        ? choice.checkouts.filter(
+            (checkout) => checkout.workspaceRoot !== "" && !linkedSet.has(checkout.id),
+          )
+        : [],
+  );
+  return {
+    linkedProjectIds: [...linkedProjectIds, ...added.map((checkout) => checkout.id)],
+    remoteProjects: [
+      ...(board.remoteProjects ?? []).filter((remote) => !removed.has(remote.projectId)),
+      ...added.flatMap((checkout) =>
+        checkout.environmentId === environmentId
+          ? []
+          : [
+              {
+                projectId: checkout.id,
+                environmentId: checkout.environmentId,
+                title: checkout.title,
+              },
+            ],
       ),
-      keyOf,
-      preferredEnvironmentIds: [environmentId],
-    }),
-  ].toSorted((left, right) => projects.indexOf(left) - projects.indexOf(right));
+    ],
+  };
 }
 
 export interface WorkbenchThreadMachine {

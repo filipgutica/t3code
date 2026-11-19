@@ -1,7 +1,6 @@
 import { ChevronDownIcon } from "lucide-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
-  resolveEnvironmentMachineKind,
   type EnvironmentId,
   type WorkbenchProject,
   type WorkbenchTicket,
@@ -19,11 +18,11 @@ import {
   SelectItem,
   SelectPopup,
 } from "../components/ui/select";
-import { useEnvironments } from "../state/environments";
 import {
   chooseWorkbenchThreadMachine,
   getWorkbenchThreadMachines,
 } from "./workbenchRemoteProjects";
+import { useWorkbenchMachineOf } from "./useWorkbenchMachineOf";
 
 type StartWorkMachineInput = {
   readonly environmentId: EnvironmentId;
@@ -109,16 +108,9 @@ export function WorkbenchRunOnPicker({
   readonly onChange: (environmentId: EnvironmentId) => void;
   readonly disabled: boolean;
 }) {
-  const { environments } = useEnvironments();
+  const machineOf = useWorkbenchMachineOf(boardEnvironmentId);
   // The Board chat and the Ticket page can both show Start work.
   const triggerId = useId();
-  const machineOf = (id: EnvironmentId) => {
-    const environment = environments.find((candidate) => candidate.environmentId === id);
-    return {
-      label: environment?.label ?? (id === boardEnvironmentId ? "This machine" : "Another machine"),
-      kind: resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
-    };
-  };
   const selected = machineOf(value);
   return (
     <div className="flex min-w-0 items-center gap-2">

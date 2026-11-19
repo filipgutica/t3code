@@ -334,14 +334,14 @@ as a server running `npx t3`. That machine needs no Workbench install. The Board
 and its Tickets stay on the machine that holds the Board.
 
 1. Connect this device to the other machine (see [Remote access](./remote-access.md)).
-2. Choose **Edit Board** and select its Projects, listed under that machine's name.
-3. Create a Ticket whose repositories are all on that machine, then start work.
+2. Choose **Edit Board** and select its repositories. Each row lists the
+   machines that check it out.
+3. Create a Ticket, then start work.
 
 A repository checked out on several machines, with the same git remote and path,
-is one Board repository, so link it once. A Ticket's repositories must all be
-linked on one machine, so link repositories you use together on the same
-machine, preferably the Board's. **Create Thread** and
-**Start work** show a **Run on** choice of the connected machines that have all of
+is one Board repository. Selecting it links its checkout on every connected
+machine, and saving Edit Board links checkouts on machines connected since.
+**Create Thread** and **Start work** show a **Run on** choice of the connected machines that have all of
 the Ticket's repositories. Start work on another machine keeps the planning
 conversation on the Board's machine, then opens Create Thread for the new
 machine. To set the machine new Threads use first, choose **Edit Board** and pick
