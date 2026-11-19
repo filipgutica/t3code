@@ -7805,6 +7805,7 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
             detail,
             payload: cause,
           });
+        // Workbench routes every thread start and MCP resume through its sandbox policy; remove with research mode (U06).
         const threadRuntimeParams = (
           params: Omit<Parameters<typeof codexThreadRuntimeParams>[0], "mcpSession"> & {
             readonly threadId: ThreadId | null;
