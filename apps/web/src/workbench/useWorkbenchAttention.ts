@@ -194,21 +194,22 @@ export function useWorkbenchAttention({
       }),
     ]),
   );
-  const attentionReferences =
+  const openLinkedReferences = [...attentionReferencesByTicket.values()]
+    .flat()
+    .map((row) => row.pullRequest)
+    .filter((reference) => reference.state !== "closed" && reference.state !== "merged");
+  const uniqueReferences = (references: ReadonlyArray<TicketPullRequestReference>) =>
     environmentId === null
       ? []
       : [
           ...new Map(
-            [...attentionReferencesByTicket.values()]
-              .flat()
-              .map((row) => row.pullRequest)
-              .filter((reference) => reference.state !== "closed" && reference.state !== "merged")
-              .map((reference) => [
-                workbenchAttentionIdentity(environmentId, reference),
-                reference,
-              ]),
+            references.map((reference) => [
+              workbenchAttentionIdentity(environmentId, reference),
+              reference,
+            ]),
           ).values(),
         ];
+  const attentionReferences = uniqueReferences(openLinkedReferences);
   const attentionEntityScope = JSON.stringify([environmentId, projectId]);
   const referenceScopes =
     environmentId === null
@@ -249,15 +250,18 @@ export function useWorkbenchAttention({
   const refreshingOnReturn = useRef(false);
   const leftDuringRefresh = useRef(false);
   // Read at the start of each pass, so a repeat includes PRs flagged since the round began.
+  // Links to one PR can carry different metadata, so any flagged link counts.
   const flaggedPullRequestTargets = useStableCallback(() =>
     environmentId === null
       ? []
-      : attentionReferences
-          .filter((reference) => observationOf(reference).signalKinds.length > 0)
-          .map((reference) => ({
-            environmentId,
-            input: { reference: workbenchPullRequestRef(reference) },
-          })),
+      : uniqueReferences(
+          openLinkedReferences.filter(
+            (reference) => observationOf(reference).signalKinds.length > 0,
+          ),
+        ).map((reference) => ({
+          environmentId,
+          input: { reference: workbenchPullRequestRef(reference) },
+        })),
   );
   const refreshAttentionOnReturn = useStableCallback(() => {
     if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)

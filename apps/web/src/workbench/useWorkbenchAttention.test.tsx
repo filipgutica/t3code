@@ -162,17 +162,21 @@ let renderer: ReactTestRenderer;
 function AttentionHarness({
   environment = environmentId,
   threads = threadsById,
+  tickets = [ticket],
+  ticketAssignments = assignments,
   activeThreadRef = null,
 }: {
   environment?: EnvironmentId;
   threads?: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  tickets?: ReadonlyArray<WorkbenchTicket>;
+  ticketAssignments?: ReadonlyArray<WorkbenchAssignment>;
   activeThreadRef?: ScopedThreadRef | null;
 }) {
   const attention = useWorkbenchAttention({
     environmentId: environment,
     projectId,
-    tickets: [ticket],
-    assignments,
+    tickets,
+    assignments: ticketAssignments,
     threadsById: threads,
     activeThreadRef,
   });
@@ -483,21 +487,24 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
     .mockImplementationOnce(held);
   // Inspection takes three PRs at a time and that batch never settles here, so PR 14 is
   // known only from its link metadata.
+  const linkedPullRequests = (firstFailing: number) =>
+    [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
+      ...link,
+      number,
+      url: `https://github.com/acme/web/pull/${number}`,
+      snapshot: { ...link.snapshot!, checksState: number >= firstFailing ? "failing" : "passing" },
+    }));
   const linkPullRequests = (firstFailing: number) =>
-    act(async () => {
-      const pullRequests = [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
-        ...link,
-        number,
-        url: `https://github.com/acme/web/pull/${number}`,
-        snapshot: {
-          ...link.snapshot!,
-          checksState: number >= firstFailing ? "failing" : "passing",
-        },
-      }));
+    act(async () =>
       renderer.update(
-        <Harness threads={new Map(threadsById).set(waiting.id, { ...waiting, pullRequests })} />,
-      );
-    });
+        <Harness
+          threads={new Map(threadsById).set(waiting.id, {
+            ...waiting,
+            pullRequests: linkedPullRequests(firstFailing),
+          })}
+        />,
+      ),
+    );
   await linkPullRequests(13);
   const invalidated = () =>
     invalidatePullRequest.mock.calls.map(([command]) => command.input.reference.number);
@@ -517,6 +524,36 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   expect(invalidated()).toEqual([13, 14, 12]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14, 12, 13, 14]);
+  // A later Ticket's link to PR 14 without metadata does not hide the failing link.
+  const otherTicket = { ...ticket, id: WorkbenchTicketId.make("other-ticket") };
+  const linker = {
+    ...thread("linker"),
+    pullRequests: [
+      { ...link, number: 14, url: "https://github.com/acme/web/pull/14", snapshot: null },
+    ],
+  };
+  await act(async () =>
+    renderer.update(
+      <Harness
+        threads={new Map(threadsById)
+          .set(waiting.id, { ...waiting, pullRequests: linkedPullRequests(12) })
+          .set(linker.id, linker)}
+        tickets={[ticket, otherTicket]}
+        ticketAssignments={[
+          ...assignments,
+          {
+            ...assignments[0]!,
+            id: WorkbenchAssignmentId.make("linker"),
+            ticketId: otherTicket.id,
+            threadId: linker.id,
+          },
+        ]}
+      />,
+    ),
+  );
+  invalidatePullRequest.mockClear();
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidated()).toEqual([12, 13, 14]);
 });
 
 it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
