@@ -17,6 +17,9 @@ export interface DesktopBuildProduct {
   };
   readonly linux: {
     readonly executableName: string;
+    /** Electron's WM_CLASS, which `setDesktopName` derives from the desktop entry name. */
+    readonly startupWMClass: string;
+    readonly appImageArtifactName: string;
     readonly includeDeb: boolean;
     readonly includeNativeDebMetadata: boolean;
   };

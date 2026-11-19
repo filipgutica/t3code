@@ -13,6 +13,7 @@
 - [Agent Workbench](./user/agent-workbench.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Voice input](./user/voice-input.md)
+- [Text generation models](./user/text-generation.md)
 - [SnapShots](./user/snap-shot.md)
 - [Visual replies](./user/html-renders.md)
 - [Import browser sessions](./user/browser-import.md)
@@ -70,6 +71,7 @@ source alone does not explain. Most code changes do not need an internal documen
 ### Runbooks
 
 - [Development and local builds](./operations/development.md)
+- [Scenarios: real-app proof for a fix](./operations/scenarios.md)
 - [Workbench verification](./operations/workbench-verification.md)
 - [T3 Connect setup](./operations/connect-setup.md)
 - [Release](./operations/release.md)

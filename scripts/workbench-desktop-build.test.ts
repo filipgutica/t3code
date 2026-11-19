@@ -107,6 +107,12 @@ it.layer(NodeServices.layer)("Workbench desktop packaging", (it) => {
         target: ["AppImage"],
         executableName: "t3code-workbench",
       });
+      assert.nestedPropertyVal(
+        linux,
+        "linux.desktop.entry.StartupWMClass",
+        "com.filipgutica.t3code.workbench",
+      );
+      assert.nestedPropertyVal(linux, "appImage.artifactName", "T3-Code-Workbench-${arch}.${ext}");
       assert.notProperty(linux.deb, "fpm");
       assert.deepStrictEqual(config.publish, [
         {
