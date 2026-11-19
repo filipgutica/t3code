@@ -9,8 +9,10 @@ The only release gate is successful Workbench feature CI and Workbench quality o
 that exact commit. The shared build workflow waits for those results. It does not
 select an older checkpoint or require an upstream baseline, ancestry, or tag recheck.
 
-The upstream sync workflow fetches the requested published pingdotgg/t3code tag (or
-the latest publication when no tag is supplied). Once
+The upstream sync workflow runs hourly and fetches the latest published
+pingdotgg/t3code release, or the tag requested by a manual dispatch. One merge of the
+latest release integrates every earlier one. A clean candidate waits for the sync PR's
+required Workbench Check before it updates main. Once
 integrated, it requests the matching Workbench channel and bump type. Workbench
 version numbers remain independent. Release metadata records the upstream event so
 scheduled retries do not publish it twice; an own release remains available.
@@ -58,8 +60,9 @@ for build validation. These are separate from the normal nightly and stable rele
 
 The native T3 task **Workbench upstream sync and releases** polls every six hours.
 Each trigger creates a fresh top-level Codex GPT-6.1-Sol thread in Auto mode and a
-worktree from fork `origin/main`. The GitHub hourly sync and daily-release cron
-triggers are removed; those workflows remain dispatchable helpers. The old dot
+worktree from fork `origin/main`. The hourly sync workflow publishes clean syncs
+on its own; the task resolves conflicted syncs and completes releases. The daily-release
+cron is removed; that workflow remains a dispatchable helper. The old dot
 schedule and archived cloud maintenance tasks stay retired. Keep the Codex GitHub
 reviewer enabled.
 
@@ -72,9 +75,9 @@ success proves a thread was launched, not that its release completed.
 
 The [maintenance state issue](https://github.com/filipgutica/t3code/issues/236) is the
 durable queue, ownership and handled-release record. Each run reads its live body,
-checks active owners and in-flight Actions, and queues every new published release
-after the recorded bootstrap in publication order. Do not collapse the queue to
-the latest tag. Store the tag/SHA, PR and review head, workflow run, allocated
+checks active owners and in-flight Actions, and works toward the latest published
+release. Earlier unhandled releases are superseded once a later one is integrated;
+record them as superseded rather than syncing them one at a time. Store the tag/SHA, PR and review head, workflow run, allocated
 version and release ID before advancing. Reconcile uncertain dispatches before
 retrying; mark an event handled only after actual publication, successful signing,
 and the expected installers, update manifests, build metadata and checksums.
