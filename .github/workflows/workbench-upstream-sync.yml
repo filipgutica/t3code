@@ -7,6 +7,9 @@ on:
         description: Exact published upstream tag; blank selects the latest publication
         type: string
         default: ""
+  schedule:
+    # Hourly: a newly published upstream nightly or stable syncs soon after release.
+    - cron: "17 * * * *"
 
 permissions:
   contents: read
@@ -217,7 +220,8 @@ jobs:
           retention-days: 1
 
   publish:
-    timeout-minutes: 10
+    # Allows for the sync PR's full Workbench CI run before main accepts the merge.
+    timeout-minutes: 60
     needs: verify
     if: needs.verify.outputs.needed == 'true'
     runs-on: ubuntu-24.04
@@ -299,6 +303,30 @@ jobs:
           test -n "$pr_number"
 
           echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the required Workbench Check
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          # main's ruleset rejects the merge until this check passes on the PR head. Check runs
+          # of this public repository are readable without a checks permission on the App token.
+          for attempt in {1..100}; do
+            conclusion="$(gh api "repos/$GITHUB_REPOSITORY/commits/$VERIFIED_SHA/check-runs?check_name=Workbench%20Check&filter=latest" \
+              --jq '[.check_runs[] | select(.app.slug == "github-actions")] | max_by(.started_at)
+                | if . == null or .status != "completed" then "pending" else .conclusion end')"
+            case "$conclusion" in
+              success) exit 0 ;;
+              pending) ;;
+              *)
+                echo "Workbench Check concluded $conclusion on $VERIFIED_SHA; refusing to publish." >&2
+                exit 1
+                ;;
+            esac
+            if [[ "$attempt" != 100 ]]; then sleep 30; fi
+          done
+          echo "Timed out waiting for Workbench Check on $VERIFIED_SHA." >&2
+          exit 1
 
       - name: Wait for the verified sync merge ref
         env:
@@ -428,6 +456,8 @@ jobs:
           done
 
       - name: Request the matching Workbench release
+        # Hourly no-op runs must not queue a release: a new pending run replaces a queued one.
+        if: needs.publish.result == 'success' || github.event_name == 'workflow_dispatch'
         env:
           UPSTREAM_TAG: ${{ needs.verify.outputs.upstream_tag }}
           UPSTREAM_CHANNEL: ${{ needs.verify.outputs.upstream_channel }}

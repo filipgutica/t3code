@@ -348,7 +348,7 @@ it("publishes with a repository-scoped App token that the verify job never recei
   assert.notMatch(publish, /github\.token|secrets\.GITHUB_TOKEN/);
   assert.deepEqual(
     [...publish.matchAll(/^\s+(?:token|GH_TOKEN): (.+)$/gm)].map((match) => match[1]),
-    Array(3).fill("${{ steps.app-token.outputs.token }}"),
+    Array(4).fill("${{ steps.app-token.outputs.token }}"),
   );
 });
 
@@ -396,6 +396,49 @@ it("waits for asynchronous mergeability and merge-ref creation", () =>
     assert.equal(result.status, 0, result.stderr);
     assert.equal(NodeFS.readFileSync(NodePath.join(root, "api-count"), "utf8"), "4\n");
     assert.equal(NodeFS.readFileSync(NodePath.join(root, "fetch-count"), "utf8"), "2\n");
+  }));
+
+const checkRun = (slug: string, status: string, conclusion: string | null) => ({
+  app: { slug },
+  status,
+  conclusion,
+  started_at: "2026-11-19T00:00:00Z",
+});
+const checkPreamble = (responses: ReadonlyArray<ReadonlyArray<object>>) => `
+gh() {
+  count=$(( $(cat "$RUNNER_TEMP/check-count" 2>/dev/null || echo 0) + 1 ))
+  echo "$count" > "$RUNNER_TEMP/check-count"
+  [[ "$2" == "repos/filipgutica/t3code/commits/candidate-sha/check-runs?check_name=Workbench%20Check&filter=latest" ]] || return 1
+  responses='${JSON.stringify(responses.map((runs) => ({ check_runs: runs })))}'
+  jq -r --argjson i "$(( count - 1 ))" ".[\\$i] | $4" <<< "$responses"
+}
+sleep() { :; }
+`;
+
+it("publishes only after the required Workbench Check passes on the PR head", () =>
+  workflowFixture((root) => {
+    const result = runStep(
+      root,
+      "Wait for the required Workbench Check",
+      checkPreamble([
+        [checkRun("other-ci", "completed", "success")],
+        [checkRun("github-actions", "in_progress", null)],
+        [checkRun("github-actions", "completed", "success")],
+      ]),
+    );
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(NodeFS.readFileSync(NodePath.join(root, "check-count"), "utf8"), "3\n");
+  }));
+
+it("refuses to publish when the required Workbench Check fails", () =>
+  workflowFixture((root) => {
+    const result = runStep(
+      root,
+      "Wait for the required Workbench Check",
+      checkPreamble([[checkRun("github-actions", "completed", "failure")]]),
+    );
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /Workbench Check concluded failure/);
   }));
 
 it("bounds merge-ref retries and fails on API errors, conflicts or a changed head", () => {
