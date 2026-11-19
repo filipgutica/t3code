@@ -42,11 +42,6 @@ import {
 
 type PendingRequestsByThread = ReadonlyMap<ThreadId, PendingThreadRequests>;
 
-const isDocumentActive = () => {
-  const { visible, focused } = getDocumentActivity();
-  return visible && focused;
-};
-
 const getObservedPullRequestRow = ({
   row,
   pullRequestTitle,
@@ -249,6 +244,7 @@ export function useWorkbenchAttention({
   // Atom commands settle without throwing.
   const refreshingOnReturn = useRef(false);
   const leftDuringRefresh = useRef(false);
+  const returnedDuringRefresh = useRef(false);
   // Read at the start of each pass, so a repeat includes PRs flagged since the round began.
   // Links to one PR can carry different metadata, so any flagged link counts.
   const flaggedPullRequestTargets = useStableCallback(() =>
@@ -264,16 +260,21 @@ export function useWorkbenchAttention({
         })),
   );
   const refreshAttentionOnReturn = useStableCallback(() => {
-    if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)
+    if (environmentId === null || attentionReferences.length === 0) return;
+    if (refreshingOnReturn.current) {
+      // Only a return after leaving mid-round repeats it; a focus and tab switch share a round.
+      if (leftDuringRefresh.current) returnedDuringRefresh.current = true;
       return;
+    }
     refreshingOnReturn.current = true;
     // One at a time, so a reply or thread resolution queued on the same environment runs between.
     void (async () => {
       do {
         leftDuringRefresh.current = false;
+        returnedDuringRefresh.current = false;
         for (const target of flaggedPullRequestTargets()) await invalidatePullRequest(target);
         // A visit that left and came back during the round may have changed a PR it already re-read.
-      } while (leftDuringRefresh.current && isDocumentActive());
+      } while (returnedDuringRefresh.current);
       refreshingOnReturn.current = false;
       refreshAttention();
     })();
@@ -282,7 +283,8 @@ export function useWorkbenchAttention({
   useEffect(() => {
     const unsubscribeReturn = subscribeDocumentReturn(refreshAttentionOnReturn);
     const unsubscribeActivity = subscribeDocumentActivity(() => {
-      if (!isDocumentActive()) leftDuringRefresh.current = true;
+      const { visible, focused } = getDocumentActivity();
+      if (!visible || !focused) leftDuringRefresh.current = true;
     });
     return () => {
       unsubscribeReturn();

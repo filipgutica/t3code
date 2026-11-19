@@ -512,18 +512,23 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   expect(invalidated()).toEqual([13]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14]);
-  // Leaving and coming back while 14 is pending repeats the round once it ends, including
-  // PR 12, which became flagged meanwhile.
+  // Hiding the tab and showing it again, without focusing the window, while 14 is pending
+  // repeats the round once it ends, including PR 12, which became flagged meanwhile.
   const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
-  await act(async () => window.dispatchEvent(new Event("blur")));
+  const switchTab = (visibilityState: DocumentVisibilityState) =>
+    act(async () => {
+      Object.assign(document, { visibilityState });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  await switchTab("hidden");
   await linkPullRequests(12);
-  hasFocus.mockReturnValue(true);
-  await act(async () => window.dispatchEvent(new Event("focus")));
+  await switchTab("visible");
   expect(invalidated()).toEqual([13, 14]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14, 12]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14, 12, 13, 14]);
+  hasFocus.mockReturnValue(true);
   // A later Ticket's link to PR 14 without metadata does not hide the failing link.
   const otherTicket = { ...ticket, id: WorkbenchTicketId.make("other-ticket") };
   const linker = {
