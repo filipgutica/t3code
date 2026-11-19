@@ -420,6 +420,9 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
           workspace: selectedProject,
           createContext: { linkedProjects: linkedT3Projects },
           refreshSnapshot: pageData.refreshWorkbenchSnapshot,
+          machineProjects: pageData.projects,
+          onStartWorkOn: (ticket, threadEnvironmentId) =>
+            requestNewThread(ticketActions.ticketForBoardAction(ticket), { threadEnvironmentId }),
         }}
         snapshotDraft={planning}
         ticket={selectedTicket}
@@ -683,6 +686,12 @@ function WorkbenchPageBoardChat({
       onNewTicketThread={(ticket) =>
         threadActions.requestNewThread(ticketActions.ticketForBoardAction(ticket))
       }
+      machineProjects={pageData.projects}
+      onStartWorkOn={(ticket, threadEnvironmentId) =>
+        threadActions.requestNewThread(ticketActions.ticketForBoardAction(ticket), {
+          threadEnvironmentId,
+        })
+      }
       newTicketThreadDisabled={
         !pageData.canOperate ||
         !pageData.threadLookupReady ||
@@ -869,6 +878,7 @@ function WorkbenchPageThreadDialogs(
               (workspace) => workspace.ticketId === startThreadRequest.ticket.id,
             ),
             initialRepositoryScope: startThreadRequest.repositoryScope,
+            initialThreadEnvironmentId: startThreadRequest.threadEnvironmentId,
             repositoryProjectId: matchWorkbenchSavedRepository({
               board: startThreadBoard,
               projects: pageData.projects,

@@ -7,19 +7,14 @@ import type {
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
 } from "@t3tools/contracts";
-import {
-  AuthOrchestrationOperateScope,
-  ProviderInstanceId,
-  resolveEnvironmentMachineKind,
-} from "@t3tools/contracts";
+import { AuthOrchestrationOperateScope, ProviderInstanceId } from "@t3tools/contracts";
 import { createModelSelection } from "@t3tools/shared/model";
 import { useState, type FormEvent } from "react";
 
 import { useAtomValue } from "@effect/atom-react";
 import { serverEnvironment } from "../state/server";
 import { useEnvironmentScope } from "../state/session";
-import { useConnectedEnvironmentIds, useEnvironment, useEnvironments } from "../state/environments";
-import { BranchToolbarEnvironmentSelector } from "../components/BranchToolbarEnvironmentSelector";
+import { useConnectedEnvironmentIds, useEnvironment } from "../state/environments";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useEnvironmentSettings } from "../hooks/useSettings";
 import { getCustomModelOptionsByInstance } from "../modelSelection";
@@ -42,6 +37,7 @@ import {
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import type { Project } from "../types";
+import { WorkbenchRunOnPicker } from "./WorkbenchStartWorkMachine";
 import {
   getWorkbenchRepositoryTitle,
   WorkbenchThreadRepositoryPicker,
@@ -204,6 +200,8 @@ type WorkbenchStartThreadDialogRequest = {
     | undefined;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
+  /** The machine Run on starts with; without it the dialog applies its default order. */
+  readonly initialThreadEnvironmentId?: EnvironmentId | undefined;
   /** Preferred repository for the new Thread; see `resolveWorkbenchThreadRepository`. */
   readonly repositoryProjectId: ProjectId | undefined;
   readonly additional?: boolean;
@@ -362,7 +360,6 @@ function useWorkbenchStartThreadEnvironment({
     remote,
     // Like the composer, name the machine once this client is connected to more than one.
     showMachine: remote || machineCount > 1,
-    machineKind: resolveEnvironmentMachineKind(config ?? null),
     machineLabel: machine?.label ?? "Another machine",
     settings,
     providers: remote ? (config?.providers ?? []) : providers,
@@ -382,31 +379,18 @@ function WorkbenchStartThreadMachine({
   boardEnvironmentId: EnvironmentId;
   onChange: (environmentId: EnvironmentId) => void;
 }) {
-  const { environments } = useEnvironments();
   if (!target.showMachine) return null;
   // An ineligible current machine stays listed beside the eligible ones, so the user can move off it.
   const machineIds = [
     ...new Set([target.environmentId, ...machines.map((machine) => machine.environmentId)]),
   ];
-  const options = machineIds.map((id) => {
-    const environment = environments.find((candidate) => candidate.environmentId === id);
-    return {
-      environmentId: id,
-      projectId: null,
-      label: id === target.environmentId ? target.machineLabel : (environment?.label ?? id),
-      isPrimary: id === boardEnvironmentId,
-      machine:
-        id === target.environmentId
-          ? target.machineKind
-          : resolveEnvironmentMachineKind(environment?.serverConfig ?? null),
-    };
-  });
   return (
-    <BranchToolbarEnvironmentSelector
-      envLocked={options.length < 2}
-      environmentId={target.environmentId}
-      availableEnvironments={options}
-      onEnvironmentChange={onChange}
+    <WorkbenchRunOnPicker
+      boardEnvironmentId={boardEnvironmentId}
+      environmentIds={machineIds}
+      value={target.environmentId}
+      onChange={onChange}
+      disabled={machineIds.length < 2}
     />
   );
 }
@@ -464,6 +448,7 @@ export function WorkbenchStartThreadDialog({
     board,
     workspace,
     initialRepositoryScope,
+    initialThreadEnvironmentId,
     repositoryProjectId: preferredRepositoryProjectId,
     additional = false,
     title: dialogTitle = "Create Thread",
@@ -471,7 +456,7 @@ export function WorkbenchStartThreadDialog({
     startLabel = "Create Thread",
   } = request;
   const [pickedRepositoryProjectId, setPickedRepositoryProjectId] = useState<ProjectId>();
-  const [pickedEnvironmentId, setPickedEnvironmentId] = useState<EnvironmentId>();
+  const [pickedEnvironmentId, setPickedEnvironmentId] = useState(initialThreadEnvironmentId);
   const {
     ticketRepositoryIds,
     repositoryScope,
@@ -570,13 +555,13 @@ export function WorkbenchStartThreadDialog({
         </DialogHeader>
         <DialogPanel>
           <form id="workbench-start-thread" className="space-y-2" onSubmit={submit}>
+            <WorkbenchStartThreadMachine
+              target={target}
+              machines={machines}
+              boardEnvironmentId={environmentId}
+              onChange={setPickedEnvironmentId}
+            />
             <div className="flex flex-wrap items-center gap-2">
-              <WorkbenchStartThreadMachine
-                target={target}
-                machines={machines}
-                boardEnvironmentId={environmentId}
-                onChange={setPickedEnvironmentId}
-              />
               <WorkbenchThreadRepositoryPicker
                 ticketRepositoryIds={ticketRepositoryIds}
                 projects={projects}

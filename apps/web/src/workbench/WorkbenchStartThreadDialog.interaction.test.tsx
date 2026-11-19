@@ -131,6 +131,8 @@ const render = async ({
   preparedWorkspace = workspace,
   unprepared = false,
   repositoryProjectId,
+  machineProjects = availableProjects,
+  initialThreadEnvironmentId,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
@@ -139,6 +141,8 @@ const render = async ({
   preparedWorkspace?: WorkbenchTicketWorkspace;
   unprepared?: boolean;
   repositoryProjectId?: ProjectId;
+  machineProjects?: ReadonlyArray<Project>;
+  initialThreadEnvironmentId?: EnvironmentId;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -150,11 +154,12 @@ const render = async ({
           environmentId,
           ticket: savedTicket,
           projects: availableProjects,
-          machineProjects: availableProjects,
+          machineProjects,
           board: undefined,
           workspace: unprepared ? undefined : preparedWorkspace,
           initialRepositoryScope: repositoryScope,
           repositoryProjectId,
+          initialThreadEnvironmentId,
           additional: true,
         }}
         pending={pending}
@@ -220,6 +225,30 @@ it("defaults to the repository of the Ticket's last active Thread", async () => 
   );
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({ modelSelection, repositoryProjectId: projects[1]!.id });
+});
+
+it("starts on the machine the request preselects instead of the Board's", async () => {
+  const primary: Project = {
+    ...projects[0]!,
+    repositoryIdentity: {
+      canonicalKey: "github.com/acme/app",
+      locator: {
+        source: "git-remote",
+        remoteName: "origin",
+        remoteUrl: "git@github.com:acme/app.git",
+      },
+      rootPath: "/repos/Primary",
+    },
+  };
+  const desktop = EnvironmentId.make("desktop");
+  await render({
+    machineProjects: [
+      primary,
+      { ...primary, id: ProjectId.make("desktop-primary"), environmentId: desktop },
+    ],
+    initialThreadEnvironmentId: desktop,
+  });
+  expect(document.body.textContent).toContain("Runs on Another machine.");
 });
 
 it("starts the Thread in another linked repository the user picks", async () => {

@@ -12,6 +12,10 @@ import {
   type WorkbenchConversationDraft,
 } from "./workbenchTicketDraft.logic";
 import { DRAFT_CONFLICT_MESSAGE } from "./workbenchTicketDraftSync";
+import {
+  WorkbenchRunOnPicker,
+  type WorkbenchStartWorkMachineChoice,
+} from "./WorkbenchStartWorkMachine";
 
 interface DraftActionsProps {
   readonly phase: WorkbenchConversationDraft["phase"];
@@ -29,11 +33,20 @@ interface DraftActionsProps {
   readonly layout: "stacked" | "inline" | "button";
   /** Replaces Discard for a draft with nothing to lose, skipping the confirmation. */
   readonly onCancel: (() => void) | null;
+  /** Start work's Run on choice, when the Ticket's repositories are on several machines. */
+  readonly runOn: WorkbenchStartWorkMachineChoice | null;
 }
 
 const SPINNER = <LoaderCircleIcon className="animate-spin" aria-hidden />;
 
-function PlanningActions({ phase, action, canOperate, onStartWork, layout }: DraftActionsProps) {
+function PlanningActions({
+  phase,
+  action,
+  canOperate,
+  onStartWork,
+  layout,
+  runOn,
+}: DraftActionsProps) {
   const label =
     action === "start"
       ? "Preparing worktrees…"
@@ -41,16 +54,15 @@ function PlanningActions({ phase, action, canOperate, onStartWork, layout }: Dra
         ? "Retry start work"
         : "Start work";
   const inline = layout === "inline";
-  return (
+  const actions = (
     <div className={inline ? "flex items-center gap-2" : "space-y-2"}>
       <p className={cn("text-xs text-muted-foreground", inline && "line-clamp-2 min-w-0 flex-1")}>
-        Start work prepares the repository worktrees and continues this conversation there. Nothing
-        is sent automatically.
+        {startWorkDescription(runOn)}
       </p>
       <Button
         className={inline ? "shrink-0" : "w-full"}
         size={inline ? "sm" : "default"}
-        disabled={action !== null || !canOperate}
+        disabled={action !== null || !canOperate || runOn?.unavailable === true}
         onClick={onStartWork}
       >
         {action === "start" ? SPINNER : <PlayIcon />}
@@ -58,7 +70,22 @@ function PlanningActions({ phase, action, canOperate, onStartWork, layout }: Dra
       </Button>
     </div>
   );
+  if (!runOn) return actions;
+  return (
+    <div className="space-y-2">
+      <WorkbenchRunOnPicker {...runOn} disabled={action !== null} />
+      {actions}
+    </div>
+  );
 }
+
+const startWorkDescription = (runOn: WorkbenchStartWorkMachineChoice | null) => {
+  if (runOn?.unavailable)
+    return "The chosen machine no longer has this ticket's repositories or is disconnected. Choose another machine.";
+  return runOn?.elsewhere
+    ? "Start work prepares the repository worktrees, then opens Create Thread on the chosen machine. Nothing is sent automatically."
+    : "Start work prepares the repository worktrees and continues this conversation there. Nothing is sent automatically.";
+};
 
 function DiscardingActions({ action, canOperate, onRetryDiscard }: DraftActionsProps) {
   return (
@@ -203,6 +230,7 @@ export function WorkbenchDraftActions({
   onDiscard,
   layout = "stacked",
   onCancel = null,
+  runOn = null,
 }: {
   readonly draft: WorkbenchConversationDraft;
   readonly editor: DraftEditor;
@@ -216,11 +244,13 @@ export function WorkbenchDraftActions({
   readonly onDiscard: () => void;
   readonly layout?: DraftActionsProps["layout"];
   readonly onCancel?: DraftActionsProps["onCancel"];
+  readonly runOn?: DraftActionsProps["runOn"];
 }) {
   return (
     <DraftActions
       layout={layout}
       onCancel={onCancel}
+      runOn={runOn}
       phase={draft.phase}
       action={transitions.action}
       canOperate={canOperate}

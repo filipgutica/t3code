@@ -41,6 +41,8 @@ type WorkbenchStartThreadRequest = {
   assignment?: WorkbenchAssignment;
   mode?: "additional" | "replace";
   previousThreadId?: ThreadId;
+  /** The machine the dialog preselects, as when Start work picked another machine. */
+  threadEnvironmentId?: EnvironmentId;
 };
 
 const getWorkbenchThreadStartOptions = ({
@@ -259,21 +261,31 @@ export function useWorkbenchThreadActions({
     setStartThreadRequest({ environmentId, ...review, ...(assignment ? { assignment } : {}) });
   };
 
-  const requestNewThread = (ticket: WorkbenchTicket) => {
-    if (pendingAction !== null || !threadLookupReady || environmentId === null) return;
+  const requestNewThread = (
+    ticket: WorkbenchTicket,
+    { threadEnvironmentId }: { threadEnvironmentId?: EnvironmentId } = {},
+  ) => {
+    if (environmentId === null) return;
+    // Start work's handoff already started the Ticket with its planning Thread, so it can't wait
+    // for Thread lookup or a page action without dropping the picked machine.
+    const handoff = threadEnvironmentId !== undefined;
+    if (!handoff && (pendingAction !== null || !threadLookupReady)) return;
     const review = repositoryReviewRequest(ticket);
     if (!review) return;
-    const hasExistingThread = (snapshot?.assignments ?? []).some(
-      (assignment) =>
-        assignment.ticketId === ticket.id &&
-        assignment.supersededAt === null &&
-        (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
-    );
+    const hasExistingThread =
+      handoff ||
+      (snapshot?.assignments ?? []).some(
+        (assignment) =>
+          assignment.ticketId === ticket.id &&
+          assignment.supersededAt === null &&
+          (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
+      );
     setError(null);
     setStartThreadRequest({
       environmentId,
       ...review,
       ...(hasExistingThread ? { mode: "additional" as const } : {}),
+      ...(threadEnvironmentId ? { threadEnvironmentId } : {}),
     });
   };
 
