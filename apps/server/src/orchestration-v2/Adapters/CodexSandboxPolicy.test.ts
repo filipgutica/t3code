@@ -239,8 +239,7 @@ describe("Codex read-only sandbox integration", () => {
     cwd: "/workspace",
     model: "gpt-5.4",
     config: {
-      "tools.update_plan.enabled": true,
-      mcp_optional_startup_grace_ms: 10_000,
+      ...CodexAdapterV2.CODEX_THREAD_CONFIG,
       "features.hooks": false,
       "features.codex_hooks": false,
       "features.plugin_hooks": false,
@@ -292,10 +291,10 @@ describe("Codex read-only sandbox integration", () => {
           tool_timeout_sec: 3900,
           http_headers: { Authorization: authorization },
         };
-        const t3Server = { ...t3Connection, disabled_tools: ["t3_thread_wait"] };
+        const t3Server = { ...t3Connection, disabled_tools: ["t3_thread_wait", "delegate_task"] };
         const t3DirectServer = {
           ...t3Connection,
-          enabled_tools: ["t3_thread_wait"],
+          enabled_tools: ["t3_thread_wait", "delegate_task"],
           omit_tools_from: ["code_mode", "deferred"],
         };
         const mcpSessions = yield* McpProviderSessions.McpProviderSessions;
@@ -319,8 +318,7 @@ describe("Codex read-only sandbox integration", () => {
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
-            "tools.update_plan.enabled": true,
-            mcp_optional_startup_grace_ms: 10_000,
+            ...CodexAdapterV2.CODEX_THREAD_CONFIG,
             "shell_environment_policy.set.T3CODE_THREAD_ID": threadId,
             ...(isolateIntegrations ? restrictedParams.config : {}),
             ...(research
@@ -476,8 +474,7 @@ describe("Codex read-only sandbox integration", () => {
           cwd: "/workspace",
           model: "gpt-5.4",
           config: {
-            "tools.update_plan.enabled": true,
-            mcp_optional_startup_grace_ms: 10_000,
+            ...CodexAdapterV2.CODEX_THREAD_CONFIG,
             ...(operation === "rollback" ? restrictedParams.config : {}),
             "shell_environment_policy.set.T3CODE_THREAD_ID": `thread-${operation}-source`,
           },
@@ -499,7 +496,7 @@ describe("Codex read-only sandbox integration", () => {
                 ...exchange(
                   4,
                   "thread/fork",
-                  { threadId: nativeThreadId, ...restrictedThreadParams },
+                  { threadId: nativeThreadId, excludeTurns: true, ...restrictedThreadParams },
                   threadResult("native-fork-target"),
                 ),
               ]
@@ -591,7 +588,7 @@ describe("Codex read-only sandbox integration", () => {
           session.sentRequests.find((request) => request.method === method)?.params,
           {
             threadId: nativeThreadId,
-            ...(operation === "rollback" ? { excludeTurns: true } : {}),
+            excludeTurns: true,
             ...restrictedThreadParams,
           },
         );
