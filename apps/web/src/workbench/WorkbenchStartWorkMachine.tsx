@@ -1,3 +1,4 @@
+import { ChevronDownIcon } from "lucide-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import {
   resolveEnvironmentMachineKind,
@@ -133,6 +134,7 @@ export function WorkbenchRunOnPicker({
         <ComposerSelectControl id={triggerId} size="xs" className="min-w-0 max-w-full">
           <EnvironmentMachineIcon kind={selected.kind} className="size-3 shrink-0" />
           <ComposerContextLabel>{selected.label}</ComposerContextLabel>
+          <ChevronDownIcon data-composer-control-chevron aria-hidden />
         </ComposerSelectControl>
         <SelectPopup alignItemWithTrigger={false}>
           <SelectGroup>

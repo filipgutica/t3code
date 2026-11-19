@@ -1,3 +1,4 @@
+import { ChevronDownIcon } from "lucide-react";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { resolveEnvironmentMachineKind, type EnvironmentId } from "@t3tools/contracts";
 
@@ -72,6 +73,7 @@ export function WorkbenchBoardDefaultMachine({
           <ComposerContextLabel>
             {value === undefined ? "Automatic" : selected.label}
           </ComposerContextLabel>
+          <ChevronDownIcon data-composer-control-chevron aria-hidden />
         </ComposerSelectControl>
         <SelectPopup alignItemWithTrigger={false}>
           <SelectGroup>
