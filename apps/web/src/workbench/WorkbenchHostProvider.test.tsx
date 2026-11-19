@@ -20,6 +20,9 @@ const state = vi.hoisted(() => ({
   failPreview: false,
   failSlot: false,
 }));
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("./useWorkbenchTicketPreparations", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./useWorkbenchTicketPreparations")>()),
   useWorkbenchTicketPreparations: () => {

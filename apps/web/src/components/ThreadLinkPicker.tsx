@@ -3,6 +3,7 @@ import { CheckIcon, MessageSquareIcon } from "lucide-react";
 import { T, useGT } from "gt-react";
 import { useState } from "react";
 
+import { useVisibleThreads } from "~/hostIntegrations";
 import { useProjects, useVisibleThreadShells } from "~/state/entities";
 import { useThreadSearch } from "~/state/queries";
 
@@ -23,7 +24,7 @@ export function ThreadLinkPicker({
   onSelect: (threadId: ThreadId) => void;
 }) {
   const gt = useGT();
-  const threads = useVisibleThreadShells();
+  const threads = useVisibleThreads(useVisibleThreadShells());
   const projects = useProjects();
   const [query, setQuery] = useState("");
   // Mounts older settled threads matching the query, which shells may leave out.

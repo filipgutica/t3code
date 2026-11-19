@@ -16,6 +16,7 @@ import {
   WorkstreamUpdateResult,
 } from "@t3tools/workbench/WorkbenchAgentService";
 import * as Schema from "effect/Schema";
+import * as McpSchema from "effect/ai/McpSchema";
 import * as Tool from "effect/ai/Tool";
 import * as Toolkit from "effect/ai/Toolkit";
 
@@ -74,7 +75,8 @@ const ReadWorkstreamTool = Tool.make("workbench_ticket_read", {
   .annotate(Tool.Readonly, true)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const UpdateWorkstreamTool = Tool.make("workbench_ticket_update", {
   description:
@@ -88,7 +90,8 @@ const UpdateWorkstreamTool = Tool.make("workbench_ticket_update", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const AddReferenceTool = Tool.make("workbench_reference_add", {
   description: `${REFERENCES_RULE} Link delivery PRs with link_pull_request instead. Existing URLs are a no-op.`,
@@ -104,7 +107,8 @@ const AddReferenceTool = Tool.make("workbench_reference_add", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const UpdateReferenceTool = Tool.make("workbench_reference_update", {
   description: "Retitle a Reference in place, such as when its status changes.",
@@ -120,7 +124,8 @@ const UpdateReferenceTool = Tool.make("workbench_reference_update", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const RemoveReferenceTool = Tool.make("workbench_reference_remove", {
   description: "Remove a Reference by URL.",
@@ -133,7 +138,8 @@ const RemoveReferenceTool = Tool.make("workbench_reference_remove", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, true)
   .annotate(Tool.Idempotent, true)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 const CreateThreadTool = Tool.make("workbench_thread_create", {
   description:
@@ -156,7 +162,8 @@ const CreateThreadTool = Tool.make("workbench_thread_create", {
   .annotate(Tool.Readonly, false)
   .annotate(Tool.Destructive, false)
   .annotate(Tool.Idempotent, false)
-  .annotate(Tool.OpenWorld, false);
+  .annotate(Tool.OpenWorld, false)
+  .annotate(McpSchema.EnabledWhen, McpInvocationContext.hiddenFromOutsideClients);
 
 export const WorkbenchToolkit = Toolkit.make(
   ReadWorkstreamTool,

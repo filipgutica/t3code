@@ -1,4 +1,4 @@
-import { ArrowUpIcon, SparklesIcon } from "lucide-react";
+import { ArrowUpIcon, PenLineIcon } from "lucide-react";
 import { useEffect } from "react";
 
 import { Button } from "../components/ui/button";
@@ -82,7 +82,7 @@ export function WorkbenchAskForChange({ ask }: { readonly ask: MarkdownAsk }) {
             onMouseDown={(event) => event.preventDefault()}
             onClick={popover.openPrompt}
           >
-            <SparklesIcon /> Ask for change
+            <PenLineIcon /> Ask for change
           </Button>
         ) : phase.kind === "running" ? (
           <div role="status" className="flex items-center gap-2 text-xs text-muted-foreground">

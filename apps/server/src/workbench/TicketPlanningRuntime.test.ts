@@ -267,6 +267,7 @@ const policyLayer = (
               (missingRepository ? [first] : [first, second]).map((projectId) => ({
                 projectId,
                 title: projectId,
+                hasCustomTitle: false,
                 workspaceRoot: `/repo/${projectId}`,
                 defaultModelSelection: null,
                 defaultThreadEnvMode: null,

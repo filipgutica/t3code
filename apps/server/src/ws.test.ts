@@ -184,6 +184,7 @@ import {
   WS_RPC_SERVER_OPTIONS,
   withLateConfigDiscovery,
 } from "./ws.ts";
+import { layerUnusedWorkbenchRpcServices } from "./workbench/testing/rpcServices.ts";
 
 const snapshotConfig = (fields: Partial<ServerConfig>) =>
   ({ availableEditors: [], settings: {}, ...fields }) as unknown as ServerConfig;
@@ -966,6 +967,7 @@ it.live.each([
         }),
         ProviderInstallationGate.layer,
         FetchHttpClient.layer,
+        layerUnusedWorkbenchRpcServices,
       );
       const context = yield* Layer.build(
         HttpRouter.serve(Ws.layer, { disableListenLog: true }).pipe(
@@ -1275,19 +1277,23 @@ it.effect("access changes made while the snapshot loads reach the client after i
       );
     const revokedElsewhere = AuthSessionId.make("revoked-elsewhere");
     const responses = yield* Queue.unbounded<AuthAccessStreamEvent>();
-    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
-      ...WS_RPC_SERVER_OPTIONS,
-      onFromServer: (response) =>
-        response._tag === "Chunk"
-          ? Effect.forEach(
-              response.values,
-              (event) => Queue.offer(responses, event as AuthAccessStreamEvent),
-              {
-                discard: true,
-              },
-            )
-          : Effect.void,
-    }).pipe(
+    // This fixture supplies native handlers; Workbench's handlers have a separate layer (U01).
+    const server = yield* RpcServer.makeNoSerialization(
+      WsRpcGroup.omit(...Object.values(WORKBENCH_WS_METHODS)),
+      {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: (response) =>
+          response._tag === "Chunk"
+            ? Effect.forEach(
+                response.values,
+                (event) => Queue.offer(responses, event as AuthAccessStreamEvent),
+                {
+                  discard: true,
+                },
+              )
+            : Effect.void,
+      },
+    ).pipe(
       Effect.provide(
         layerWsRpc(
           {
@@ -1939,11 +1945,15 @@ it.effect("a git action that fails partway still refreshes the repository status
       Layer.mock(ServerEnvironment.ServerEnvironment)({}),
       Layer.mock(EnvironmentAuth.EnvironmentAuth)({}),
     );
-    const server = yield* RpcServer.makeNoSerialization(WsRpcGroup, {
-      ...WS_RPC_SERVER_OPTIONS,
-      onFromServer: (response) =>
-        response._tag === "Exit" ? Queue.offer(exits, response.exit) : Effect.void,
-    }).pipe(
+    // This fixture supplies native handlers; Workbench's handlers have a separate layer (U01).
+    const server = yield* RpcServer.makeNoSerialization(
+      WsRpcGroup.omit(...Object.values(WORKBENCH_WS_METHODS)),
+      {
+        ...WS_RPC_SERVER_OPTIONS,
+        onFromServer: (response) =>
+          response._tag === "Exit" ? Queue.offer(exits, response.exit) : Effect.void,
+      },
+    ).pipe(
       Effect.provide(
         layerWsRpc(
           {

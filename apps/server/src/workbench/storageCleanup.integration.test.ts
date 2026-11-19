@@ -1,6 +1,7 @@
 import { expect } from "vite-plus/test";
 import { symlinksSupported } from "@t3tools/shared/testing/symlinks";
 import { it as effectIt } from "@effect/vitest";
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import {
   OrchestrationV2AppThread,
@@ -23,11 +24,13 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner";
 import * as TestClock from "effect/testing/TestClock";
 import * as ServerConfig from "../config.ts";
 import * as GitManager from "../git/GitManager.ts";
+import * as GitWorkflowService from "../git/GitWorkflowService.ts";
 import * as GitVcsDriver from "../vcs/GitVcsDriver.ts";
 import * as ProjectionStore from "../orchestration-v2/ProjectionStore.ts";
 import * as ProjectStore from "../orchestration-v2/ProjectStore.ts";
 import * as ProviderSessionManager from "../orchestration-v2/ProviderSessionManager.ts";
 import * as Orchestrator from "../orchestration-v2/Orchestrator.ts";
+import * as ThreadManagement from "../orchestration-v2/ThreadManagementService.ts";
 import * as SqlitePersistence from "../persistence/Sqlite.ts";
 import * as Settings from "../serverSettings.ts";
 import * as TerminalManager from "../terminal/Manager.ts";
@@ -101,9 +104,13 @@ const cleanupConfigLayer = Layer.unwrap(
     return ServerConfig.layerTest("/fixture/repository", canonicalDirectory);
   }),
 );
-const cleanupTestLayer = Layer.mergeAll(SqlitePersistence.layerMemory, cleanupConfigLayer).pipe(
-  Layer.provideMerge(NodeServices.layer),
-);
+// Branch following only runs for a worktree whose branch changed, which no case here sets up.
+const cleanupTestLayer = Layer.mergeAll(
+  SqlitePersistence.layerMemory,
+  cleanupConfigLayer,
+  Layer.mock(GitWorkflowService.GitWorkflowService)({}),
+  Layer.mock(ThreadManagement.ThreadManagementService)({}),
+).pipe(Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer)));
 
 const cleanupCases = (["idle", "deleted"] as const).flatMap((lifecycle) =>
   (["default", "custom", "symlinked", "overlapping"] as const).flatMap((directory) =>

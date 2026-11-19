@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
   threads: [] as ReturnType<typeof makeThreadFixture>[],
   link: vi.fn(),
 }));
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("../state/entities", () => ({
   useVisibleThreadShells: () => state.threads,
   useAnyEnvironmentHiding: () => false,
@@ -34,7 +37,10 @@ vi.mock("../hooks/usePullRequestLinking", () => ({
     changeLink: state.link,
   }),
 }));
-vi.mock("../state/query", () => ({ useEnvironmentQuery: () => ({ data: null, error: null }) }));
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
+  useEnvironmentQuery: () => ({ data: null, error: null }),
+}));
 vi.mock("../state/queries", () => ({
   useThreadSearch: () => ({ matches: [], query: "", isPending: false }),
 }));

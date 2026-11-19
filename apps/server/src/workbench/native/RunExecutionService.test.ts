@@ -36,6 +36,7 @@ import * as McpAppModelContext from "../../mcpApps/McpAppModelContext.ts";
 import * as PreviewAgentActivity from "../../preview/PreviewAgentActivity.ts";
 import * as RunExecutionService from "../../orchestration-v2/RunExecutionService.ts";
 import * as RunFinalizationService from "../../orchestration-v2/RunFinalizationService.ts";
+import * as ThreadCommandExecutor from "../../orchestration-v2/ThreadCommandExecutor.ts";
 
 const driver = ProviderDriverKind.make("codex");
 
@@ -130,6 +131,7 @@ function captureCheckpointFreeRootRun(status: TerminalStatus) {
               }),
           }),
           IdAllocator.layer,
+          ThreadCommandExecutor.layer,
           Layer.mock(TurnItemPositionStore.TurnItemPositionStoreV2)({
             allocate: () => Effect.succeed(1),
           }),

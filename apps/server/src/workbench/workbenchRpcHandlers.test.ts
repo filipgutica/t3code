@@ -27,7 +27,7 @@ const TestLayer = Layer.mergeAll(
     Layer.provideMerge(SqlitePersistence.layerMemory),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
-        isRepository: () => Effect.succeed(true),
+        repositoryRoot: (cwd) => Effect.succeed(cwd),
       }),
     ),
   ),

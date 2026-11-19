@@ -20,7 +20,6 @@ import { unified } from "unified";
 
 import {
   ComposerBoldExtension,
-  ComposerBoldSelectionOnlyExtension,
   ComposerCodeBlockExtension,
   ComposerCodeExtension,
   ComposerItalicExtension,
@@ -132,7 +131,6 @@ export const descriptionEditorExtensions = [
   ComposerItalicExtension,
   ComposerStrikeExtension,
   ComposerCodeExtension,
-  ComposerBoldSelectionOnlyExtension,
   DescriptionCodeBlock,
   TaskList,
   TaskItem.configure({ nested: true }),

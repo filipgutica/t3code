@@ -29,6 +29,9 @@ import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { groupWorkbenchReferences } from "./workbenchReferences.logic";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
 
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("../state/server", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/server")>();
   const { Atom } = await import("effect/reactivity");
@@ -41,7 +44,8 @@ vi.mock("../state/server", async (importOriginal) => {
 const contextMenu = vi.hoisted(() => ({ show: vi.fn(async () => null) }));
 vi.mock("../localApi", () => ({ readLocalApi: () => ({ contextMenu }) }));
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => vi.fn(async () => {}) }));
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
 }));
 vi.mock("../state/pullRequests", () => ({

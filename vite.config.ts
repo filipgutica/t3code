@@ -687,8 +687,10 @@ export default defineConfig({
         // Workbench still has existing overrides. Keep their count bounded while
         // upstream's rule is an error for the rest of the web app. Keep this last
         // so upstream can evolve its web rules without colliding with the fork.
+        // Workbench copy is not translated yet; "warn" would also reach its tests.
         files: ["apps/web/src/workbench/**", "apps/web/src/routes/workbench.tsx"],
         rules: {
+          "t3code/no-untranslated-copy": "off",
           "shadcn/no-restyle": [
             "warn",
             {
