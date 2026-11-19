@@ -456,6 +456,8 @@ jobs:
           done
 
       - name: Request the matching Workbench release
+        # Hourly no-op runs must not queue a release: a new pending run replaces a queued one.
+        if: needs.publish.result == 'success' || github.event_name == 'workflow_dispatch'
         env:
           UPSTREAM_TAG: ${{ needs.verify.outputs.upstream_tag }}
           UPSTREAM_CHANNEL: ${{ needs.verify.outputs.upstream_channel }}
