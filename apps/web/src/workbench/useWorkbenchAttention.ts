@@ -248,23 +248,26 @@ export function useWorkbenchAttention({
   // Atom commands settle without throwing.
   const refreshingOnReturn = useRef(false);
   const leftDuringRefresh = useRef(false);
+  // Read at the start of each pass, so a repeat includes PRs flagged since the round began.
+  const flaggedPullRequestTargets = useStableCallback(() =>
+    environmentId === null
+      ? []
+      : attentionReferences
+          .filter((reference) => observationOf(reference).signalKinds.length > 0)
+          .map((reference) => ({
+            environmentId,
+            input: { reference: workbenchPullRequestRef(reference) },
+          })),
+  );
   const refreshAttentionOnReturn = useStableCallback(() => {
     if (environmentId === null || attentionReferences.length === 0 || refreshingOnReturn.current)
       return;
     refreshingOnReturn.current = true;
-    const flagged = attentionReferences.filter(
-      (reference) => observationOf(reference).signalKinds.length > 0,
-    );
     // One at a time, so a reply or thread resolution queued on the same environment runs between.
     void (async () => {
       do {
         leftDuringRefresh.current = false;
-        for (const reference of flagged) {
-          await invalidatePullRequest({
-            environmentId,
-            input: { reference: workbenchPullRequestRef(reference) },
-          });
-        }
+        for (const target of flaggedPullRequestTargets()) await invalidatePullRequest(target);
         // A visit that left and came back during the round may have changed a PR it already re-read.
       } while (leftDuringRefresh.current && isDocumentActive());
       refreshingOnReturn.current = false;

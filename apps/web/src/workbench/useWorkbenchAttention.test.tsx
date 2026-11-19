@@ -483,32 +483,40 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
     .mockImplementationOnce(held);
   // Inspection takes three PRs at a time and that batch never settles here, so PR 14 is
   // known only from its link metadata.
-  const pullRequests = [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
-    ...link,
-    number,
-    url: `https://github.com/acme/web/pull/${number}`,
-    snapshot: { ...link.snapshot!, checksState: number > 12 ? "failing" : "passing" },
-  }));
-  await act(async () =>
-    renderer.update(
-      <Harness threads={new Map(threadsById).set(waiting.id, { ...waiting, pullRequests })} />,
-    ),
-  );
+  const linkPullRequests = (firstFailing: number) =>
+    act(async () => {
+      const pullRequests = [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
+        ...link,
+        number,
+        url: `https://github.com/acme/web/pull/${number}`,
+        snapshot: {
+          ...link.snapshot!,
+          checksState: number >= firstFailing ? "failing" : "passing",
+        },
+      }));
+      renderer.update(
+        <Harness threads={new Map(threadsById).set(waiting.id, { ...waiting, pullRequests })} />,
+      );
+    });
+  await linkPullRequests(13);
   const invalidated = () =>
     invalidatePullRequest.mock.calls.map(([command]) => command.input.reference.number);
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(invalidated()).toEqual([13]);
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14]);
-  // Leaving and coming back while 14 is pending re-reads 13 again once the round ends.
+  // Leaving and coming back while 14 is pending repeats the round once it ends, including
+  // PR 12, which became flagged meanwhile.
   const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
   await act(async () => window.dispatchEvent(new Event("blur")));
+  await linkPullRequests(12);
   hasFocus.mockReturnValue(true);
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(invalidated()).toEqual([13, 14]);
   await act(async () => settle.shift()?.());
-  expect(invalidated()).toEqual([13, 14, 13]);
+  expect(invalidated()).toEqual([13, 14, 12]);
   await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14, 12, 13, 14]);
 });
 
 it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
