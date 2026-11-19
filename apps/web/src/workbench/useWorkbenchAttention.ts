@@ -193,18 +193,17 @@ export function useWorkbenchAttention({
     .flat()
     .map((row) => row.pullRequest)
     .filter((reference) => reference.state !== "closed" && reference.state !== "merged");
-  const uniqueReferences = (references: ReadonlyArray<TicketPullRequestReference>) =>
+  const attentionReferences =
     environmentId === null
       ? []
       : [
           ...new Map(
-            references.map((reference) => [
+            openLinkedReferences.map((reference) => [
               workbenchAttentionIdentity(environmentId, reference),
               reference,
             ]),
           ).values(),
         ];
-  const attentionReferences = uniqueReferences(openLinkedReferences);
   const attentionEntityScope = JSON.stringify([environmentId, projectId]);
   const referenceScopes =
     environmentId === null
@@ -246,19 +245,22 @@ export function useWorkbenchAttention({
   const leftDuringRefresh = useRef(false);
   const returnedDuringRefresh = useRef(false);
   // Read at the start of each pass, so a repeat includes PRs flagged since the round began.
-  // Links to one PR can carry different metadata, so any flagged link counts.
-  const flaggedPullRequestTargets = useStableCallback(() =>
-    environmentId === null
-      ? []
-      : uniqueReferences(
-          openLinkedReferences.filter(
-            (reference) => observationOf(reference).signalKinds.length > 0,
-          ),
-        ).map((reference) => ({
-          environmentId,
-          input: { reference: workbenchPullRequestRef(reference) },
-        })),
-  );
+  // Any flagged link counts, but the target is the link inspection reads: the server caches
+  // per native Project, and links to one PR can differ in metadata and Project.
+  const flaggedPullRequestTargets = useStableCallback(() => {
+    if (environmentId === null) return [];
+    const flagged = new Set(
+      openLinkedReferences
+        .filter((reference) => observationOf(reference).signalKinds.length > 0)
+        .map((reference) => workbenchAttentionIdentity(environmentId, reference)),
+    );
+    return attentionReferences
+      .filter((reference) => flagged.has(workbenchAttentionIdentity(environmentId, reference)))
+      .map((reference) => ({
+        environmentId,
+        input: { reference: workbenchPullRequestRef(reference) },
+      }));
+  });
   const refreshAttentionOnReturn = useStableCallback(() => {
     if (environmentId === null || attentionReferences.length === 0) return;
     if (refreshingOnReturn.current) {
@@ -282,9 +284,13 @@ export function useWorkbenchAttention({
   // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window returns: coming back from the PR host is when its state most likely changed
   useEffect(() => {
     const unsubscribeReturn = subscribeDocumentReturn(refreshAttentionOnReturn);
+    // Only losing visibility or focus is a departure; showing the tab before focusing it is one return.
+    let previous = getDocumentActivity();
     const unsubscribeActivity = subscribeDocumentActivity(() => {
-      const { visible, focused } = getDocumentActivity();
-      if (!visible || !focused) leftDuringRefresh.current = true;
+      const next = getDocumentActivity();
+      if ((previous.visible && !next.visible) || (previous.focused && !next.focused))
+        leftDuringRefresh.current = true;
+      previous = next;
     });
     return () => {
       unsubscribeReturn();

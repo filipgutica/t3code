@@ -80,7 +80,9 @@ vi.mock("../state/pullRequests", () => ({
     native.sharedSummary(...args),
 }));
 const invalidatePullRequest = vi.hoisted(() =>
-  vi.fn(async (_command: { input: { reference: { number: number } } }) => ({ _tag: "Success" })),
+  vi.fn(async (_command: { input: { reference: { number: number; projectId: string } } }) => ({
+    _tag: "Success",
+  })),
 );
 vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => invalidatePullRequest }));
 vi.mock("./state", () => ({
@@ -529,10 +531,12 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   await act(async () => settle.shift()?.());
   expect(invalidated()).toEqual([13, 14, 12, 13, 14]);
   hasFocus.mockReturnValue(true);
-  // A later Ticket's link to PR 14 without metadata does not hide the failing link.
+  // A later Ticket's link to PR 14 without metadata does not hide the failing link, and the
+  // re-read targets the Project that inspection reads.
   const otherTicket = { ...ticket, id: WorkbenchTicketId.make("other-ticket") };
   const linker = {
     ...thread("linker"),
+    projectId: ProjectId.make("fork"),
     pullRequests: [
       { ...link, number: 14, url: "https://github.com/acme/web/pull/14", snapshot: null },
     ],
@@ -559,6 +563,7 @@ it("retains feedback across reference-set and same-PR metadata changes, prunes a
   invalidatePullRequest.mockClear();
   await act(async () => window.dispatchEvent(new Event("focus")));
   expect(invalidated()).toEqual([12, 13, 14]);
+  expect(invalidatePullRequest.mock.calls[2]?.[0].input.reference.projectId).toBe("fork");
 });
 
 it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
@@ -663,6 +668,20 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   await act(async () => {
     window.dispatchEvent(new Event("focus"));
     document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(invalidatePullRequest).toHaveBeenCalledOnce();
+  // Showing the tab before focusing the window is one return, not a departure and a return.
+  invalidatePullRequest.mockClear();
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  await act(async () => {
+    Object.assign(document, { visibilityState: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await act(async () => {
+    Object.assign(document, { visibilityState: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    hasFocus.mockReturnValue(true);
+    window.dispatchEvent(new Event("focus"));
   });
   expect(invalidatePullRequest).toHaveBeenCalledOnce();
   await act(async () =>
