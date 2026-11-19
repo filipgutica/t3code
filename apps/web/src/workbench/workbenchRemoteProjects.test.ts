@@ -295,6 +295,36 @@ describe("Workbench repositories across machines", () => {
     });
   });
 
+  it("groups a checkout selected before its repository identity loaded", () => {
+    const loading = { ...desktopDocs, repositoryIdentity: null };
+    const board = { linkedProjectIds: [laptopApp.id] };
+    const [, docs] = getWorkbenchRepositoryChoices({
+      board,
+      projects: [laptopApp, loading],
+      environmentId: laptop,
+    });
+    const selected = linkWorkbenchRepositoryCheckouts({
+      board,
+      projects: [laptopApp, loading],
+      environmentId: laptop,
+      row: { choice: docs!, checked: true },
+    });
+    expect(selected.repositoryKeys).toEqual([]);
+    const laptopDocs = checkout({
+      id: "laptop-docs",
+      environmentId: laptop,
+      root: "/home/me/docs",
+      remote: "git@github.com:acme/docs.git",
+    });
+    expect(
+      linkWorkbenchRepositoryCheckouts({
+        board: selected,
+        projects: [laptopApp, desktopDocs, laptopDocs],
+        environmentId: laptop,
+      }).linkedProjectIds,
+    ).toEqual([laptopApp.id, desktopDocs.id, laptopDocs.id]);
+  });
+
   it("offers a reachable checkout in place of an offline link on the same machine", () => {
     const desktopAppAgain = { ...desktopApp, id: ProjectId.make("desktop-app-again") };
     const board = {

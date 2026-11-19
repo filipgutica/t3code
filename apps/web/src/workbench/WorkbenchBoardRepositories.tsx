@@ -96,7 +96,7 @@ export function WorkbenchBoardRepositories({
                 checked={choice.linkedProjectIds.length > 0}
                 disabled={
                   pending ||
-                  reachable.length === 0 ||
+                  (choice.linkedProjectIds.length === 0 && reachable.length === 0) ||
                   choice.linkedProjectIds.some((id) => lockedProjectIds.includes(id))
                 }
                 onCheckedChange={(checked) =>

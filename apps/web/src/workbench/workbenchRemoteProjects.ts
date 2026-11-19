@@ -320,7 +320,7 @@ export function linkWorkbenchRepositoryCheckouts({
     choice.linkedProjectIds.some((id) => linkedSet.has(id))
       ? choice.checkouts
           .filter((checkout) => checkout.workspaceRoot !== "" && !linkedSet.has(checkout.id))
-          .map((checkout) => ({ checkout, key: choice.key }))
+          .map((checkout) => ({ checkout, key: getWorkbenchRepositoryKey(checkout) }))
       : [],
   );
   return {
@@ -341,7 +341,10 @@ export function linkWorkbenchRepositoryCheckouts({
     ],
     repositoryKeys: [
       ...(board.repositoryKeys ?? []).filter((entry) => !removed.has(entry.projectId)),
-      ...added.map(({ checkout, key }) => ({ projectId: checkout.id, repositoryKey: key })),
+      // Only a derived key, so a Project whose identity is still loading picks it up later.
+      ...added.flatMap(({ checkout, key }) =>
+        key === null ? [] : [{ projectId: checkout.id, repositoryKey: key }],
+      ),
     ],
   };
 }
