@@ -154,6 +154,7 @@ const snapshot: WorkbenchSnapshot = {
 type HookInput = Parameters<typeof useWorkbenchThreadActions>[0];
 type HarnessInput = {
   canOperate?: boolean;
+  threadLookupReady?: boolean;
   archivedThread?: boolean;
   snapshot: WorkbenchSnapshot;
   environmentId: EnvironmentId | null;
@@ -222,7 +223,7 @@ function pageData(input: HarnessInput): HookInput["pageData"] {
           ]
         : [],
     ),
-    threadLookupReady: true,
+    threadLookupReady: input.threadLookupReady ?? true,
     threadLookupError: null,
     refreshArchivedThreads: refresh.archived,
     refreshThreadLookup: vi.fn(),
@@ -650,9 +651,23 @@ describe("Thread repository review", () => {
     expect(commands.createThread).toHaveBeenCalledOnce();
   });
 
+  it("opens Start work's machine handoff even while Thread lookup is loading", async () => {
+    await mount({ threadLookupReady: false });
+    await act(async () => actions.requestNewThread(ticket));
+    expect(actions.startThreadRequest).toBeNull();
+    const pickedMachine = EnvironmentId.make("desktop");
+    await act(async () => actions.requestNewThread(ticket, { threadEnvironmentId: pickedMachine }));
+    expect(actions.startThreadRequest).toMatchObject({
+      mode: "additional",
+      threadEnvironmentId: pickedMachine,
+    });
+  });
+
   it("refreshes changed repository choices before allowing a second confirmation", async () => {
     const { update, router } = await mount();
-    await act(async () => actions.requestNewThread(ticket));
+    // A machine Start work picked stays preselected through the review.
+    const pickedMachine = EnvironmentId.make("desktop");
+    await act(async () => actions.requestNewThread(ticket, { threadEnvironmentId: pickedMachine }));
     const revisedTicket = {
       ...ticket,
       revision: 1,
@@ -666,6 +681,7 @@ describe("Thread repository review", () => {
     expect(actions.startThreadRequest).toMatchObject({
       ticket: revisedTicket,
       reviewVersion: 1,
+      threadEnvironmentId: pickedMachine,
       repositoryScope: {
         repositoryProjectIds: [otherProjectId],
       },

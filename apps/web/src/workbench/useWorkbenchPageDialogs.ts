@@ -1,19 +1,15 @@
-import {
-  WorkbenchProjectId,
-  type ProjectId,
-  type EnvironmentId,
-  type WorkbenchRemoteProject,
-} from "@t3tools/contracts";
+import { WorkbenchProjectId, type EnvironmentId } from "@t3tools/contracts";
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import { withWorkbenchEnvironmentSearch } from "./workbenchNavigation";
 import { hasWorkbenchLocalRepository } from "./workbenchRepositoryScope";
+import { getMissingWorkbenchRepositoryKeys } from "./workbenchRemoteProjects";
 import type { WorkbenchConversationDraft } from "./workbenchTicketDraft.logic";
 import { useAtomCommand } from "../state/use-atom-command";
 import { randomUUID } from "../lib/utils";
 import { workbenchEnvironment } from "./state";
 import { reportWorkbenchCommandFailure } from "./workbenchPageCommands";
-import type { WorkbenchCreateTicketDraft } from "./WorkbenchForms";
+import type { WorkbenchBoardSave, WorkbenchCreateTicketDraft } from "./WorkbenchForms";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
 import type { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 
@@ -50,11 +46,12 @@ export function useWorkbenchPageDialogs({
   const navigate = useNavigate();
   const [editWorkspaceOpen, setEditWorkspaceOpen] = useState(false);
   const [ticketDialogOpen, setTicketDialogOpen] = useState(false);
-  const submitProject = async (
-    title: string,
-    linkedProjectIds: ReadonlyArray<ProjectId>,
-    remoteProjects: ReadonlyArray<WorkbenchRemoteProject> = [],
-  ) => {
+  const submitProject = async ({
+    title,
+    linkedProjectIds,
+    remoteProjects,
+    defaultEnvironmentId,
+  }: WorkbenchBoardSave) => {
     if (!canOperate || environmentId === null) return false;
     setPendingAction("create-project");
     setError(null);
@@ -66,6 +63,11 @@ export function useWorkbenchPageDialogs({
         title,
         linkedProjectIds,
         remoteProjects,
+        repositoryKeys: getMissingWorkbenchRepositoryKeys({
+          board: { linkedProjectIds },
+          projects,
+        }),
+        ...(defaultEnvironmentId ? { defaultEnvironmentId } : {}),
         createdAt: new Date().toISOString(),
       },
     });
@@ -78,11 +80,12 @@ export function useWorkbenchPageDialogs({
     return true;
   };
 
-  const saveWorkspace = async (
-    title: string,
-    linkedProjectIds: ReadonlyArray<ProjectId>,
-    remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>,
-  ) => {
+  const saveWorkspace = async ({
+    title,
+    linkedProjectIds,
+    remoteProjects,
+    defaultEnvironmentId,
+  }: WorkbenchBoardSave) => {
     if (
       !canOperate ||
       environmentId === null ||
@@ -99,7 +102,13 @@ export function useWorkbenchPageDialogs({
         expectedRevision: selectedProject.revision,
         title,
         linkedProjectIds,
-        remoteProjects: remoteProjects ?? selectedProject.remoteProjects ?? [],
+        remoteProjects,
+        repositoryKeys: getMissingWorkbenchRepositoryKeys({
+          board: { linkedProjectIds, repositoryKeys: selectedProject.repositoryKeys },
+          projects,
+        }),
+        // Null clears a saved default.
+        defaultEnvironmentId: defaultEnvironmentId ?? null,
         updatedAt: new Date().toISOString(),
       },
     });

@@ -1,4 +1,13 @@
 import { useEnvironment } from "../state/environments";
+import { WorkbenchBoardDefaultMachine } from "./WorkbenchBoardDefaultMachine";
+import {
+  linkWorkbenchRepositoryCheckouts,
+  type ResolveWorkbenchTicketRepositories,
+} from "./workbenchRemoteProjects";
+import {
+  WorkbenchBoardRepositories,
+  type WorkbenchBoardRepositoryLinks,
+} from "./WorkbenchBoardRepositories";
 import { WorkbenchTicketProgress, WorkbenchTicketSharedContext } from "./WorkbenchTicketPlanning";
 import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
 import {
@@ -7,6 +16,7 @@ import {
 } from "./WorkbenchRepositoryScopeFields";
 import {
   getWorkbenchRepositoryScope,
+  isWorkbenchRepositoryScopeEqual,
   isWorkbenchRepositoryScopeValid,
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
@@ -193,6 +203,14 @@ import {
 
 const NO_TICKET_WORKTREES: ReadonlyArray<WorkbenchTicketWorktree> = [];
 
+export interface WorkbenchBoardSave {
+  readonly title: string;
+  readonly linkedProjectIds: ReadonlyArray<ProjectId>;
+  readonly remoteProjects: ReadonlyArray<WorkbenchRemoteProject>;
+  /** Undefined means Automatic. */
+  readonly defaultEnvironmentId: EnvironmentId | undefined;
+}
+
 export function WorkbenchWorkspaceDialog({
   open,
   projects,
@@ -216,22 +234,27 @@ export function WorkbenchWorkspaceDialog({
         readonly title: string;
         readonly linkedProjectIds: ReadonlyArray<ProjectId>;
         readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject>;
+        readonly repositoryKeys?: WorkbenchBoardRepositoryLinks["repositoryKeys"];
+        readonly defaultEnvironmentId?: EnvironmentId;
       }
     | undefined;
-  readonly onSave: (
-    title: string,
-    linkedProjectIds: ReadonlyArray<ProjectId>,
-    remoteProjects: ReadonlyArray<WorkbenchRemoteProject>,
-  ) => Promise<boolean>;
+  readonly onSave: (board: WorkbenchBoardSave) => Promise<boolean>;
 }) {
-  const initial = initialWorkspace ?? { title: "", linkedProjectIds: [], remoteProjects: [] };
+  const initial = initialWorkspace ?? {
+    title: "",
+    linkedProjectIds: [],
+    remoteProjects: [],
+    defaultEnvironmentId: undefined,
+  };
+  const [defaultEnvironmentId, setDefaultEnvironmentId] = useState(initial.defaultEnvironmentId);
   const [title, setTitle] = useState(initial.title);
-  const [linkedProjectIds, setLinkedProjectIds] = useState<ReadonlyArray<ProjectId>>(
-    initial.linkedProjectIds,
-  );
-  const [remoteProjects, setRemoteProjects] = useState<ReadonlyArray<WorkbenchRemoteProject>>(
-    initial.remoteProjects ?? [],
-  );
+  const [board, setBoard] = useState<WorkbenchBoardRepositoryLinks>(() => ({
+    linkedProjectIds: initial.linkedProjectIds,
+    remoteProjects: initial.remoteProjects ?? [],
+    ...(initialWorkspace?.repositoryKeys
+      ? { repositoryKeys: initialWorkspace.repositoryKeys }
+      : {}),
+  }));
   const saveLabel = pending ? "Saving…" : "Save changes";
   const copy = initialWorkspace
     ? {
@@ -248,7 +271,7 @@ export function WorkbenchWorkspaceDialog({
         description: "Group related tickets around one or more existing T3 Projects.",
       };
   const cannotSave =
-    disabled || pending || title.trim().length === 0 || linkedProjectIds.length === 0;
+    disabled || pending || title.trim().length === 0 || board.linkedProjectIds.length === 0;
   const handleOpenChange = (nextOpen: boolean) => {
     if (pending) return;
     onOpenChange(nextOpen);
@@ -256,7 +279,16 @@ export function WorkbenchWorkspaceDialog({
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (cannotSave) return;
-    if (await onSave(title.trim(), linkedProjectIds, remoteProjects)) onOpenChange(false);
+    // Machines that connected after a repository was linked get their checkouts linked too.
+    const { linkedProjectIds, remoteProjects } = linkWorkbenchRepositoryCheckouts({
+      board,
+      projects,
+      environmentId,
+    });
+    if (
+      await onSave({ title: title.trim(), linkedProjectIds, remoteProjects, defaultEnvironmentId })
+    )
+      onOpenChange(false);
   };
 
   return (
@@ -280,15 +312,21 @@ export function WorkbenchWorkspaceDialog({
                 onChange={(event) => setTitle(event.currentTarget.value)}
               />
             </div>
-            <WorkbenchWorkspaceRepositories
+            <WorkbenchBoardRepositories
               environmentId={environmentId}
               projects={projects}
               pending={pending}
-              initialWorkspace={initialWorkspace}
-              linkedProjectIds={linkedProjectIds}
-              setLinkedProjectIds={setLinkedProjectIds}
-              remoteProjects={remoteProjects}
-              setRemoteProjects={setRemoteProjects}
+              editing={initialWorkspace !== undefined}
+              lockedProjectIds={initial.linkedProjectIds}
+              board={board}
+              onChange={setBoard}
+            />
+            <WorkbenchBoardDefaultMachine
+              environmentId={environmentId}
+              projects={projects}
+              value={defaultEnvironmentId}
+              pending={pending}
+              onChange={setDefaultEnvironmentId}
             />
           </form>
         </DialogPanel>
@@ -314,6 +352,7 @@ export type WorkbenchCreateTicketDraft = Omit<
 export function WorkbenchTicketDialog({
   open,
   linkedProjects,
+  resolveRepositories,
   pending,
   disabled,
   error,
@@ -322,6 +361,7 @@ export function WorkbenchTicketDialog({
 }: {
   readonly open: boolean;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly resolveRepositories: ResolveWorkbenchTicketRepositories;
   readonly pending: boolean;
   readonly disabled?: boolean;
   readonly error: string | null;
@@ -346,13 +386,9 @@ export function WorkbenchTicketDialog({
   });
   const createLabel = pending ? "Creating Ticket…" : "Create Ticket";
   const mutationDisabled = disabled || pending;
+  const resolvedRepositoryProjectIds = resolveRepositories(selectedRepositoryProjectIds);
   const cannotCreate =
-    mutationDisabled ||
-    title.trim().length === 0 ||
-    !isWorkbenchRepositoryScopeValid({
-      scope: { repositoryProjectIds: selectedRepositoryProjectIds },
-      projects: linkedProjects,
-    });
+    mutationDisabled || title.trim().length === 0 || resolvedRepositoryProjectIds === null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (cannotCreate) return;
@@ -360,7 +396,7 @@ export function WorkbenchTicketDialog({
       id: requestId,
       title,
       markdown,
-      repositoryProjectIds: selectedRepositoryProjectIds,
+      repositoryProjectIds: resolvedRepositoryProjectIds,
       ...(references.length > 0 ? { references } : {}),
     });
     if (created) handleOpenChange(false);
@@ -403,11 +439,7 @@ export function WorkbenchTicketDialog({
               selectedRepositoryProjectIds={selectedRepositoryProjectIds}
               setRepositoryProjectIds={setRepositoryProjectIds}
             />
-            {new Set(
-              linkedProjects
-                .filter((project) => selectedRepositoryProjectIds.includes(project.id))
-                .map((project) => project.environmentId),
-            ).size > 1 ? (
+            {selectedRepositoryProjectIds.length > 0 && resolvedRepositoryProjectIds === null ? (
               <p role="alert" className="text-sm text-destructive">
                 Choose repositories on one machine.
               </p>
@@ -448,6 +480,7 @@ export type WorkbenchTicketDetailProps = {
   readonly references: ReadonlyArray<WorkbenchReference>;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly resolveRepositories: ResolveWorkbenchTicketRepositories;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -493,7 +526,7 @@ export type WorkbenchTicketDetailProps = {
   }) => void;
   readonly onRepositoryScopeChange: (value: WorkbenchRepositoryScope) => void;
   readonly onCancelRepositories: () => void;
-  readonly onSaveRepositories: () => Promise<boolean>;
+  readonly onSaveRepositories: (value: WorkbenchRepositoryScope) => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
   /** Shows the ticket's Threads in a floating chat. */
@@ -552,6 +585,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
       workspace={{
         ticketWorkspace: props.ticketWorkspace,
         linkedProjects: props.linkedProjects,
+        resolveRepositories: props.resolveRepositories,
         preparationFailed: props.preparationFailed,
         preparationPending: props.preparationPending,
         repositoryScopeDraft: props.repositoryScopeDraft,
@@ -629,6 +663,7 @@ function WorkbenchTicketDetailController({
     WorkbenchTicketDetailProps,
     | "ticketWorkspace"
     | "linkedProjects"
+    | "resolveRepositories"
     | "preparationFailed"
     | "preparationPending"
     | "repositoryScopeDraft"
@@ -683,6 +718,7 @@ function WorkbenchTicketDetailController({
   const {
     ticketWorkspace,
     linkedProjects,
+    resolveRepositories,
     preparationFailed,
     preparationPending,
     repositoryScopeDraft,
@@ -1162,6 +1198,7 @@ function WorkbenchTicketDetailController({
                   keybindings: keybindings,
                   availableEditors: availableEditors,
                   linkedProjects: linkedProjects,
+                  resolveRepositories,
                 }}
               />
             </div>
@@ -2350,6 +2387,7 @@ type WorkbenchTicketWorkspacePanelProps = Pick<
   | "availableEditors"
   | "ticketWorkspace"
   | "linkedProjects"
+  | "resolveRepositories"
   | "ticket"
   | "pending"
   | "preparationPending"
@@ -2423,7 +2461,7 @@ type WorkbenchTicketWorkspacePanelInput = {
   >;
   context: Pick<
     WorkbenchTicketWorkspacePanelProps,
-    "environmentId" | "keybindings" | "availableEditors" | "linkedProjects"
+    "environmentId" | "keybindings" | "availableEditors" | "linkedProjects" | "resolveRepositories"
   >;
 };
 
@@ -2459,7 +2497,8 @@ function WorkbenchTicketWorkspacePanel({
     activeAssignments,
     repositoryScopeDraft,
   } = records;
-  const { environmentId, keybindings, availableEditors, linkedProjects } = context;
+  const { environmentId, keybindings, availableEditors, linkedProjects, resolveRepositories } =
+    context;
   const draft =
     repositoryScopeDraft?.ticket.id === ticket.id &&
     repositoryScopeDraft.environmentId === environmentId
@@ -2501,6 +2540,7 @@ function WorkbenchTicketWorkspacePanel({
               actions={actions}
               disabled={disabled}
               linkedProjects={linkedProjects}
+              resolveRepositories={resolveRepositories}
             />
           </WorkbenchTicketWorkspaceRepositoryEditor>
         ) : remote ? (
@@ -2639,13 +2679,21 @@ function WorkbenchTicketWorkspaceReviewActions({
   actions,
   disabled,
   linkedProjects,
-}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
-  readonly draft: WorkbenchRepositoryScopeDraft;
-  readonly disabled: boolean;
-  readonly linkedProjects: ReadonlyArray<Project>;
-}) {
+  resolveRepositories,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> &
+  Pick<WorkbenchTicketDetailProps, "linkedProjects" | "resolveRepositories"> & {
+    readonly draft: WorkbenchRepositoryScopeDraft;
+    readonly disabled: boolean;
+  }) {
   const { pending, preparationPending, workspaceIsPreparing, workspacePreparationActionLabel } =
     presentation;
+  // An untouched scope saves as is, so Save never moves a Ticket to another machine.
+  const unchanged = isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
+  const repositoryProjectIds = unchanged
+    ? isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
+      ? draft.value.repositoryProjectIds
+      : null
+    : resolveRepositories(draft.value.repositoryProjectIds);
   return (
     <>
       <Button
@@ -2659,12 +2707,10 @@ function WorkbenchTicketWorkspaceReviewActions({
       </Button>
       <Button
         aria-busy={pending || preparationPending || workspaceIsPreparing}
-        disabled={
-          disabled ||
-          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
-        }
+        disabled={disabled || repositoryProjectIds === null}
         onClick={() => {
-          void actions.onSaveRepositories();
+          if (repositoryProjectIds !== null)
+            void actions.onSaveRepositories({ repositoryProjectIds });
         }}
         size="xs"
         type="button"
@@ -3558,176 +3604,6 @@ export function WorkbenchCreateTicketRepositories({
         </div>
       )}
     </fieldset>
-  );
-}
-
-function WorkbenchWorkspaceRepositories({
-  projects,
-  pending,
-  initialWorkspace,
-  linkedProjectIds,
-  setLinkedProjectIds,
-  environmentId,
-  remoteProjects,
-  setRemoteProjects,
-}: Pick<
-  Parameters<typeof WorkbenchWorkspaceDialog>[0],
-  "projects" | "pending" | "initialWorkspace" | "environmentId"
-> & {
-  linkedProjectIds: ReadonlyArray<ProjectId>;
-  setLinkedProjectIds: Dispatch<SetStateAction<ReadonlyArray<ProjectId>>>;
-  remoteProjects: ReadonlyArray<WorkbenchRemoteProject>;
-  setRemoteProjects: Dispatch<SetStateAction<ReadonlyArray<WorkbenchRemoteProject>>>;
-}) {
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLowerCase();
-  const matchingProjects = projects.filter(
-    (project) =>
-      project.title.toLowerCase().includes(normalizedQuery) ||
-      project.workspaceRoot.toLowerCase().includes(normalizedQuery),
-  );
-  const machineIds = [
-    ...new Set(matchingProjects.map((project) => project.environmentId)),
-  ].toSorted((left, right) =>
-    left === environmentId ? -1 : right === environmentId ? 1 : left.localeCompare(right),
-  );
-  return (
-    <fieldset className="min-w-0 space-y-2">
-      <legend className="text-sm font-medium">Linked repositories</legend>
-      <p className="text-xs text-muted-foreground">
-        {initialWorkspace
-          ? "Already-linked repositories stay selected. Add a directory as a T3 Project first if it is not listed here."
-          : "Tickets can target any selected T3 Project."}
-      </p>
-      {projects.length > 0 ? (
-        <Input
-          type="search"
-          aria-label="Search repositories"
-          placeholder="Search repositories"
-          spellCheck={false}
-          value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
-          // Enter would otherwise submit the Board form.
-          onKeyDown={(event) => {
-            if (event.key === "Enter") event.preventDefault();
-          }}
-        />
-      ) : null}
-      {/* A fixed height while searching keeps the centered dialog from jumping as results change. */}
-      <div
-        className={cn(
-          "space-y-1 overflow-y-auto rounded-lg border border-border p-1",
-          normalizedQuery ? "h-60" : "max-h-60",
-        )}
-      >
-        {machineIds.map((machineId) => (
-          <WorkbenchWorkspaceRepositoryGroup
-            key={machineId}
-            environmentId={machineId}
-            local={machineId === environmentId}
-            projects={matchingProjects.filter((project) => project.environmentId === machineId)}
-            pending={pending}
-            initialWorkspace={initialWorkspace}
-            linkedProjectIds={linkedProjectIds}
-            setLinkedProjectIds={setLinkedProjectIds}
-            remoteProjects={remoteProjects}
-            setRemoteProjects={setRemoteProjects}
-          />
-        ))}
-        {projects.length === 0 ? (
-          <p className="p-3 text-sm text-muted-foreground">
-            Create a T3 Project before creating a Board.
-          </p>
-        ) : matchingProjects.length === 0 ? (
-          <p className="p-3 text-sm text-muted-foreground">No repositories match.</p>
-        ) : null}
-      </div>
-    </fieldset>
-  );
-}
-
-function WorkbenchWorkspaceRepositoryGroup({
-  environmentId,
-  local,
-  projects,
-  pending,
-  initialWorkspace,
-  linkedProjectIds,
-  setLinkedProjectIds,
-  remoteProjects,
-  setRemoteProjects,
-}: {
-  environmentId: EnvironmentId;
-  local: boolean;
-} & Pick<
-  Parameters<typeof WorkbenchWorkspaceRepositories>[0],
-  | "projects"
-  | "pending"
-  | "initialWorkspace"
-  | "linkedProjectIds"
-  | "setLinkedProjectIds"
-  | "remoteProjects"
-  | "setRemoteProjects"
->) {
-  const environment = useEnvironment(environmentId);
-  const machine = environment?.label ?? "Another machine";
-  return (
-    <section className="space-y-1">
-      <p className="px-3 pt-2 text-xs font-medium text-muted-foreground">
-        {local ? "This machine" : machine}
-      </p>
-      {projects.map((project) => (
-        <label
-          key={project.id}
-          htmlFor={`workbench-project-${environmentId}-${project.id}`}
-          className="flex cursor-pointer items-start gap-3 rounded-md px-3 py-2.5 hover:bg-accent"
-        >
-          <Checkbox
-            id={`workbench-project-${environmentId}-${project.id}`}
-            className="mt-0.5"
-            checked={
-              linkedProjectIds.includes(project.id) &&
-              (local
-                ? !remoteProjects.some((remote) => remote.projectId === project.id)
-                : remoteProjects.some(
-                    (remote) =>
-                      remote.projectId === project.id && remote.environmentId === environmentId,
-                  ))
-            }
-            disabled={
-              pending ||
-              (!local && environment?.connection.phase !== "connected") ||
-              initialWorkspace?.linkedProjectIds.includes(project.id)
-            }
-            onCheckedChange={(checked) => {
-              setLinkedProjectIds((current) =>
-                checked
-                  ? [...new Set([...current, project.id])]
-                  : current.filter((id) => id !== project.id),
-              );
-              setRemoteProjects((current) => [
-                ...current.filter((remote) => remote.projectId !== project.id),
-                ...(checked && !local
-                  ? [{ projectId: project.id, environmentId, title: project.title }]
-                  : []),
-              ]);
-            }}
-          />
-          <span className="min-w-0">
-            <span className="block truncate text-sm font-medium">{project.title}</span>
-            <span className="block truncate font-mono text-xs text-muted-foreground">
-              {project.workspaceRoot}
-            </span>
-          </span>
-        </label>
-      ))}
-      {!local ? (
-        <p className="px-3 pb-2 text-xs text-muted-foreground">
-          Threads here run on {machine}. They get the Ticket in their first message; later Ticket
-          changes don't reach them.
-        </p>
-      ) : null}
-    </section>
   );
 }
 

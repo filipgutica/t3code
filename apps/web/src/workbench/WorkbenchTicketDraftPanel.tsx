@@ -6,6 +6,7 @@ import { Label } from "../components/ui/label";
 import type { Project } from "../types";
 import { WorkbenchBriefAskButton, WorkbenchBriefBody } from "./WorkbenchBriefReview";
 import { WorkbenchCreateTicketRepositories } from "./WorkbenchForms";
+import type { ResolveWorkbenchTicketRepositories } from "./workbenchRemoteProjects";
 import { WorkbenchProvenanceBadge, type WorkbenchProvenanceSource } from "./WorkbenchReferences";
 import { WorkbenchReviewBar } from "./WorkbenchReviewBar";
 import { WorkbenchWordDiff } from "./WorkbenchMarkdownReview";
@@ -13,19 +14,34 @@ import type { useWorkbenchBriefReview } from "./useWorkbenchBriefReview";
 
 interface DraftFieldContext {
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly resolveRepositories: ResolveWorkbenchTicketRepositories;
 }
 
 const getCreateBlocker = ({
   title,
   hasRepository,
+  onOneMachine,
 }: {
   readonly title: string;
   readonly hasRepository: boolean;
+  readonly onOneMachine: boolean;
 }): string | null => {
   if (title.trim().length === 0) return "Add a title to create the ticket.";
   if (!hasRepository) return "Select a repository to create the ticket.";
+  if (!onOneMachine) return "Choose repositories on one machine.";
   return null;
 };
+
+const getDraftRepositories = ({
+  fields,
+  linkedProjects,
+}: Pick<DraftFieldContext, "linkedProjects"> & {
+  readonly fields: WorkbenchTicketDraftFields;
+}) => ({
+  selectedRepositoryProjectIds: fields.repositoryProjectIds.filter((id) =>
+    linkedProjects.some((project) => project.id === id),
+  ),
+});
 
 /**
  * Validates the draft's chosen repositories against the current Board.
@@ -34,19 +50,20 @@ const getCreateBlocker = ({
 export const getTicketDraftCreateState = ({
   fields,
   linkedProjects,
+  resolveRepositories,
 }: DraftFieldContext & { readonly fields: WorkbenchTicketDraftFields }) => {
-  const repositories = {
-    selectedRepositoryProjectIds: fields.repositoryProjectIds.filter((id) =>
-      linkedProjects.some((project) => project.id === id),
-    ),
-  };
+  const repositories = getDraftRepositories({ fields, linkedProjects });
+  const resolvedRepositoryProjectIds = resolveRepositories(
+    repositories.selectedRepositoryProjectIds,
+  );
   const blocker = getCreateBlocker({
     title: fields.title,
     hasRepository: repositories.selectedRepositoryProjectIds.length > 0,
+    onOneMachine: resolvedRepositoryProjectIds !== null,
   });
   const effectiveFields: WorkbenchTicketDraftFields = {
     ...fields,
-    repositoryProjectIds: repositories.selectedRepositoryProjectIds,
+    repositoryProjectIds: resolvedRepositoryProjectIds ?? repositories.selectedRepositoryProjectIds,
   };
   return { repositories, blocker, effectiveFields };
 };
@@ -111,8 +128,8 @@ export function WorkbenchTicketDraftFieldsForm({
   briefReview,
   references,
   onChange,
-  ...context
-}: DraftFieldContext & {
+  linkedProjects,
+}: Pick<DraftFieldContext, "linkedProjects"> & {
   readonly fields: WorkbenchTicketDraftFields;
   readonly disabled: boolean;
   /** Who last wrote the title or brief, if an agent or Ask for change did. */
@@ -122,7 +139,7 @@ export function WorkbenchTicketDraftFieldsForm({
   readonly references: ReactNode;
   readonly onChange: (patch: Partial<WorkbenchTicketDraftFields>) => void;
 }) {
-  const { repositories } = getTicketDraftCreateState({ fields, ...context });
+  const repositories = getDraftRepositories({ fields, linkedProjects });
   const titleWords = briefReview.review?.diffShown ? briefReview.review.titleWords : null;
   return (
     <div className="min-w-0 space-y-5">
@@ -154,7 +171,7 @@ export function WorkbenchTicketDraftFieldsForm({
       {references}
       <fieldset disabled={disabled} className="min-w-0 space-y-5">
         <WorkbenchCreateTicketRepositories
-          linkedProjects={context.linkedProjects}
+          linkedProjects={linkedProjects}
           selectedRepositoryProjectIds={repositories.selectedRepositoryProjectIds}
           setRepositoryProjectIds={asSetter<ReadonlyArray<ProjectId>>(
             repositories.selectedRepositoryProjectIds,

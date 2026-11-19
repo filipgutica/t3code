@@ -12,6 +12,7 @@ import {
   type WorkbenchTicketDraft,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import * as Cause from "effect/Cause";
 import { useState, type ComponentProps } from "react";
 import { useLocation } from "@tanstack/react-router";
@@ -29,6 +30,7 @@ import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { getWorkbenchRepositoryKey } from "./workbenchRemoteProjects";
 
 const mocks = vi.hoisted(() => ({
   begin: vi.fn(),
@@ -90,6 +92,11 @@ vi.mock("./useWorkbenchThreadSettlement", () => ({
     settlementPendingThreadId: null,
     toggleThreadSettlement: async () => {},
   }),
+}));
+// The stubbed useAtomValue cannot feed the environment catalog that names Run on machines.
+vi.mock("../state/environments", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/environments")>()),
+  useEnvironments: () => ({ environments: [] }),
 }));
 vi.mock("./useWorkbenchThreadRecaps", () => ({
   useWorkbenchThreadRecaps: () => new Map([["first", "Refunded the duplicate charge."]]),
@@ -185,6 +192,10 @@ function Harness(props: {
   readonly onOpenDraft?: (draftId: WorkbenchTicketId) => void;
   readonly onOpenThread?: (threadId: ThreadId) => void;
   readonly onNewTicketThread?: (ticket: WorkbenchTicket) => void;
+  readonly machineProjects?: ReadonlyArray<EnvironmentProject>;
+  readonly defaultEnvironmentId?: EnvironmentId;
+  readonly repositoryKeys?: WorkbenchProject["repositoryKeys"];
+  readonly onStartWorkOn?: (ticket: WorkbenchTicket, threadEnvironmentId: EnvironmentId) => void;
 }) {
   const [drafts, setDrafts] = useState(props.initialDrafts ?? []);
   const [request, setRequest] = useState<{
@@ -219,7 +230,12 @@ function Harness(props: {
   return (
     <WorkbenchBoardFloatingChat
       environmentId={environmentId}
-      workspace={props.archived ? { ...workspace, archivedAt: createdAt } : workspace}
+      workspace={{
+        ...workspace,
+        ...(props.archived ? { archivedAt: createdAt } : {}),
+        ...(props.defaultEnvironmentId ? { defaultEnvironmentId: props.defaultEnvironmentId } : {}),
+        ...(props.repositoryKeys ? { repositoryKeys: props.repositoryKeys } : {}),
+      }}
       providers={[]}
       linkedProjects={linkedProjects}
       tickets={[ticket("ticket-a", "Refunds"), ticket("ticket-b", "Payouts")]}
@@ -256,6 +272,7 @@ function Harness(props: {
       archivedThreadsById={new Map()}
       createContext={{
         linkedProjects,
+        resolveRepositories: (projectIds) => projectIds,
       }}
       canStartDrafts
       draftRequest={request}
@@ -271,6 +288,8 @@ function Harness(props: {
       onOpenThread={props.onOpenThread ?? (() => {})}
       onNewTicketThread={props.onNewTicketThread ?? (() => {})}
       newTicketThreadDisabled={false}
+      machineProjects={props.machineProjects ?? []}
+      onStartWorkOn={props.onStartWorkOn ?? (() => {})}
     />
   );
 }
@@ -827,6 +846,74 @@ it.each([
   await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
   await expect.element(screen.getByRole("button", { name: action })).toBeEnabled();
 });
+
+it.each([
+  ["the Board's machine", undefined, []],
+  ["the Board's Default machine", "desktop", [["ticket-a", "desktop"]]],
+] as const)(
+  "starts work on %s and opens Create Thread only for another machine",
+  async (_name, defaultEnvironmentId, opened) => {
+    const { onSnapshot } = await setup();
+    const saved = { ...draft("ticket-a", "draft-thread", "Refunds"), phase: "planning" as const };
+    mocks.otherCommand.mockResolvedValue({
+      _tag: "Success",
+      value: { ...saved, phase: "working", revision: 1 },
+    });
+    const checkout = (id: string, machine: string): EnvironmentProject => ({
+      id: ProjectId.make(id),
+      environmentId: EnvironmentId.make(machine),
+      title: "Orbit Web",
+      workspaceRoot: "/repos/orbit-web",
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/app",
+        locator: {
+          source: "git-remote",
+          remoteName: "origin",
+          remoteUrl: "git@github.com:acme/app.git",
+        },
+        rootPath: "/repos/orbit-web",
+      },
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt,
+      updatedAt: createdAt,
+    });
+    const onStartWorkOn = vi.fn();
+    await using screen = await render(
+      <Harness
+        initialDrafts={[saved]}
+        onSnapshot={onSnapshot}
+        machineProjects={[
+          checkout(repositoryId, "local"),
+          checkout("desktop-repository", "desktop"),
+        ]}
+        repositoryKeys={[
+          {
+            projectId: repositoryId,
+            repositoryKey: getWorkbenchRepositoryKey(checkout(repositoryId, "local"))!,
+          },
+        ]}
+        {...(defaultEnvironmentId
+          ? { defaultEnvironmentId: EnvironmentId.make(defaultEnvironmentId) }
+          : {})}
+        onStartWorkOn={(ticket, machine) => onStartWorkOn(ticket.id, machine)}
+      />,
+    );
+    await pickThread(screen, /Thread draft-thread/);
+    await userEvent.click(screen.getByRole("button", { name: "Expand board chat" }));
+    await expect.element(screen.getByRole("combobox", { name: "Run on" })).toBeEnabled();
+    await userEvent.click(screen.getByRole("button", { name: "Start work" }));
+    // Start work hands off in the same step that leaves planning and removes the button.
+    await expect
+      .element(screen.getByRole("button", { name: "Start work" }))
+      .not.toBeInTheDocument();
+    expect(mocks.otherCommand).toHaveBeenCalledWith({
+      environmentId,
+      input: { id: saved.id, expectedRevision: 0 },
+    });
+    expect(onStartWorkOn.mock.calls).toEqual(opened);
+  },
+);
 
 it("opens the full native Thread only when explicitly requested", async () => {
   const { onSnapshot } = await setup();
