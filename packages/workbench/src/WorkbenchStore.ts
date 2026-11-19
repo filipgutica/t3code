@@ -3927,6 +3927,10 @@ const makeWorkbenchStore = Effect.gen(function* () {
     const link = boardLinks.find((candidate) => candidate.linkedProjectId === threadProjectId);
     if (link === undefined) {
       if (repository === undefined || !ticketKeys.has(repository.repositoryKey)) return false;
+      if (remote === undefined) {
+        const project = yield* findT3Project({ linkedProjectId: threadProjectId });
+        if (Option.isNone(project)) return false;
+      }
       yield* insertProjectLink({
         projectId: ticket.projectId,
         linkedProjectId: threadProjectId,

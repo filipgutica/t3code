@@ -1564,13 +1564,20 @@ describe("WorkbenchStore", () => {
         createdAt,
       });
       yield* seedNativeThread({ threadId, projectId: localOrbitProjectId, createdAt });
-      yield* store.createAssignment({
+      const assign = store.createAssignment({
         id: WorkbenchAssignmentId.make("assignment-join"),
         ticketId,
         threadId,
         repository: { repositoryKey: orbitKey, title: "Orbit" },
         createdAt,
       });
+      // The local checkout joins only while its native Project exists.
+      expect((yield* Effect.flip(assign)).code).toBe("thread_project_mismatch");
+      const sql = yield* SqlClient.SqlClient;
+      yield* sql`INSERT INTO projection_projects
+        (project_id, title, workspace_root, scripts_json, created_at, updated_at, deleted_at)
+        VALUES (${localOrbitProjectId}, 'Orbit', '/repos/orbit', '[]', ${createdAt}, ${createdAt}, NULL)`;
+      yield* assign;
 
       const joined = Option.getOrThrow(yield* store.getProject(projectId));
       expect(joined.linkedProjectIds).toEqual([remoteOrbitProjectId, localOrbitProjectId]);

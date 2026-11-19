@@ -67,12 +67,12 @@ describe("getWorkbenchRepositoryKey", () => {
     });
     expect(getWorkbenchRepositoryKey(laptopWeb)).toBe(getWorkbenchRepositoryKey(desktopWeb));
     expect(getWorkbenchRepositoryKey(desktopApi)).not.toBe(getWorkbenchRepositoryKey(desktopWeb));
-    // Only Windows paths are lowercased upstream, so the key ignores case on every machine.
+    // A Windows root differs in case from git's, but the path inside the repository does not.
     const windowsApi = checkout({
       id: "windows-api",
       environmentId: laptop,
       root: "C:\\Users\\me\\app",
-      path: "C:\\Users\\me\\app\\apps\\OrbitApi",
+      path: "c:\\users\\me\\app\\apps\\OrbitApi",
     });
     const linuxApi = checkout({
       id: "linux-api",
@@ -81,6 +81,13 @@ describe("getWorkbenchRepositoryKey", () => {
       path: "/srv/app/apps/OrbitApi",
     });
     expect(getWorkbenchRepositoryKey(windowsApi)).toBe(getWorkbenchRepositoryKey(linuxApi));
+    const linuxLowerApi = checkout({
+      id: "linux-lower-api",
+      environmentId: desktop,
+      root: "/srv/app",
+      path: "/srv/app/apps/orbitapi",
+    });
+    expect(getWorkbenchRepositoryKey(linuxLowerApi)).not.toBe(getWorkbenchRepositoryKey(linuxApi));
   });
 
   it("leaves a Project without a known repository root on its own", () => {
@@ -160,6 +167,36 @@ describe("Workbench repositories across machines", () => {
         environmentId: laptop,
       }),
     ).toEqual([desktopApp, desktopDocs]);
+    // A Ticket on the Board's machine is offered that machine's checkouts to add, even when
+    // another machine links more repositories.
+    const laptopDocs = checkout({
+      id: "laptop-docs",
+      environmentId: laptop,
+      root: "/home/me/docs",
+      remote: "git@github.com:acme/docs.git",
+    });
+    const desktopCli = checkout({
+      id: "desktop-cli",
+      environmentId: desktop,
+      root: "/srv/cli",
+      remote: "git@github.com:acme/cli.git",
+    });
+    expect(
+      getWorkbenchBoardRepositories({
+        board: {
+          linkedProjectIds: [laptopApp, desktopApp, desktopDocs, laptopDocs, desktopCli].map(
+            ({ id }) => id,
+          ),
+          remoteProjects: [
+            ...remoteProjects,
+            { projectId: desktopCli.id, environmentId: desktop, title: "cli" },
+          ],
+        },
+        projects: [...projects, laptopDocs, desktopCli],
+        environmentId: laptop,
+        ticketProjectIds: [laptopApp.id],
+      }),
+    ).toEqual([laptopApp, laptopDocs, desktopCli]);
     // Linked twice, a repository still shows once in the Board picker.
     expect(
       getWorkbenchRepositoryChoices({
@@ -223,8 +260,19 @@ describe("Workbench repositories across machines", () => {
   });
 
   it("offers machines that check out every Ticket repository, preferring the Board default", () => {
-    const appOnly = getWorkbenchThreadMachines({
+    const repositoryKeys = [
+      { projectId: laptopApp.id, repositoryKey: getWorkbenchRepositoryKey(laptopApp)! },
+    ];
+    // The server matches other checkouts only by a key the Board stored.
+    const unkeyed = getWorkbenchThreadMachines({
       board: undefined,
+      boardEnvironmentId: laptop,
+      repositoryProjectIds: [laptopApp.id],
+      projects,
+    });
+    expect(unkeyed.map((machine) => machine.environmentId)).toEqual([laptop]);
+    const appOnly = getWorkbenchThreadMachines({
+      board: { repositoryKeys },
       boardEnvironmentId: laptop,
       repositoryProjectIds: [laptopApp.id],
       projects,
@@ -245,7 +293,7 @@ describe("Workbench repositories across machines", () => {
 
     const docsLink = { projectId: desktopDocs.id, environmentId: desktop, title: "docs" };
     const withDocs = getWorkbenchThreadMachines({
-      board: { remoteProjects: [docsLink] },
+      board: { remoteProjects: [docsLink], repositoryKeys },
       boardEnvironmentId: laptop,
       repositoryProjectIds: [laptopApp.id, desktopDocs.id],
       projects,

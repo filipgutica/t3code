@@ -219,7 +219,10 @@ describe("coordinateWorkbenchTicketStart", () => {
     },
   );
 
-  it("starts in this machine's checkout of a repository linked only on another machine", async () => {
+  it.each([
+    { link: "linked only on another machine", remote: true },
+    { link: "whose linked checkout here was removed", remote: false },
+  ])("starts in this machine's checkout of a repository $link", async ({ remote }) => {
     const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
     const remoteAppId = ProjectId.make("remote-app");
     const localCheckout: EnvironmentProject = {
@@ -238,9 +241,9 @@ describe("coordinateWorkbenchTicketStart", () => {
         ...startInput(),
         ticket: { ...ticket, repositoryProjectIds: [remoteAppId] },
         projects: [localCheckout],
-        remoteProjects: [
-          { projectId: remoteAppId, environmentId: remoteEnvironmentId, title: "acme/app" },
-        ],
+        remoteProjects: remote
+          ? [{ projectId: remoteAppId, environmentId: remoteEnvironmentId, title: "acme/app" }]
+          : [],
         repositoryKeys: [{ projectId: remoteAppId, repositoryKey }],
       },
       {

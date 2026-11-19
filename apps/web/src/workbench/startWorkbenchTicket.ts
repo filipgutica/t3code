@@ -345,8 +345,11 @@ const resolveThreadTarget = ({
   return {
     threadProject,
     remote,
-    // Ticket worktrees are prepared only for the Board machine's own Ticket repositories.
-    checkoutOnly: remote !== undefined || linkEnvironmentId !== input.environmentId,
+    // Ticket worktrees are prepared only for the Board machine's own linked Ticket repositories.
+    checkoutOnly:
+      remote !== undefined ||
+      linkEnvironmentId !== input.environmentId ||
+      threadProject.id !== repositoryProjectId,
     // Another checkout of the Ticket's repository joins the Board when the Thread is linked.
     repository:
       threadProject.id === repositoryProjectId

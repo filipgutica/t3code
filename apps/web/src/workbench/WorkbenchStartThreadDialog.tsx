@@ -336,8 +336,11 @@ const resolveThreadMachineChoice = ({
     selectionProjectId: selectionProject?.id ?? repositoryProjectId,
     targetEnvironmentId,
     machineUnavailable,
-    // Ticket worktrees exist only for repositories the Ticket names on the Board's machine.
-    checkoutOnly: targetEnvironmentId !== environmentId || linkEnvironmentId !== environmentId,
+    // Ticket worktrees exist only for the Board machine's own linked Ticket repositories.
+    checkoutOnly:
+      targetEnvironmentId !== environmentId ||
+      linkEnvironmentId !== environmentId ||
+      (threadProject !== undefined && threadProject.id !== repositoryProjectId),
     // An unchanged saved scope stays usable while a machine checks out each of its repositories.
     scopeUsable:
       scopeValid ||

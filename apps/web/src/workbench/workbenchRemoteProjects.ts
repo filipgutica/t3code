@@ -1,12 +1,16 @@
-import { deriveLogicalProjectKeyFromSettings } from "@t3tools/client-runtime/state/project-grouping";
-import { normalizeProjectPathForComparison } from "@t3tools/client-runtime/state/projects";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
-import type {
-  EnvironmentId,
-  ProjectId,
-  WorkbenchProject,
-  WorkbenchRemoteProject,
-  WorkbenchThreadRepository,
+import {
+  isUncPath,
+  isWindowsDrivePath,
+  normalizeProjectPathForDispatch,
+} from "@t3tools/shared/path";
+import {
+  repositoryGroupingKeyOf,
+  type EnvironmentId,
+  type ProjectId,
+  type WorkbenchProject,
+  type WorkbenchRemoteProject,
+  type WorkbenchThreadRepository,
 } from "@t3tools/contracts";
 
 type WorkbenchBoardLinks = {
@@ -16,25 +20,28 @@ type WorkbenchBoardLinks = {
   readonly defaultEnvironmentId?: WorkbenchProject["defaultEnvironmentId"] | undefined;
 };
 
-// Fixed, so a stored key never depends on the user's sidebar grouping setting.
-const REPOSITORY_PATH_GROUPING = {
-  sidebarProjectGroupingMode: "repository_path",
-  sidebarProjectGroupingOverrides: {},
-} as const;
-
 /**
  * The machine-independent identity of a Project: its git remote plus its path inside the
  * repository. Null when either is unknown, so monorepo subprojects never merge by accident.
- * Lowercased because the shared path normalizer lowercases only Windows paths.
+ * Only Windows roots compare without case; the path inside the repository keeps its case, so
+ * `Services/API` and `services/api` stay apart.
  */
 export function getWorkbenchRepositoryKey(project: EnvironmentProject): string | null {
-  const rootPath = project.repositoryIdentity?.rootPath;
-  if (project.isScratch || rootPath === undefined) return null;
-  const root = normalizeProjectPathForComparison(rootPath);
-  const workspace = normalizeProjectPathForComparison(project.workspaceRoot);
-  const separator = root.includes("\\") ? "\\" : "/";
-  if (workspace !== root && !workspace.startsWith(`${root}${separator}`)) return null;
-  return deriveLogicalProjectKeyFromSettings(project, REPOSITORY_PATH_GROUPING).toLowerCase();
+  const identity = project.repositoryIdentity;
+  const rootPath = identity?.rootPath?.trim();
+  if (project.isScratch || !identity || !rootPath) return null;
+  const windows = isWindowsDrivePath(rootPath) || isUncPath(rootPath);
+  const normalize = (path: string) => {
+    const normalized = normalizeProjectPathForDispatch(path);
+    return windows ? normalized.replaceAll("\\", "/") : normalized;
+  };
+  const fold = (path: string) => (windows ? path.toLowerCase() : path);
+  const root = normalize(rootPath);
+  const workspace = normalize(project.workspaceRoot);
+  const remote = repositoryGroupingKeyOf(identity).toLowerCase();
+  if (fold(workspace) === fold(root)) return remote;
+  if (!fold(workspace).startsWith(`${fold(root)}/`)) return null;
+  return `${remote}::${workspace.slice(root.length + 1)}`;
 }
 
 /** Keys a Board's repositories, falling back to the Project itself when its identity is unknown. */
@@ -144,6 +151,8 @@ export function getWorkbenchBoardRepositories({
     projects: linked,
     keyOf,
     preferredEnvironmentIds: [
+      // A repository added to a Ticket then stays on the Ticket's machine.
+      linked.find((project) => ticketProjectIds?.includes(project.id))?.environmentId,
       fullestEnvironment({ projects: linked, keyOf, environmentId }),
       environmentId,
       board.defaultEnvironmentId,
@@ -297,18 +306,21 @@ export function getWorkbenchThreadMachines({
   repositoryProjectIds: ReadonlyArray<ProjectId>;
   projects: ReadonlyArray<EnvironmentProject>;
 }): ReadonlyArray<WorkbenchThreadMachine> {
-  const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
   const reachable = projects.filter((project) => project.workspaceRoot !== "");
   const environmentIds = [...new Set(reachable.map((project) => project.environmentId))];
   const checkoutOn = (environmentId: EnvironmentId, repositoryProjectId: ProjectId) => {
     const linkedHere =
       getWorkbenchLinkEnvironment({ board, boardEnvironmentId, projectId: repositoryProjectId }) ===
       environmentId;
+    // Only a key the Board stored, since the server matches other checkouts against that.
+    const storedKey = board?.repositoryKeys?.find(
+      (entry) => entry.projectId === repositoryProjectId,
+    )?.repositoryKey;
     const candidates = reachable.filter(
       (project) =>
         project.environmentId === environmentId &&
         ((linkedHere && project.id === repositoryProjectId) ||
-          getWorkbenchRepositoryKey(project) === keyOf(repositoryProjectId)),
+          (storedKey !== undefined && getWorkbenchRepositoryKey(project) === storedKey)),
     );
     // Several checkouts on one machine: prefer the one the Ticket already names.
     return candidates.find((project) => project.id === repositoryProjectId) ?? candidates[0];

@@ -338,7 +338,9 @@ and its Tickets stay on the machine that holds the Board.
 3. Create a Ticket whose repositories are all on that machine, then start work.
 
 A repository checked out on several machines, with the same git remote and path,
-is one Board repository. Link it once on any machine. **Create Thread** and
+is one Board repository, so link it once. A Ticket's repositories must all be
+linked on one machine, so link repositories you use together on the same
+machine, preferably the Board's. **Create Thread** and
 **Start work** show a **Run on** choice of the connected machines that have all of
 the Ticket's repositories. Start work on another machine keeps the planning
 conversation on the Board's machine, then opens Create Thread for the new

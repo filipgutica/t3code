@@ -30,6 +30,7 @@ import { getWorkbenchBoardData } from "./workbenchBoardData";
 import { parseWorkbenchSearch } from "./workbenchSearch";
 import { WorkbenchBoardFloatingChat } from "./WorkbenchBoardFloatingChat";
 import { useWorkbenchFloatingChatStore } from "./workbenchFloatingChatState";
+import { getWorkbenchRepositoryKey } from "./workbenchRemoteProjects";
 
 const mocks = vi.hoisted(() => ({
   begin: vi.fn(),
@@ -193,6 +194,7 @@ function Harness(props: {
   readonly onNewTicketThread?: (ticket: WorkbenchTicket) => void;
   readonly machineProjects?: ReadonlyArray<EnvironmentProject>;
   readonly defaultEnvironmentId?: EnvironmentId;
+  readonly repositoryKeys?: WorkbenchProject["repositoryKeys"];
   readonly onStartWorkOn?: (ticket: WorkbenchTicket, threadEnvironmentId: EnvironmentId) => void;
 }) {
   const [drafts, setDrafts] = useState(props.initialDrafts ?? []);
@@ -232,6 +234,7 @@ function Harness(props: {
         ...workspace,
         ...(props.archived ? { archivedAt: createdAt } : {}),
         ...(props.defaultEnvironmentId ? { defaultEnvironmentId: props.defaultEnvironmentId } : {}),
+        ...(props.repositoryKeys ? { repositoryKeys: props.repositoryKeys } : {}),
       }}
       providers={[]}
       linkedProjects={linkedProjects}
@@ -883,6 +886,12 @@ it.each([
         machineProjects={[
           checkout(repositoryId, "local"),
           checkout("desktop-repository", "desktop"),
+        ]}
+        repositoryKeys={[
+          {
+            projectId: repositoryId,
+            repositoryKey: getWorkbenchRepositoryKey(checkout(repositoryId, "local"))!,
+          },
         ]}
         {...(defaultEnvironmentId
           ? { defaultEnvironmentId: EnvironmentId.make(defaultEnvironmentId) }
