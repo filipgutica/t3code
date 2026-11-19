@@ -183,7 +183,7 @@ const makeLayerTest = <A, E, R>(policies: Layer.Layer<A, E, R>) =>
     Layer.provide(
       Layer.mock(GitWorkflow.GitWorkflowService)({
         pruneWorktrees: () => Effect.void,
-        isRepository: () => Effect.succeed(true),
+        repositoryRoot: (cwd) => Effect.succeed(cwd),
       }),
     ),
     Layer.provide(Layer.mock(ProjectService.ProjectService)({ getById: () => Effect.succeedNone })),

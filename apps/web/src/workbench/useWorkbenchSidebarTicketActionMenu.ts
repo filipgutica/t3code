@@ -9,7 +9,7 @@ import type {
 } from "@t3tools/contracts";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { namedClipboardTarget, writeTextToClipboard } from "../hooks/useCopyToClipboard";
 import { readLocalApi } from "../localApi";
 import { readEnvironmentScope } from "../state/session";
 import { useSidebar } from "../components/ui/sidebar";
@@ -96,7 +96,10 @@ function ticketAction({
 
 async function copyTicketLink(href: string): Promise<void> {
   try {
-    await writeTextToClipboard(new URL(href, window.location.href).toString(), "Ticket link");
+    await writeTextToClipboard(
+      new URL(href, window.location.href).toString(),
+      namedClipboardTarget("Ticket link"),
+    );
   } catch (cause) {
     reportMenuFailure("Could not copy Ticket link", cause);
   }

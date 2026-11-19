@@ -101,7 +101,7 @@ jobs:
               echo "### Upstream sync needs a manual merge"
               echo "No merge was published. Conflicting paths:"
               jq -r '.conflictPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
-              echo "Upstream changes to active workflows or actions, which need review:"
+              echo "Upstream changes to active workflows, actions, or their scripts, which need review:"
               jq -r '.ciReviewPaths[] | "- " + .' "$RUNNER_TEMP/upstream-sync-preview.json"
               echo "Resolve the published pin in a PR and list these conflicts. Use sol-loop for low-risk fixes; hand substantial or high-risk conflicts to the maintainer."
             } >> "$GITHUB_STEP_SUMMARY"

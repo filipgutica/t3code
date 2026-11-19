@@ -3,7 +3,7 @@ import { CopyIcon, LinkIcon, TicketIcon } from "lucide-react";
 
 import { MenuItem } from "../components/ui/menu";
 import { toastManager } from "../components/ui/toast";
-import { writeTextToClipboard } from "../hooks/useCopyToClipboard";
+import { namedClipboardTarget, writeTextToClipboard } from "../hooks/useCopyToClipboard";
 
 export function WorkbenchTicketIcon() {
   return <TicketIcon aria-hidden className="size-3.5 shrink-0 text-muted-foreground" />;
@@ -27,7 +27,7 @@ export function WorkbenchTicketCopyMenuItems({
     copiedTitle: string;
   }) => {
     try {
-      if (await writeTextToClipboard(value, target))
+      if (await writeTextToClipboard(value, namedClipboardTarget(target)))
         toastManager.add({ type: "success", title: copiedTitle, description: value });
     } catch (cause) {
       toastManager.add({

@@ -1,4 +1,4 @@
-import { SparklesIcon } from "lucide-react";
+import { PenLineIcon } from "lucide-react";
 
 import { Button } from "../components/ui/button";
 import { cn } from "../lib/utils";
@@ -27,7 +27,7 @@ export function WorkbenchBriefAskButton({
       disabled={!ask.available || ask.running}
       onClick={ask.askWhole}
     >
-      <SparklesIcon /> Ask for change
+      <PenLineIcon /> Ask for change
     </Button>
   );
 }

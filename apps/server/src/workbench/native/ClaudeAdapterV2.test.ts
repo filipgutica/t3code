@@ -160,6 +160,7 @@ describe("ClaudeAdapterV2 query options decorator", () => {
               messages: Stream.never,
               offer: () => Effect.void,
               setModel: () => Effect.void,
+              renameSession: () => Effect.void,
               applyFlagSettings: () => Effect.void,
               setPermissionMode: () => Effect.void,
               backgroundTasks: () => Effect.succeed(false),
@@ -174,6 +175,7 @@ describe("ClaudeAdapterV2 query options decorator", () => {
           }),
         forkSession: () => Effect.die("unused"),
         subagentLaunchToolUseId: () => Effect.succeed(null),
+        subagentModel: () => Effect.succeed(null),
         assertComplete: Effect.void,
       },
     });
@@ -211,7 +213,6 @@ describe("ClaudeAdapterV2 query options decorator", () => {
         const native = yield* startPolicyTurn();
         assert.equal(native.permissionMode, "bypassPermissions");
         assert.isUndefined(native.permissionPrompts);
-        assert.isUndefined(native.hooks);
         let consulted = false;
         const decorated = yield* startPolicyTurn().pipe(
           Effect.provideService(ClaudeAdapterV2.ClaudeQueryOptionsDecorator, {
@@ -312,6 +313,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
                     offeredMessages.push(message);
                   }),
                 setModel: () => Effect.void,
+                renameSession: () => Effect.void,
                 applyFlagSettings: () => Effect.void,
                 setPermissionMode: () => Effect.void,
                 backgroundTasks: () => Effect.succeed(false),
@@ -327,6 +329,7 @@ describe("ClaudeAdapterV2 background wake turns", () => {
             }),
           forkSession: () => Effect.die("unused forkSession"),
           subagentLaunchToolUseId: () => Effect.succeed(null),
+          subagentModel: () => Effect.succeed(null),
           assertComplete: Effect.void,
         },
       });

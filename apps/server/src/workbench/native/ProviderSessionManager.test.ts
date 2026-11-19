@@ -38,6 +38,7 @@ import * as GitVcsDriver from "../../vcs/GitVcsDriver.ts";
 import * as ThreadCommandExecutor from "../../orchestration-v2/ThreadCommandExecutor.ts";
 import * as ProviderSessionManager from "../../orchestration-v2/ProviderSessionManager.ts";
 import * as CommandOutputHub from "../../orchestration-v2/CommandOutputHub.ts";
+import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
 
 const layerTestDatabase = SqlitePersistence.layerMemory;
@@ -299,6 +300,7 @@ function layerTest(input: {
           layerProviderEventIngestorTest,
           layerTestMcpRegistry,
           layerTestStores,
+          ProviderInstallationGate.layer,
         ),
       ),
     ),

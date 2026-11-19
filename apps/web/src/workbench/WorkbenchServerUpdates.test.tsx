@@ -14,7 +14,7 @@ import { RegistryContext } from "@effect/atom-react";
 import * as Option from "effect/Option";
 import { AsyncResult, AtomRegistry } from "effect/reactivity";
 import { act, type ReactNode, type ButtonHTMLAttributes } from "react";
-import { create, type ReactTestRenderer } from "react-test-renderer";
+import { create, type ReactTestInstance, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import { HostIntegrationsContext } from "../hostIntegrations";
 import {
@@ -43,6 +43,9 @@ const state = vi.hoisted(() => ({
   fetchSsh: vi.fn(),
   bootstrapSsh: vi.fn(),
 }));
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("../components/ui/button", () => ({
   Button: (props: ButtonHTMLAttributes<HTMLButtonElement>) => <button {...props} />,
 }));
@@ -108,6 +111,9 @@ vi.mock("~/hooks/useCopyToClipboard", () => ({
 vi.mock("../components/ui/toast", () => ({ toastManager: { add: vi.fn() } }));
 
 let renderer: ReactTestRenderer | undefined;
+// Translated copy renders inside `<T>`, so read a control's text through its components.
+const textOf = (node: ReactTestInstance | string): string =>
+  typeof node === "string" ? node : node.children.map(textOf).join("");
 let registry: AtomRegistry.AtomRegistry;
 const npmTarget: ServerUpdateTarget = {
   environmentId: EnvironmentId.make("npm"),
@@ -233,7 +239,7 @@ it("checks an incompatible SSH-only desktop on request without pairing, then off
   const target = sshDesktop();
   await mount(<OutdatedServerUpdateAction {...desktopTarget} fromVersion="0.0.23" />, false, true);
   const check = renderer!.root.findByType("button");
-  expect(check.children).toEqual(["Check update availability"]);
+  expect(textOf(check)).toBe("Check update availability");
   expect(state.ensureSsh).not.toHaveBeenCalled();
   await act(() => check.props.onClick());
   expect(state.ensureSsh).toHaveBeenCalledOnce();
@@ -269,7 +275,7 @@ it("rejects a foreign SSH descriptor and can retry the check without updating it
   await mount(<OutdatedServerUpdateAction {...desktopTarget} fromVersion="0.0.23" />, false, true);
   await act(() => renderer!.root.findByType("button").props.onClick());
   const retry = renderer!.root.findByType("button");
-  expect(retry.children).toEqual(["Retry update check"]);
+  expect(textOf(retry)).toBe("Retry update check");
   expect(state.update).not.toHaveBeenCalled();
   state.descriptor = matching;
   await act(() => retry.props.onClick());
@@ -289,7 +295,7 @@ it("does not retry a cancelled SSH check when unrelated catalog or relay state c
   await act(async () => registry.refresh(environmentCatalog.catalogValueAtom));
   expect(state.ensureSsh).toHaveBeenCalledOnce();
   const retry = renderer!.root.findByType("button");
-  expect(retry.children).toEqual(["Retry update check"]);
+  expect(textOf(retry)).toBe("Retry update check");
   expect(state.fetchSsh).not.toHaveBeenCalled();
   expect(state.update).not.toHaveBeenCalled();
   await act(() => retry.props.onClick());
@@ -408,7 +414,7 @@ it("refuses a direct route belonging to another environment and keeps the check 
   state.descriptor = { ...state.descriptor!, environmentId: EnvironmentId.make("other") };
   await mount(<OutdatedServerUpdateAction {...desktopTarget} fromVersion="0.0.23" />, false, true);
   const retry = renderer!.root.findByType("button");
-  expect(retry.children).toEqual(["Retry update check"]);
+  expect(textOf(retry)).toBe("Retry update check");
   await act(() => retry.props.onClick());
   expect(state.update).not.toHaveBeenCalled();
   expect(state.fetchDescriptor).toHaveBeenCalledTimes(2);

@@ -257,7 +257,7 @@ const makeTestLayer = ({
   let shouldFailRemove = failRemoveOnceSourcePath !== undefined;
   let pendingListRefsHook = onListRefs;
   const storeGitLayer = Layer.mock(GitWorkflowService.GitWorkflowService, {
-    isRepository: () => Effect.succeed(true),
+    repositoryRoot: (cwd) => Effect.succeed(cwd),
   });
   const storeLayer = WorkbenchStoreLive.pipe(
     Layer.provideMerge(SqlitePersistence.layerMemory),
@@ -573,7 +573,7 @@ const makePersistentWorkspaceFixture = Effect.gen(function* () {
     Layer.provideMerge(persistence),
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService, {
-        isRepository: () => Effect.succeed(true),
+        repositoryRoot: (cwd) => Effect.succeed(cwd),
       }),
     ),
   );

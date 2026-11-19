@@ -102,7 +102,7 @@ export const servicesLayer = Layer.mergeAll(
   WorkbenchStoreLive.pipe(
     Layer.provide(
       Layer.mock(GitWorkflowService.GitWorkflowService)({
-        isRepository: () => Effect.succeed(true),
+        repositoryRoot: (cwd) => Effect.succeed(cwd),
       }),
     ),
   ),

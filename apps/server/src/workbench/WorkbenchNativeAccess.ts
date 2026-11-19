@@ -80,7 +80,10 @@ const makeWorkbenchNativeAccess = Effect.gen(function* () {
     return yield* findProjectRow({ projectId }).pipe(Effect.mapError(persistenceError));
   });
   const isRepository = (workspaceRoot: string) =>
-    git.isRepository(workspaceRoot).pipe(Effect.mapError(persistenceError));
+    git.repositoryRoot(workspaceRoot).pipe(
+      Effect.map((root) => root !== null),
+      Effect.mapError(persistenceError),
+    );
   const findThread = Effect.fn("WorkbenchNativeAccess.findThread")(function* (threadId: ThreadId) {
     return yield* findThreadRow({ threadId }).pipe(Effect.mapError(persistenceError));
   });

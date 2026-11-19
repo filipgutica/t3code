@@ -22,7 +22,8 @@ function provider(
     installed: true,
     version: null,
     status,
-    auth: { status: "authenticated" },
+    // A warning with a confirmed sign-in stays offered, so unready fixtures leave it unconfirmed.
+    auth: { status: status === "ready" ? "authenticated" : "unknown" },
     checkedAt: "2026-09-05T00:00:00.000Z",
     models,
     slashCommands: [],

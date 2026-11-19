@@ -11,7 +11,9 @@ import { createModelSelection } from "@t3tools/shared/model";
 
 import type { ProviderInstance } from "@t3tools/provider-core/server/driver";
 import * as ProviderInstanceRegistry from "../../provider/ProviderInstanceRegistry.ts";
+import * as ProviderInstallationGate from "../../provider/ProviderInstallationGate.ts";
 import * as TextGeneration from "../../textGeneration/TextGeneration.ts";
+import * as TextGenerators from "../../textGeneration/TextGenerators.ts";
 import * as SourceControlProviderRegistry from "../../sourceControl/SourceControlProviderRegistry.ts";
 import * as Layer from "effect/Layer";
 import { ServerSettingsService } from "../../serverSettings.ts";
@@ -91,6 +93,8 @@ describe("TextGeneration.make", () => {
               resolveLink: () => Effect.die("No link lookup expected"),
             }),
             Layer.mock(ServerSettingsService)({}),
+            Layer.mock(TextGenerators.TextGenerators)({}),
+            ProviderInstallationGate.layer,
           ),
         ),
       );

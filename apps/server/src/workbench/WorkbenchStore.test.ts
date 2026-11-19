@@ -24,7 +24,7 @@ const TestLayer = WorkbenchStoreLive.pipe(
   Layer.provideMerge(SqlitePersistence.layerMemory),
   Layer.provideMerge(
     Layer.mock(GitWorkflowService.GitWorkflowService, {
-      isRepository: () => Effect.succeed(true),
+      repositoryRoot: (cwd) => Effect.succeed(cwd),
     }),
   ),
 );
@@ -143,9 +143,9 @@ describe("WorkbenchStore", () => {
       Layer.provideMerge(SqlitePersistence.layerMemory),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
-          isRepository: (cwd) => {
+          repositoryRoot: (cwd) => {
             inspectedRoots.push(cwd);
-            return Effect.succeed(false);
+            return Effect.succeed(null);
           },
         }),
       ),
@@ -1601,7 +1601,7 @@ describe("WorkbenchStore", () => {
       Layer.provideMerge(persistence),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
-          isRepository: () => Effect.succeed(true),
+          repositoryRoot: (cwd) => Effect.succeed(cwd),
         }),
       ),
     );
@@ -2139,7 +2139,7 @@ describe("WorkbenchStore", () => {
       Layer.provideMerge(persistence),
       Layer.provideMerge(
         Layer.mock(GitWorkflowService.GitWorkflowService, {
-          isRepository: () => Effect.succeed(true),
+          repositoryRoot: (cwd) => Effect.succeed(cwd),
         }),
       ),
     );

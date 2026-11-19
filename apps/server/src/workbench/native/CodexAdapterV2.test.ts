@@ -130,6 +130,7 @@ function codexReplayPreamble(input: {
   readonly nativeTurnId: string;
   readonly prompt: string;
   readonly sentPrompt?: string;
+  readonly turnPolicy?: Record<string, unknown>;
 }): Array<CodexReplay.CodexAppServerReplayEntry> {
   return [
     {
@@ -214,9 +215,19 @@ function codexReplayPreamble(input: {
     },
     {
       type: "expect_outbound",
+      label: "config/read",
+      frame: { id: 3, method: "config/read", params: { cwd: "/workspace", includeLayers: false } },
+    },
+    {
+      type: "emit_inbound",
+      label: "config/read",
+      frame: { id: 3, result: { config: {}, origins: {} } },
+    },
+    {
+      type: "expect_outbound",
       label: "turn/start",
       frame: {
-        id: 3,
+        id: 4,
         method: "turn/start",
         params: {
           threadId: input.nativeThreadId,
@@ -227,7 +238,8 @@ function codexReplayPreamble(input: {
           approvalsReviewer: "user",
           collaborationMode: { mode: "default", settings: { model: "gpt-5.4" } },
           sandboxPolicy: { type: "dangerFullAccess" },
-          summary: "detailed",
+          ...input.turnPolicy,
+          summary: "auto",
         },
       },
     },
@@ -235,7 +247,7 @@ function codexReplayPreamble(input: {
       type: "emit_inbound",
       label: "turn/start",
       frame: {
-        id: 3,
+        id: 4,
         result: { turn: makeCodexReplayTurn({ id: input.nativeTurnId, status: "inProgress" }) },
       },
     },
@@ -354,6 +366,7 @@ describe("CodexAdapterV2 research tool access", () => {
   const finalAnswerTranscript = (
     scenario: string,
     answers: ReadonlyArray<{ readonly id: string; readonly text: string }>,
+    turnPolicy?: Record<string, unknown>,
   ) => {
     const nativeThreadId = `native-${scenario}-thread`;
     const nativeTurnId = `native-${scenario}-turn`;
@@ -361,7 +374,12 @@ describe("CodexAdapterV2 research tool access", () => {
     return makeCodexReplayTranscript({
       scenario,
       entries: [
-        ...codexReplayPreamble({ nativeThreadId, nativeTurnId, prompt }),
+        ...codexReplayPreamble({
+          nativeThreadId,
+          nativeTurnId,
+          prompt,
+          ...(turnPolicy === undefined ? {} : { turnPolicy }),
+        }),
         ...answers.map((answer, index): CodexReplay.CodexAppServerReplayEntry => ({
           type: "emit_inbound",
           label: `item/completed/${answer.id}`,
@@ -548,9 +566,15 @@ describe("CodexAdapterV2 research tool access", () => {
       Effect.gen(function* () {
         const scenario = `codex-research-approval-${kind}-${decision}`;
         const approval = yield* Deferred.make<RuntimeRequestId>();
-        const base = finalAnswerTranscript(scenario, [
-          { id: "answer", text: "RESEARCH_CONTINUES" },
-        ]);
+        // Full access accepts connector elicitations natively, so present one where native asks.
+        const presentsConnector = kind === "connector";
+        const base = finalAnswerTranscript(
+          scenario,
+          [{ id: "answer", text: "RESEARCH_CONTINUES" }],
+          presentsConnector
+            ? { approvalPolicy: "on-request", sandboxPolicy: { type: "workspaceWrite" } }
+            : undefined,
+        );
         const networkPermissions = { network: { enabled: true } };
         const transcript = {
           ...base,
@@ -621,7 +645,11 @@ describe("CodexAdapterV2 research tool access", () => {
             attemptId: RunAttemptId.make(`attempt-${scenario}`),
             text: "Reply with the requested recovery marker.",
           }),
-          runtimePolicy: { ...CODEX_TEST_RUNTIME_POLICY, toolAccess: "research" },
+          runtimePolicy: {
+            ...CODEX_TEST_RUNTIME_POLICY,
+            ...(presentsConnector ? { runtimeMode: "auto-accept-edits" as const } : {}),
+            toolAccess: "research",
+          },
         });
         const requestId = yield* Deferred.await(approval);
         assert.deepEqual(harness.terminalEvents(), []);

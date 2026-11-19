@@ -1,5 +1,5 @@
 {
-  "upstreamBase": "3cd97a1ee230437b1bfd8441dffe65eac55be1e5",
+  "upstreamBase": "ff9efe89f6e793fed459d3d9c42f68450de78e95",
   "groups": [
     {
       "name": "Workbench domain, adapters, UI and contracts",
@@ -216,7 +216,7 @@
         "apps/web/src/components/composerContextPresentation.tsx",
         "apps/web/src/components/desktopUpdate.logic.ts",
         "apps/web/src/components/pullRequest/LinkPullRequestDialog.tsx",
-        "apps/web/src/components/pullRequest/PullRequestThreadLinks.tsx",
+        "apps/web/src/components/ThreadLinkPicker.tsx",
         "apps/web/src/components/pullRequest/PullRequestCodeTab.tsx",
         "apps/web/src/components/pullRequest/PullRequestDetailPanel.tsx",
         "apps/web/src/components/pullRequest/PullRequestReviewAnnotation.tsx",
@@ -248,6 +248,7 @@
         "apps/web/src/components/sidebar/SidebarUpdateReleaseNotes.tsx",
         "apps/web/src/components/sidebar/useUpdateEverything.ts",
         "apps/web/src/components/ServerUpdateAction.tsx",
+        "apps/web/src/i18n/translations/",
         "apps/web/src/components/settings/UpdateTrackSwitchDialog.tsx",
         "apps/web/src/components/chat/RightPanelSurfaceContent.tsx",
         "apps/web/src/hooks/useProactivePanels.ts",

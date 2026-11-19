@@ -59,7 +59,10 @@ const probe = {
 };
 const ProbeToolkit = Toolkit.make(
   Tool.make("reads", probe),
-  Tool.make("acts_as_caller", probe),
+  Tool.make("acts_as_caller", probe).annotate(
+    McpSchema.EnabledWhen,
+    McpInvocationContext.hiddenFromOutsideClients,
+  ),
   Tool.make("writes", probe),
   Tool.make("starts_threads", {
     ...probe,

@@ -42,7 +42,8 @@ const nativeSnapshots = Atom.family((_environmentId: EnvironmentId) =>
   Atom.make<AsyncResult.AsyncResult<WorkbenchSnapshot>>(AsyncResult.initial()),
 );
 
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({ data: null, error: null, isPending: false }),
 }));
 vi.mock("../state/pullRequests", () => ({

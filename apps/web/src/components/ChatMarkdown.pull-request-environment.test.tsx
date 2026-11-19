@@ -10,12 +10,18 @@ import { selectActiveRightPanelSurface, useRightPanelStore } from "../rightPanel
 import ChatMarkdown from "./ChatMarkdown";
 
 const { navigate } = vi.hoisted(() => ({ navigate: vi.fn() }));
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("../workbench/gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("@tanstack/react-router", () => ({ useNavigate: () => navigate }));
 vi.mock("../state/server", async (original) => {
   const actual = await original<typeof import("../state/server")>();
   const { Atom } = await import("effect/reactivity");
   const config = {
-    environment: { capabilities: { pullRequests: true, threadPullRequests: true } },
+    environment: {
+      platform: { os: "linux", arch: "x64" },
+      capabilities: { pullRequests: true, threadPullRequests: true },
+    },
     availableEditors: [],
   };
   return {
@@ -29,7 +35,8 @@ vi.mock("../state/server", async (original) => {
     },
   };
 });
-vi.mock("../state/query", () => ({
+vi.mock("../state/query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../state/query")>()),
   useEnvironmentQuery: () => ({
     resultIdentity: AsyncResult.initial(),
     data: null,

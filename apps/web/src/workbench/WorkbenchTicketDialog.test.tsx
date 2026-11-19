@@ -7,6 +7,10 @@ import { EnvironmentId, ProjectId } from "@t3tools/contracts";
 import type { Project } from "../types";
 import { WorkbenchTicketDialog, type WorkbenchCreateTicketDraft } from "./WorkbenchForms";
 
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
+
 const timestamp = "2026-10-07T00:00:00.000Z";
 const project: Project = {
   id: ProjectId.make("repository-1"),

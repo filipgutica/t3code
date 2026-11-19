@@ -10,7 +10,7 @@ import {
   type WorkbenchReferenceDraft,
   type WorkbenchTicketId,
 } from "@t3tools/contracts";
-import { BotIcon, ExternalLinkIcon, PlusIcon, SparklesIcon, XIcon } from "lucide-react";
+import { BotIcon, ExternalLinkIcon, PenLineIcon, PlusIcon, XIcon } from "lucide-react";
 import { useId, useState, type ReactNode } from "react";
 
 import { Badge } from "../components/ui/badge";
@@ -120,7 +120,7 @@ export function WorkbenchProvenanceBadge({
         )
       }
     >
-      {source.kind === "thread" ? <BotIcon aria-hidden /> : <SparklesIcon aria-hidden />}
+      {source.kind === "thread" ? <BotIcon aria-hidden /> : <PenLineIcon aria-hidden />}
       <span className="truncate">{text}</span>
     </Badge>
   );

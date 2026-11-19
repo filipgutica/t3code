@@ -127,6 +127,11 @@ export const selectWorkbenchDesktopBuildProduct = (input: {
     },
     linux: {
       executableName: WORKBENCH_DISTRIBUTION.executableName,
+      startupWMClass: WORKBENCH_DISTRIBUTION.desktopEntryName.replace(/\.desktop$/u, ""),
+      appImageArtifactName:
+        input.updateChannel === "nightly"
+          ? "T3-Code-Workbench-Nightly-${arch}.${ext}"
+          : "T3-Code-Workbench-${arch}.${ext}",
       includeDeb: false,
       includeNativeDebMetadata: false,
     },

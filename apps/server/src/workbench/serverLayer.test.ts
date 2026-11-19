@@ -166,7 +166,7 @@ vi.mock("../git/GitWorkflowService.ts", async (importOriginal) => {
   return {
     ...original,
     layer: Layer.mock(original.GitWorkflowService)({
-      isRepository: () => Effect.succeed(true),
+      repositoryRoot: (cwd) => Effect.succeed(cwd),
     }),
   };
 });

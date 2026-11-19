@@ -13,6 +13,9 @@ const state = vi.hoisted(() => ({
   updateProviders: vi.fn(async () => []),
   installLocal: vi.fn(async () => true),
 }));
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("@effect/atom-react", () => ({
   useAtomValue: (kind: string) =>
     state.machines.map((machine) =>
@@ -51,7 +54,11 @@ vi.mock("~/state/environments", () => ({
   }),
 }));
 vi.mock("~/state/session", () => ({ environmentSessionStatesAtom: () => "sessions" }));
-vi.mock("~/state/server", () => ({ environmentUpdateStatesAtom: () => "updates" }));
+vi.mock("~/state/server", () => ({
+  environmentUpdateStatesAtom: () => "updates",
+  serverEnvironment: { stageServerUpdate: "stage-server-update" },
+}));
+vi.mock("~/state/use-atom-command", () => ({ useAtomCommand: () => vi.fn() }));
 vi.mock("../components/ServerUpdateAction", () => ({
   canUpdateServer: (allowed: boolean) => allowed,
   useServerUpdate: () => state.updateServer,

@@ -107,7 +107,8 @@ function shell(run: { readonly id: string; readonly completedAt?: string; readon
           activeRunId: null,
           status: run.completedAt ? "completed" : "running",
           pendingRuntimeRequest: run.input
-            ? { id: "request-1", kind: "user_input", createdAt: SHELL_NOW }
+            ? // A request is announced once per id, so each run asks its own.
+              { id: `request-${run.id}`, kind: "user_input", createdAt: SHELL_NOW }
             : null,
           latestVisibleMessage: null,
           latestUserMessageAt: null,
@@ -146,6 +147,7 @@ function setup({ focused = false }: { readonly focused?: boolean } = {}) {
   const router = {
     state: { matches: [{ params: {} }] },
     navigate: vi.fn(),
+    subscribe: () => () => {},
   } as unknown as AnyRouter;
   return {
     setPolicy: (policy: NotificationPolicy | null) => registry.set(policyAtom, policy),

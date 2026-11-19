@@ -588,7 +588,6 @@ export function WorkbenchStartThreadDialog({
               <WorkbenchStartThreadModelPickers
                 environmentId={target.environmentId}
                 selection={selection}
-                planModeEnabled={settings.planModeEnabled}
               />
             </div>
             {!checkoutOnly ? (
@@ -724,11 +723,9 @@ function WorkbenchStartThreadSelectionStatus({
 function WorkbenchStartThreadModelPickers({
   environmentId,
   selection,
-  planModeEnabled,
 }: {
   environmentId: EnvironmentId;
   selection: ReturnType<typeof useWorkbenchStartThreadSelection>;
-  planModeEnabled: boolean;
 }) {
   const {
     resolvedSelection,
@@ -758,7 +755,6 @@ function WorkbenchStartThreadModelPickers({
         model={resolvedSelection.model}
         modelOptions={resolvedSelection.options ?? []}
         allowPromptInjectedEffort={false}
-        planModeEnabled={planModeEnabled}
         onModelOptionsChange={handleModelOptionsChange}
       />
     </>

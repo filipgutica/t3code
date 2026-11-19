@@ -21,6 +21,9 @@ import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
 import { getWorkbenchRepositoryKey } from "./workbenchRemoteProjects";
 
+vi.mock("gt-react", async (importOriginal) =>
+  (await import("./gtReact.test-fixtures")).englishGtReact(await importOriginal()),
+);
 vi.mock("../hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } =
     await import("@t3tools/contracts/settings");
