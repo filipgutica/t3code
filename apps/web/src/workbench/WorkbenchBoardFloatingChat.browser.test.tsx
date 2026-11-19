@@ -269,6 +269,7 @@ function Harness(props: {
       archivedThreadsById={new Map()}
       createContext={{
         linkedProjects,
+        resolveRepositories: (projectIds) => projectIds,
       }}
       canStartDrafts
       draftRequest={request}

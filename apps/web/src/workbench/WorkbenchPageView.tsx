@@ -388,7 +388,7 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
   const { keybindings, availableEditors, threadsById, archivedThreadsById, threadLookupReady } =
     pageData;
   const { selectedProject, selectedTicket, closeWorkItem } = selection;
-  const { linkedT3Projects, selectedAssignments } = boardData;
+  const { linkedT3Projects, resolveTicketRepositories, selectedAssignments } = boardData;
   const planning =
     selectedTicket === null ? null : getPlanningTicketDraft(pageData.snapshot, selectedTicket.id);
   const blockThreadChange = () =>
@@ -418,7 +418,10 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         context={{
           environmentId,
           workspace: selectedProject,
-          createContext: { linkedProjects: linkedT3Projects },
+          createContext: {
+            linkedProjects: linkedT3Projects,
+            resolveRepositories: resolveTicketRepositories,
+          },
           refreshSnapshot: pageData.refreshWorkbenchSnapshot,
           machineProjects: pageData.projects,
           onStartWorkOn: (ticket, threadEnvironmentId) =>
@@ -449,6 +452,7 @@ function WorkbenchPageTicketDetail(props: WorkbenchPageTicketDetailProps) {
         onCancelRepositories={ticketActions.cancelRepositoryScope}
         onSaveRepositories={ticketActions.saveRepositories}
         linkedProjects={linkedT3Projects}
+        resolveRepositories={resolveTicketRepositories}
         keybindings={keybindings}
         availableEditors={availableEditors}
         assignments={selectedAssignments}
@@ -671,7 +675,10 @@ function WorkbenchPageBoardChat({
       drafts={snapshot?.ticketDrafts ?? []}
       threadsById={pageData.threadsById}
       archivedThreadsById={pageData.archivedThreadsById}
-      createContext={{ linkedProjects: localProjects }}
+      createContext={{
+        linkedProjects: localProjects,
+        resolveRepositories: boardData.resolveTicketRepositories,
+      }}
       canStartDrafts={
         pageData.canOperate && workspace.archivedAt == null && supportsConversationDrafts(snapshot)
       }
@@ -945,7 +952,7 @@ function WorkbenchPageTicketDialogs(
   const routeManualTicket = getRouteTicketCreation(props) === "manual";
   // A created Ticket has already replaced create=ticket with its own route.
   const created = useRef(false);
-  const { linkedT3Projects } = boardData;
+  const { linkedT3Projects, resolveTicketRepositories } = boardData;
 
   const pending = pendingAction !== null;
   if (selectedProject?.archivedAt != null) return null;
@@ -956,6 +963,7 @@ function WorkbenchPageTicketDialogs(
           key={selectedProject.id}
           open={ticketDialogOpen || routeManualTicket}
           linkedProjects={linkedT3Projects}
+          resolveRepositories={resolveTicketRepositories}
           pending={pending}
           disabled={!pageData.canOperate}
           error={error ?? query.error}

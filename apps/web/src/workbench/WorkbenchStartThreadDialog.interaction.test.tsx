@@ -7,6 +7,7 @@ import {
   ProviderDriverKind,
   WorkbenchProjectId,
   WorkbenchTicketId,
+  type WorkbenchProject,
   WorkbenchTicketWorkspaceAttemptId,
   type ServerProvider,
   type WorkbenchTicket,
@@ -18,6 +19,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vite-plus/test";
 import type { Project } from "../types";
 import { WorkbenchStartThreadDialog } from "./WorkbenchStartThreadDialog";
 import type { WorkbenchRepositoryScope } from "./workbenchRepositoryScope";
+import { getWorkbenchRepositoryKey } from "./workbenchRemoteProjects";
 
 vi.mock("../hooks/useSettings", async () => {
   const { DEFAULT_CLIENT_SETTINGS, DEFAULT_SERVER_SETTINGS } =
@@ -133,6 +135,7 @@ const render = async ({
   repositoryProjectId,
   machineProjects = availableProjects,
   initialThreadEnvironmentId,
+  board,
 }: {
   pending?: boolean;
   repositoryScope?: WorkbenchRepositoryScope;
@@ -143,6 +146,7 @@ const render = async ({
   repositoryProjectId?: ProjectId;
   machineProjects?: ReadonlyArray<Project>;
   initialThreadEnvironmentId?: EnvironmentId;
+  board?: Pick<WorkbenchProject, "remoteProjects" | "repositoryKeys">;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -155,7 +159,7 @@ const render = async ({
           ticket: savedTicket,
           projects: availableProjects,
           machineProjects,
-          board: undefined,
+          board,
           workspace: unprepared ? undefined : preparedWorkspace,
           initialRepositoryScope: repositoryScope,
           repositoryProjectId,
@@ -352,6 +356,34 @@ it("keeps a repository removed from the saved ticket excluded despite its retain
   expect(radioLabels()).toEqual(["PrimaryPrepared"]);
   await act(async () => button("Create Thread").click());
   expect(onStart).toHaveBeenCalledWith({ modelSelection, repositoryProjectId: projects[0]!.id });
+});
+
+it("starts in another checkout when the Ticket's saved repository was removed", async () => {
+  const checkout: Project = {
+    ...projects[0]!,
+    repositoryIdentity: {
+      canonicalKey: "github.com/acme/app",
+      locator: { source: "git-remote", remoteName: "origin", remoteUrl: "acme/app" },
+      rootPath: "/repos/Primary",
+    },
+  };
+  const removedId = ProjectId.make("removed-desktop-primary");
+  await render({
+    savedTicket: { ...ticket, repositoryProjectIds: [removedId] },
+    availableProjects: [],
+    machineProjects: [checkout],
+    unprepared: true,
+    board: {
+      remoteProjects: [
+        { projectId: removedId, environmentId: EnvironmentId.make("desktop"), title: "Primary" },
+      ],
+      repositoryKeys: [
+        { projectId: removedId, repositoryKey: getWorkbenchRepositoryKey(checkout)! },
+      ],
+    },
+  });
+  await act(async () => button("Create Thread").click());
+  expect(onStart).toHaveBeenCalledWith(expect.objectContaining({ repositoryProjectId: removedId }));
 });
 
 it("blocks starting while a Ticket repository is no longer linked to the Workspace", async () => {

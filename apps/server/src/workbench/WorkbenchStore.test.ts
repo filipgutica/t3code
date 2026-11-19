@@ -1534,6 +1534,56 @@ describe("WorkbenchStore", () => {
     }).pipe(Effect.provide(TestLayer)),
   );
 
+  it.effect("joins this machine's checkout of a repository linked only on another machine", () =>
+    Effect.gen(function* () {
+      const store = yield* WorkbenchStore;
+      const remoteOrbitProjectId = ProjectId.make("t3-project-orbit-remote");
+      const localOrbitProjectId = ProjectId.make("t3-project-orbit-local");
+      const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
+      const projectId = WorkbenchProjectId.make("workbench-project-join");
+      const ticketId = WorkbenchTicketId.make("ticket-join");
+      const threadId = ThreadId.make("local-orbit-thread");
+      const orbitKey = "github.com/acme/orbit";
+      const createdAt = "2026-09-03T12:00:00.000Z";
+      yield* store.createProject({
+        id: projectId,
+        title: "Agent Workbench",
+        linkedProjectIds: [remoteOrbitProjectId],
+        remoteProjects: [
+          { projectId: remoteOrbitProjectId, environmentId: remoteEnvironmentId, title: "Orbit" },
+        ],
+        repositoryKeys: [{ projectId: remoteOrbitProjectId, repositoryKey: orbitKey }],
+        createdAt,
+      });
+      yield* store.createTicket({
+        id: ticketId,
+        projectId,
+        title: "Orbit work",
+        markdown: "",
+        repositoryProjectIds: [remoteOrbitProjectId],
+        createdAt,
+      });
+      yield* seedNativeThread({ threadId, projectId: localOrbitProjectId, createdAt });
+      yield* store.createAssignment({
+        id: WorkbenchAssignmentId.make("assignment-join"),
+        ticketId,
+        threadId,
+        repository: { repositoryKey: orbitKey, title: "Orbit" },
+        createdAt,
+      });
+
+      const joined = Option.getOrThrow(yield* store.getProject(projectId));
+      expect(joined.linkedProjectIds).toEqual([remoteOrbitProjectId, localOrbitProjectId]);
+      expect(joined.remoteProjects?.map((remote) => remote.projectId)).toEqual([
+        remoteOrbitProjectId,
+      ]);
+      expect(joined.repositoryKeys).toEqual([
+        { projectId: remoteOrbitProjectId, repositoryKey: orbitKey },
+        { projectId: localOrbitProjectId, repositoryKey: orbitKey },
+      ]);
+    }).pipe(Effect.provide(TestLayer)),
+  );
+
   it.effect("reloads Workbench data after the SQLite layer restarts", () => {
     const tempDir = NodeFS.mkdtempSync(NodePath.join(NodeOS.tmpdir(), "t3-workbench-store-"));
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");

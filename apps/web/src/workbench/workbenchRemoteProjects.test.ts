@@ -10,6 +10,7 @@ import {
   getWorkbenchThreadMachines,
   matchWorkbenchSavedRepository,
   matchWorkbenchTicketThread,
+  resolveWorkbenchTicketRepositories,
 } from "./workbenchRemoteProjects";
 
 const laptop = EnvironmentId.make("laptop");
@@ -66,6 +67,20 @@ describe("getWorkbenchRepositoryKey", () => {
     });
     expect(getWorkbenchRepositoryKey(laptopWeb)).toBe(getWorkbenchRepositoryKey(desktopWeb));
     expect(getWorkbenchRepositoryKey(desktopApi)).not.toBe(getWorkbenchRepositoryKey(desktopWeb));
+    // Only Windows paths are lowercased upstream, so the key ignores case on every machine.
+    const windowsApi = checkout({
+      id: "windows-api",
+      environmentId: laptop,
+      root: "C:\\Users\\me\\app",
+      path: "C:\\Users\\me\\app\\apps\\OrbitApi",
+    });
+    const linuxApi = checkout({
+      id: "linux-api",
+      environmentId: desktop,
+      root: "/srv/app",
+      path: "/srv/app/apps/OrbitApi",
+    });
+    expect(getWorkbenchRepositoryKey(windowsApi)).toBe(getWorkbenchRepositoryKey(linuxApi));
   });
 
   it("leaves a Project without a known repository root on its own", () => {
@@ -153,6 +168,41 @@ describe("Workbench repositories across machines", () => {
         linkedProjectIds: [laptopApp.id, desktopApp.id],
       }),
     ).toEqual([laptopApp, desktopDocs]);
+  });
+
+  it("saves a Ticket's chosen repositories on one machine, preferring the Board's", () => {
+    const repository = (name: string, environmentId: EnvironmentId) =>
+      checkout({
+        id: `${environmentId}-${name}`,
+        environmentId,
+        root: `/repos/${name}`,
+        remote: `git@github.com:acme/${name}.git`,
+      });
+    const laptopApi = repository("api", laptop);
+    const laptopWeb = repository("web", laptop);
+    const desktopApi = repository("api", desktop);
+    const desktopDocs = repository("docs", desktop);
+    const desktopLinks = [desktopApi, desktopDocs, repository("ops", desktop)];
+    const board = {
+      linkedProjectIds: [laptopApi, laptopWeb, ...desktopLinks].map((project) => project.id),
+      remoteProjects: desktopLinks.map((project) => ({
+        projectId: project.id,
+        environmentId: desktop,
+        title: project.title,
+      })),
+    };
+    const resolve = (...selected: EnvironmentProject[]) =>
+      resolveWorkbenchTicketRepositories({
+        board,
+        projects: [laptopApi, laptopWeb, ...desktopLinks],
+        environmentId: laptop,
+        projectIds: selected.map((project) => project.id),
+      });
+    // The picker shows the fuller machine's API, yet the Board's machine links both choices.
+    expect(resolve(desktopApi, laptopWeb)).toEqual([laptopApi.id, laptopWeb.id]);
+    expect(resolve(desktopApi)).toEqual([laptopApi.id]);
+    expect(resolve(laptopApi, desktopDocs)).toEqual([desktopApi.id, desktopDocs.id]);
+    expect(resolve(laptopWeb, desktopDocs)).toBeNull();
   });
 
   it("offers the Board machine's checkout of a repository linked only elsewhere", () => {

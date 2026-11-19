@@ -3,6 +3,8 @@ import {
   getWorkbenchBoardLinkedProjects,
   getWorkbenchBoardRepositories,
   makeWorkbenchRepositoryKeyOf,
+  resolveWorkbenchTicketRepositories,
+  type ResolveWorkbenchTicketRepositories,
 } from "./workbenchRemoteProjects";
 import { getAssignmentsForTicket } from "./workbench.logic";
 import type { useWorkbenchPageData } from "./useWorkbenchPageData";
@@ -45,6 +47,15 @@ export function getWorkbenchBoardData({
     board: selectedProject ?? undefined,
     projects,
   });
+  const resolveTicketRepositories: ResolveWorkbenchTicketRepositories = (projectIds) =>
+    selectedProject
+      ? resolveWorkbenchTicketRepositories({
+          board: selectedProject,
+          projects,
+          environmentId,
+          projectIds,
+        })
+      : null;
   const selectedAssignments = selectedTicket
     ? getAssignmentsForTicket(snapshot?.assignments ?? [], selectedTicket.id)
     : [];
@@ -54,6 +65,7 @@ export function getWorkbenchBoardData({
     repositoriesById,
     repositoryFilterIds,
     repositoryKeyOf,
+    resolveTicketRepositories,
     repositoriesReady,
     selectedAssignments,
   };

@@ -25,6 +25,7 @@ const REPOSITORY_PATH_GROUPING = {
 /**
  * The machine-independent identity of a Project: its git remote plus its path inside the
  * repository. Null when either is unknown, so monorepo subprojects never merge by accident.
+ * Lowercased because the shared path normalizer lowercases only Windows paths.
  */
 export function getWorkbenchRepositoryKey(project: EnvironmentProject): string | null {
   const rootPath = project.repositoryIdentity?.rootPath;
@@ -33,7 +34,7 @@ export function getWorkbenchRepositoryKey(project: EnvironmentProject): string |
   const workspace = normalizeProjectPathForComparison(project.workspaceRoot);
   const separator = root.includes("\\") ? "\\" : "/";
   if (workspace !== root && !workspace.startsWith(`${root}${separator}`)) return null;
-  return deriveLogicalProjectKeyFromSettings(project, REPOSITORY_PATH_GROUPING);
+  return deriveLogicalProjectKeyFromSettings(project, REPOSITORY_PATH_GROUPING).toLowerCase();
 }
 
 /** Keys a Board's repositories, falling back to the Project itself when its identity is unknown. */
@@ -175,6 +176,47 @@ function fullestEnvironment({
   let fullest = environmentId;
   for (const id of keysByEnvironment.keys()) if (coverage(id) > coverage(fullest)) fullest = id;
   return fullest;
+}
+
+export type ResolveWorkbenchTicketRepositories = (
+  projectIds: ReadonlyArray<ProjectId>,
+) => ReadonlyArray<ProjectId> | null;
+
+/**
+ * Maps chosen repositories to one machine's Board links, since pickers show one checkout per
+ * repository: the Board's machine when it links them all, else its default machine, else the
+ * fullest. Null when no machine links every chosen repository.
+ */
+export function resolveWorkbenchTicketRepositories({
+  board,
+  projects,
+  environmentId,
+  projectIds,
+}: {
+  board: WorkbenchBoardLinks;
+  projects: ReadonlyArray<EnvironmentProject>;
+  environmentId: EnvironmentId | null;
+  projectIds: ReadonlyArray<ProjectId>;
+}) {
+  const linked = getWorkbenchBoardLinkedProjects({ board, projects, environmentId });
+  const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
+  const machines = new Set([
+    environmentId,
+    board.defaultEnvironmentId,
+    fullestEnvironment({ projects: linked, keyOf, environmentId }),
+    ...linked.map((project) => project.environmentId),
+  ]);
+  for (const machine of machines) {
+    const here = linked.filter((project) => project.environmentId === machine);
+    const mapped = projectIds.flatMap((id) => {
+      const match =
+        here.find((project) => project.id === id) ??
+        here.find((project) => keyOf(project.id) === keyOf(id));
+      return match ? [match.id] : [];
+    });
+    if (projectIds.length > 0 && new Set(mapped).size === projectIds.length) return mapped;
+  }
+  return null;
 }
 
 /**

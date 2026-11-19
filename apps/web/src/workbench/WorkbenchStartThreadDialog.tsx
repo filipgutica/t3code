@@ -287,13 +287,16 @@ const resolveThreadMachineChoice = ({
   repositoryScope,
   repositoryProjectId,
   picked,
+  ticket,
+  scopeValid,
 }: Pick<
   WorkbenchStartThreadDialogRequest,
-  "environmentId" | "projects" | "machineProjects" | "board"
+  "environmentId" | "projects" | "machineProjects" | "board" | "ticket"
 > & {
   repositoryScope: WorkbenchRepositoryScope;
   repositoryProjectId: ProjectId | null;
   picked: EnvironmentId | undefined;
+  scopeValid: boolean;
 }) => {
   const repository = projects.find((project) => project.id === repositoryProjectId);
   const linkEnvironmentId =
@@ -335,6 +338,10 @@ const resolveThreadMachineChoice = ({
     machineUnavailable,
     // Ticket worktrees exist only for repositories the Ticket names on the Board's machine.
     checkoutOnly: targetEnvironmentId !== environmentId || linkEnvironmentId !== environmentId,
+    // An unchanged saved scope stays usable while a machine checks out each of its repositories.
+    scopeUsable:
+      scopeValid ||
+      (isWorkbenchRepositoryScopeEqual(ticket, repositoryScope) && machines.length > 0),
   };
 };
 
@@ -480,6 +487,7 @@ export function WorkbenchStartThreadDialog({
     targetEnvironmentId,
     checkoutOnly,
     machineUnavailable,
+    scopeUsable,
   } = resolveThreadMachineChoice({
     environmentId,
     projects,
@@ -488,6 +496,8 @@ export function WorkbenchStartThreadDialog({
     repositoryScope,
     repositoryProjectId,
     picked: pickedEnvironmentId,
+    ticket,
+    scopeValid,
   });
   const target = useWorkbenchStartThreadEnvironment({
     environmentId,
@@ -525,7 +535,7 @@ export function WorkbenchStartThreadDialog({
     disabled,
     pending,
     workspaceLocked,
-    !scopeValid,
+    !scopeUsable,
     !selectionAvailable,
     !target.available,
   ].some(Boolean);
@@ -579,7 +589,7 @@ export function WorkbenchStartThreadDialog({
             {!checkoutOnly ? (
               <WorkbenchStartThreadRepositoryNote {...note} locked={workspaceLocked} />
             ) : null}
-            {!scopeValid ? (
+            {!scopeUsable ? (
               <p role="alert" className="text-sm text-destructive">
                 Choose available repositories on one machine.
               </p>

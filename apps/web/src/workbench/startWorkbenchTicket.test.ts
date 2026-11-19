@@ -26,6 +26,7 @@ import {
   getWorkbenchTicketStartProgressLabel,
   isWorkbenchTicketStartPending,
 } from "./startWorkbenchTicket";
+import { getWorkbenchRepositoryKey } from "./workbenchRemoteProjects";
 
 const environmentId = EnvironmentId.make("environment-one");
 const projectId = ProjectId.make("repository-one");
@@ -217,6 +218,52 @@ describe("coordinateWorkbenchTicketStart", () => {
       ]);
     },
   );
+
+  it("starts in this machine's checkout of a repository linked only on another machine", async () => {
+    const remoteEnvironmentId = EnvironmentId.make("environment:remote-box");
+    const remoteAppId = ProjectId.make("remote-app");
+    const localCheckout: EnvironmentProject = {
+      ...project,
+      repositoryIdentity: {
+        canonicalKey: "github.com/acme/app",
+        locator: { source: "git-remote", remoteName: "origin", remoteUrl: "acme/app" },
+        rootPath: project.workspaceRoot,
+      },
+    };
+    const repositoryKey = getWorkbenchRepositoryKey(localCheckout)!;
+    const events: string[] = [];
+    let assigned: unknown;
+    const result = await coordinateWorkbenchTicketStart(
+      {
+        ...startInput(),
+        ticket: { ...ticket, repositoryProjectIds: [remoteAppId] },
+        projects: [localCheckout],
+        remoteProjects: [
+          { projectId: remoteAppId, environmentId: remoteEnvironmentId, title: "acme/app" },
+        ],
+        repositoryKeys: [{ projectId: remoteAppId, repositoryKey }],
+      },
+      {
+        ...makeDependencies(events),
+        createThread: async ({ environmentId: destination, input }) => {
+          expect(destination).toBe(environmentId);
+          // Checkout-only: the Ticket's repository has no worktrees on the Board machine.
+          expect(input).toMatchObject({ projectId, branch: null, worktreePath: null });
+          events.push("create-thread");
+          return success;
+        },
+        createAssignment: async ({ input }) => {
+          assigned = input;
+          events.push("create-assignment");
+          return success;
+        },
+      },
+    );
+    expect(result.state).toBe("opened");
+    expect(events).toEqual(["create-thread", "create-assignment", "open-thread"]);
+    expect(assigned).not.toHaveProperty("remote");
+    expect(assigned).toMatchObject({ repository: { repositoryKey, title: project.title } });
+  });
 
   // The Thread's repository resolves against the saved Ticket, so a preference the save unlinked yields.
   it("recovers an unavailable preferred repository through the reviewed scope", async () => {

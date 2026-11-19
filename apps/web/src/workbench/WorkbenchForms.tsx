@@ -1,6 +1,9 @@
 import { useEnvironment } from "../state/environments";
 import { WorkbenchBoardDefaultMachine } from "./WorkbenchBoardDefaultMachine";
-import { getWorkbenchRepositoryChoices } from "./workbenchRemoteProjects";
+import {
+  getWorkbenchRepositoryChoices,
+  type ResolveWorkbenchTicketRepositories,
+} from "./workbenchRemoteProjects";
 import { WorkbenchTicketProgress, WorkbenchTicketSharedContext } from "./WorkbenchTicketPlanning";
 import { useWorkbenchTicketContent } from "./useWorkbenchTicketContent";
 import {
@@ -9,6 +12,7 @@ import {
 } from "./WorkbenchRepositoryScopeFields";
 import {
   getWorkbenchRepositoryScope,
+  isWorkbenchRepositoryScopeEqual,
   isWorkbenchRepositoryScopeValid,
   type WorkbenchRepositoryScope,
   type WorkbenchRepositoryScopeDraft,
@@ -337,6 +341,7 @@ export type WorkbenchCreateTicketDraft = Omit<
 export function WorkbenchTicketDialog({
   open,
   linkedProjects,
+  resolveRepositories,
   pending,
   disabled,
   error,
@@ -345,6 +350,7 @@ export function WorkbenchTicketDialog({
 }: {
   readonly open: boolean;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly resolveRepositories: ResolveWorkbenchTicketRepositories;
   readonly pending: boolean;
   readonly disabled?: boolean;
   readonly error: string | null;
@@ -369,13 +375,9 @@ export function WorkbenchTicketDialog({
   });
   const createLabel = pending ? "Creating Ticket…" : "Create Ticket";
   const mutationDisabled = disabled || pending;
+  const resolvedRepositoryProjectIds = resolveRepositories(selectedRepositoryProjectIds);
   const cannotCreate =
-    mutationDisabled ||
-    title.trim().length === 0 ||
-    !isWorkbenchRepositoryScopeValid({
-      scope: { repositoryProjectIds: selectedRepositoryProjectIds },
-      projects: linkedProjects,
-    });
+    mutationDisabled || title.trim().length === 0 || resolvedRepositoryProjectIds === null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     if (cannotCreate) return;
@@ -383,7 +385,7 @@ export function WorkbenchTicketDialog({
       id: requestId,
       title,
       markdown,
-      repositoryProjectIds: selectedRepositoryProjectIds,
+      repositoryProjectIds: resolvedRepositoryProjectIds,
       ...(references.length > 0 ? { references } : {}),
     });
     if (created) handleOpenChange(false);
@@ -426,11 +428,7 @@ export function WorkbenchTicketDialog({
               selectedRepositoryProjectIds={selectedRepositoryProjectIds}
               setRepositoryProjectIds={setRepositoryProjectIds}
             />
-            {new Set(
-              linkedProjects
-                .filter((project) => selectedRepositoryProjectIds.includes(project.id))
-                .map((project) => project.environmentId),
-            ).size > 1 ? (
+            {selectedRepositoryProjectIds.length > 0 && resolvedRepositoryProjectIds === null ? (
               <p role="alert" className="text-sm text-destructive">
                 Choose repositories on one machine.
               </p>
@@ -471,6 +469,7 @@ export type WorkbenchTicketDetailProps = {
   readonly references: ReadonlyArray<WorkbenchReference>;
   readonly ticketWorkspace: WorkbenchTicketWorkspace | undefined;
   readonly linkedProjects: ReadonlyArray<Project>;
+  readonly resolveRepositories: ResolveWorkbenchTicketRepositories;
   readonly keybindings: ResolvedKeybindingsConfig;
   readonly availableEditors: ReadonlyArray<EditorId>;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -516,7 +515,7 @@ export type WorkbenchTicketDetailProps = {
   }) => void;
   readonly onRepositoryScopeChange: (value: WorkbenchRepositoryScope) => void;
   readonly onCancelRepositories: () => void;
-  readonly onSaveRepositories: () => Promise<boolean>;
+  readonly onSaveRepositories: (value: WorkbenchRepositoryScope) => Promise<boolean>;
   readonly onResetWorkspace: (ticket: WorkbenchTicket) => Promise<boolean>;
   readonly lifecycleActionsEnabled: boolean;
   /** Shows the ticket's Threads in a floating chat. */
@@ -575,6 +574,7 @@ function WorkbenchLoadedTicketDetail(props: WorkbenchTicketDetailProps) {
       workspace={{
         ticketWorkspace: props.ticketWorkspace,
         linkedProjects: props.linkedProjects,
+        resolveRepositories: props.resolveRepositories,
         preparationFailed: props.preparationFailed,
         preparationPending: props.preparationPending,
         repositoryScopeDraft: props.repositoryScopeDraft,
@@ -652,6 +652,7 @@ function WorkbenchTicketDetailController({
     WorkbenchTicketDetailProps,
     | "ticketWorkspace"
     | "linkedProjects"
+    | "resolveRepositories"
     | "preparationFailed"
     | "preparationPending"
     | "repositoryScopeDraft"
@@ -706,6 +707,7 @@ function WorkbenchTicketDetailController({
   const {
     ticketWorkspace,
     linkedProjects,
+    resolveRepositories,
     preparationFailed,
     preparationPending,
     repositoryScopeDraft,
@@ -1185,6 +1187,7 @@ function WorkbenchTicketDetailController({
                   keybindings: keybindings,
                   availableEditors: availableEditors,
                   linkedProjects: linkedProjects,
+                  resolveRepositories,
                 }}
               />
             </div>
@@ -2373,6 +2376,7 @@ type WorkbenchTicketWorkspacePanelProps = Pick<
   | "availableEditors"
   | "ticketWorkspace"
   | "linkedProjects"
+  | "resolveRepositories"
   | "ticket"
   | "pending"
   | "preparationPending"
@@ -2446,7 +2450,7 @@ type WorkbenchTicketWorkspacePanelInput = {
   >;
   context: Pick<
     WorkbenchTicketWorkspacePanelProps,
-    "environmentId" | "keybindings" | "availableEditors" | "linkedProjects"
+    "environmentId" | "keybindings" | "availableEditors" | "linkedProjects" | "resolveRepositories"
   >;
 };
 
@@ -2482,7 +2486,8 @@ function WorkbenchTicketWorkspacePanel({
     activeAssignments,
     repositoryScopeDraft,
   } = records;
-  const { environmentId, keybindings, availableEditors, linkedProjects } = context;
+  const { environmentId, keybindings, availableEditors, linkedProjects, resolveRepositories } =
+    context;
   const draft =
     repositoryScopeDraft?.ticket.id === ticket.id &&
     repositoryScopeDraft.environmentId === environmentId
@@ -2524,6 +2529,7 @@ function WorkbenchTicketWorkspacePanel({
               actions={actions}
               disabled={disabled}
               linkedProjects={linkedProjects}
+              resolveRepositories={resolveRepositories}
             />
           </WorkbenchTicketWorkspaceRepositoryEditor>
         ) : remote ? (
@@ -2662,13 +2668,21 @@ function WorkbenchTicketWorkspaceReviewActions({
   actions,
   disabled,
   linkedProjects,
-}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> & {
-  readonly draft: WorkbenchRepositoryScopeDraft;
-  readonly disabled: boolean;
-  readonly linkedProjects: ReadonlyArray<Project>;
-}) {
+  resolveRepositories,
+}: Pick<WorkbenchTicketWorkspacePanelInput, "presentation" | "actions"> &
+  Pick<WorkbenchTicketDetailProps, "linkedProjects" | "resolveRepositories"> & {
+    readonly draft: WorkbenchRepositoryScopeDraft;
+    readonly disabled: boolean;
+  }) {
   const { pending, preparationPending, workspaceIsPreparing, workspacePreparationActionLabel } =
     presentation;
+  // An untouched scope saves as is, so Save never moves a Ticket to another machine.
+  const unchanged = isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
+  const repositoryProjectIds = unchanged
+    ? isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
+      ? draft.value.repositoryProjectIds
+      : null
+    : resolveRepositories(draft.value.repositoryProjectIds);
   return (
     <>
       <Button
@@ -2682,12 +2696,10 @@ function WorkbenchTicketWorkspaceReviewActions({
       </Button>
       <Button
         aria-busy={pending || preparationPending || workspaceIsPreparing}
-        disabled={
-          disabled ||
-          !isWorkbenchRepositoryScopeValid({ scope: draft.value, projects: linkedProjects })
-        }
+        disabled={disabled || repositoryProjectIds === null}
         onClick={() => {
-          void actions.onSaveRepositories();
+          if (repositoryProjectIds !== null)
+            void actions.onSaveRepositories({ repositoryProjectIds });
         }}
         size="xs"
         type="button"
