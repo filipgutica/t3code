@@ -145,9 +145,8 @@ test("N1 N2 N3 R1: create a Thread, send the Ticket instruction and retain compl
     sidebar.getByRole("button", { name: "Fix focus after creating a project", exact: true }),
   ).toHaveCount(1);
   // The sidebar lists Tickets only; Threads are reached from the Ticket and its chat.
-  await expect(sidebar.getByRole("button", { name: nativeThread.title, exact: true })).toHaveCount(
-    0,
-  );
+  // The Thread keeps the Ticket's title, so the count of 1 above also rules out its row.
+  await expect(sidebar.locator("[data-thread-item]")).toHaveCount(0);
   await page.screenshot({ path: testInfo.outputPath("settlement-collapsed.png"), fullPage: true });
   await settledToggle.click();
   await expect(

@@ -44,7 +44,7 @@ const openLinkedPullRequests = async (page: Page, home: string, threadId: string
   ]);
   await expect(page.getByRole("button", { name: "Toggle right panel" })).toBeVisible();
   await page.getByRole("button", { name: "Toggle right panel" }).click();
-  await page.getByRole("button", { name: /^Linked pull requests/ }).click();
+  await page.getByRole("button", { name: /^Linked items/ }).click();
   await expect(page.getByText(/\d+ open · \d+ linked/, { exact: false })).toBeVisible();
 };
 
