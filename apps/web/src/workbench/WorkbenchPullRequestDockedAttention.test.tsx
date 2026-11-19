@@ -124,6 +124,7 @@ vi.mock("../state/pullRequests", () => ({
     native.summaryQuery(target),
   pullRequestEnvironment: {
     activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+    invalidate: {},
   },
   sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
     native.sharedSummary(...args),

@@ -13,13 +13,21 @@ import { useAtomValue } from "@effect/atom-react";
 import type { PendingThreadRequests } from "@t3tools/client-runtime/state/thread-requests";
 import { scopedThreadKey, scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { Atom } from "effect/reactivity";
-import { useState } from "react";
-import { useWorkbenchAttentionQueries } from "./WorkbenchAttentionQueries";
+import { useEffect, useRef, useState } from "react";
+import { useWorkbenchAttentionQueries, workbenchPullRequestRef } from "./WorkbenchAttentionQueries";
+import { pullRequestEnvironment } from "../state/pullRequests";
 import { environmentThreadDetails } from "../state/threads";
+import {
+  getDocumentActivity,
+  subscribeDocumentActivity,
+  subscribeDocumentReturn,
+} from "../lib/documentActivity";
+import { useAtomCommand } from "../state/use-atom-command";
 import { useUiStateStore } from "../uiStateStore";
 import { resolveThreadLastVisitedAt, resolveThreadStatusPill } from "../components/Sidebar.logic";
 import {
   getWorkbenchTicketPullRequests,
+  type TicketPullRequestReference,
   type WorkbenchTicketPullRequest,
 } from "./workbenchPullRequests.logic";
 import {
@@ -147,6 +155,9 @@ export function useWorkbenchAttention({
 }) {
   const [attentionRefresh, setAttentionRefresh] = useState(0);
   const refreshAttention = useStableCallback(() => setAttentionRefresh((previous) => previous + 1));
+  const invalidatePullRequest = useAtomCommand(pullRequestEnvironment.invalidate, {
+    reportFailure: false,
+  });
   const activeAssignments = activeWorkbenchAttentionAssignments({
     assignments,
     threadsById,
@@ -178,19 +189,19 @@ export function useWorkbenchAttention({
       }),
     ]),
   );
+  const openLinkedReferences = [...attentionReferencesByTicket.values()]
+    .flat()
+    .map((row) => row.pullRequest)
+    .filter((reference) => reference.state !== "closed" && reference.state !== "merged");
   const attentionReferences =
     environmentId === null
       ? []
       : [
           ...new Map(
-            [...attentionReferencesByTicket.values()]
-              .flat()
-              .map((row) => row.pullRequest)
-              .filter((reference) => reference.state !== "closed" && reference.state !== "merged")
-              .map((reference) => [
-                workbenchAttentionIdentity(environmentId, reference),
-                reference,
-              ]),
+            openLinkedReferences.map((reference) => [
+              workbenchAttentionIdentity(environmentId, reference),
+              reference,
+            ]),
           ).values(),
         ];
   const attentionEntityScope = JSON.stringify([environmentId, projectId]);
@@ -215,6 +226,77 @@ export function useWorkbenchAttention({
     references: attentionReferences,
     refreshGeneration: attentionRefresh,
   });
+  // Before inspection reaches a PR, its link metadata supplies what the board shows.
+  const observationOf = (reference: TicketPullRequestReference) =>
+    (environmentId === null
+      ? undefined
+      : observations.get(workbenchAttentionIdentity(environmentId, reference))) ??
+    getWorkbenchPullRequestAttention({
+      reference,
+      summary: null,
+      activity: null,
+      loading: true,
+      error: false,
+    });
+  // Changes made on the host, such as resolving a review thread, send no refresh signal, so a
+  // return to the window re-reads flagged PRs past the server cache, one round at a time.
+  // Atom commands settle without throwing.
+  const refreshingOnReturn = useRef(false);
+  const leftDuringRefresh = useRef(false);
+  const returnedDuringRefresh = useRef(false);
+  // Read at the start of each pass, so a repeat includes PRs flagged since the round began.
+  // Any flagged link counts, but the target is the link inspection reads: the server caches
+  // per native Project, and links to one PR can differ in metadata and Project.
+  const flaggedPullRequestTargets = useStableCallback(() => {
+    if (environmentId === null) return [];
+    const flagged = new Set(
+      openLinkedReferences
+        .filter((reference) => observationOf(reference).signalKinds.length > 0)
+        .map((reference) => workbenchAttentionIdentity(environmentId, reference)),
+    );
+    return attentionReferences
+      .filter((reference) => flagged.has(workbenchAttentionIdentity(environmentId, reference)))
+      .map((reference) => ({
+        environmentId,
+        input: { reference: workbenchPullRequestRef(reference) },
+      }));
+  });
+  const refreshAttentionOnReturn = useStableCallback(() => {
+    if (environmentId === null || attentionReferences.length === 0) return;
+    if (refreshingOnReturn.current) {
+      // Only a return after leaving mid-round repeats it; a focus and tab switch share a round.
+      if (leftDuringRefresh.current) returnedDuringRefresh.current = true;
+      return;
+    }
+    refreshingOnReturn.current = true;
+    // One at a time, so a reply or thread resolution queued on the same environment runs between.
+    void (async () => {
+      do {
+        leftDuringRefresh.current = false;
+        returnedDuringRefresh.current = false;
+        for (const target of flaggedPullRequestTargets()) await invalidatePullRequest(target);
+        // A visit that left and came back during the round may have changed a PR it already re-read.
+      } while (returnedDuringRefresh.current);
+      refreshingOnReturn.current = false;
+      refreshAttention();
+    })();
+  });
+  // oxlint-disable-next-line t3code/no-unreasoned-state-sync -- subscribes to window returns: coming back from the PR host is when its state most likely changed
+  useEffect(() => {
+    const unsubscribeReturn = subscribeDocumentReturn(refreshAttentionOnReturn);
+    // Only losing visibility or focus is a departure; showing the tab before focusing it is one return.
+    let previous = getDocumentActivity();
+    const unsubscribeActivity = subscribeDocumentActivity(() => {
+      const next = getDocumentActivity();
+      if ((previous.visible && !next.visible) || (previous.focused && !next.focused))
+        leftDuringRefresh.current = true;
+      previous = next;
+    });
+    return () => {
+      unsubscribeReturn();
+      unsubscribeActivity();
+    };
+  }, [refreshAttentionOnReturn]);
   const attentionByTicket = new Map(
     tickets.map((ticket) => {
       const { signals, reasons } = getTicketThreadAttention({
@@ -228,15 +310,7 @@ export function useWorkbenchAttention({
       for (const row of attentionReferencesByTicket.get(ticket.id) ?? []) {
         if (environmentId === null) continue;
         const reference = row.pullRequest;
-        const observation =
-          observations.get(workbenchAttentionIdentity(environmentId, reference)) ??
-          getWorkbenchPullRequestAttention({
-            reference,
-            summary: null,
-            activity: null,
-            loading: true,
-            error: false,
-          });
+        const observation = observationOf(reference);
         observation.reasons.forEach((reason) => reasons.add(reason));
         const observedRow = getObservedPullRequestRow({
           row,
@@ -270,7 +344,7 @@ export function useWorkbenchAttention({
   const attentionInspectionsByTicket = new Map(
     [...attentionByTicket].map(([id, result]) => [id, result.inspections]),
   );
-  const attentionCoverage = `${attentionReferences.filter((reference) => environmentId !== null && observations.get(workbenchAttentionIdentity(environmentId, reference))?.inspected).length} of ${attentionReferences.length} linked PRs inspected`;
+  const attentionCoverage = `${attentionReferences.filter((reference) => observationOf(reference).inspected).length} of ${attentionReferences.length} linked PRs inspected`;
   return {
     attentionRefresh,
     refreshAttention,

@@ -80,6 +80,7 @@ vi.mock("../state/environments", () => ({
 }));
 vi.mock("../state/pullRequests", () => ({
   linkedPullRequestDetailAtom: () => null,
+  pullRequestEnvironment: { invalidate: {} },
   useSharedPullRequestSummary: () => null,
 }));
 vi.mock("../state/query", () => ({
