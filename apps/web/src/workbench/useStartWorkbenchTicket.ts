@@ -267,6 +267,7 @@ export function useStartWorkbenchTicket({
 }
 
 const workbenchBoardStartFields = (board: WorkbenchProject | undefined) => ({
+  linkedProjectIds: board?.linkedProjectIds,
   remoteProjects: board?.remoteProjects,
   repositoryKeys: board?.repositoryKeys,
   defaultEnvironmentId: board?.defaultEnvironmentId,

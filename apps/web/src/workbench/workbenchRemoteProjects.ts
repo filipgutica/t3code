@@ -64,6 +64,17 @@ export function makeWorkbenchRepositoryKeyOf({
   };
 }
 
+/**
+ * Keys a linked Project the way the server does: by its stored key only, so a link stored
+ * without one matches nothing else.
+ */
+function makeWorkbenchStoredKeyOf(board: Pick<WorkbenchBoardLinks, "repositoryKeys"> | undefined) {
+  const stored = new Map(
+    board?.repositoryKeys?.map(({ projectId, repositoryKey }) => [projectId, repositoryKey]),
+  );
+  return (projectId: ProjectId) => stored.get(projectId) ?? `project:${projectId}`;
+}
+
 /** Repository keys the Board has not stored yet but this client can derive. */
 export function getMissingWorkbenchRepositoryKeys({
   board,
@@ -301,26 +312,30 @@ export function getWorkbenchThreadMachines({
   repositoryProjectIds,
   projects,
 }: {
-  board: Pick<WorkbenchBoardLinks, "remoteProjects" | "repositoryKeys"> | undefined;
+  board:
+    | Pick<WorkbenchBoardLinks, "linkedProjectIds" | "remoteProjects" | "repositoryKeys">
+    | undefined;
   boardEnvironmentId: EnvironmentId;
   repositoryProjectIds: ReadonlyArray<ProjectId>;
   projects: ReadonlyArray<EnvironmentProject>;
 }): ReadonlyArray<WorkbenchThreadMachine> {
+  const storedKeyOf = makeWorkbenchStoredKeyOf(board);
+  // A linked checkout keeps its stored key; an unlinked one joins under the key it derives.
+  const checkoutKeyOf = (project: EnvironmentProject) =>
+    board?.linkedProjectIds.includes(project.id)
+      ? storedKeyOf(project.id)
+      : getWorkbenchRepositoryKey(project);
   const reachable = projects.filter((project) => project.workspaceRoot !== "");
   const environmentIds = [...new Set(reachable.map((project) => project.environmentId))];
   const checkoutOn = (environmentId: EnvironmentId, repositoryProjectId: ProjectId) => {
     const linkedHere =
       getWorkbenchLinkEnvironment({ board, boardEnvironmentId, projectId: repositoryProjectId }) ===
       environmentId;
-    // Only a key the Board stored, since the server matches other checkouts against that.
-    const storedKey = board?.repositoryKeys?.find(
-      (entry) => entry.projectId === repositoryProjectId,
-    )?.repositoryKey;
     const candidates = reachable.filter(
       (project) =>
         project.environmentId === environmentId &&
         ((linkedHere && project.id === repositoryProjectId) ||
-          (storedKey !== undefined && getWorkbenchRepositoryKey(project) === storedKey)),
+          checkoutKeyOf(project) === storedKeyOf(repositoryProjectId)),
     );
     // Several checkouts on one machine: prefer the one the Ticket already names.
     return candidates.find((project) => project.id === repositoryProjectId) ?? candidates[0];
@@ -335,6 +350,17 @@ export function getWorkbenchThreadMachines({
     return [{ environmentId, projectsByRepository }];
   });
 }
+
+/**
+ * Ticket worktrees exist only on the Board's machine for the Ticket's own linked checkouts, so a
+ * machine using any other checkout runs the Thread in that checkout.
+ */
+export const isWorkbenchCheckoutOnly = (
+  machine: WorkbenchThreadMachine,
+  boardEnvironmentId: EnvironmentId,
+) =>
+  machine.environmentId !== boardEnvironmentId ||
+  [...machine.projectsByRepository].some(([savedId, project]) => project.id !== savedId);
 
 /** An explicit pick wins; then the Board default, the Board's machine, and any other machine. */
 export function chooseWorkbenchThreadMachine({
@@ -423,7 +449,7 @@ export function matchWorkbenchTicketThread({
   projects: ReadonlyArray<EnvironmentProject>;
   thread: { readonly projectId: ProjectId; readonly environmentId: EnvironmentId };
 }): { readonly repository?: WorkbenchThreadRepository } | null {
-  const keyOf = makeWorkbenchRepositoryKeyOf({ board, projects });
+  const keyOf = makeWorkbenchStoredKeyOf(board);
   const ticketKeys = new Set(repositoryProjectIds.map(keyOf));
   if (board?.linkedProjectIds.includes(thread.projectId)) {
     const linkedEnvironmentId =

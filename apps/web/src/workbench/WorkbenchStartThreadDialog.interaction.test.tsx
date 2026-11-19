@@ -146,7 +146,7 @@ const render = async ({
   repositoryProjectId?: ProjectId;
   machineProjects?: ReadonlyArray<Project>;
   initialThreadEnvironmentId?: EnvironmentId;
-  board?: Pick<WorkbenchProject, "remoteProjects" | "repositoryKeys">;
+  board?: Pick<WorkbenchProject, "linkedProjectIds" | "remoteProjects" | "repositoryKeys">;
 } = {}) => {
   await act(async () =>
     root.render(
@@ -374,6 +374,7 @@ it("starts in another checkout when the Ticket's saved repository was removed", 
     machineProjects: [checkout],
     unprepared: true,
     board: {
+      linkedProjectIds: [removedId],
       remoteProjects: [
         { projectId: removedId, environmentId: EnvironmentId.make("desktop"), title: "Primary" },
       ],

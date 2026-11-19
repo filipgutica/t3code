@@ -55,6 +55,7 @@ import {
   chooseWorkbenchThreadMachine,
   getWorkbenchLinkEnvironment,
   getWorkbenchThreadMachines,
+  isWorkbenchCheckoutOnly,
   type WorkbenchThreadMachine,
 } from "./workbenchRemoteProjects";
 
@@ -196,7 +197,10 @@ type WorkbenchStartThreadDialogRequest = {
   /** Every reachable Project, so the Thread can run on another checkout of its repository. */
   readonly machineProjects: ReadonlyArray<Project>;
   readonly board:
-    | Pick<WorkbenchProject, "remoteProjects" | "repositoryKeys" | "defaultEnvironmentId">
+    | Pick<
+        WorkbenchProject,
+        "linkedProjectIds" | "remoteProjects" | "repositoryKeys" | "defaultEnvironmentId"
+      >
     | undefined;
   readonly workspace: WorkbenchTicketWorkspace | undefined;
   readonly initialRepositoryScope: WorkbenchRepositoryScope | undefined;
@@ -336,11 +340,9 @@ const resolveThreadMachineChoice = ({
     selectionProjectId: selectionProject?.id ?? repositoryProjectId,
     targetEnvironmentId,
     machineUnavailable,
-    // Ticket worktrees exist only for the Board machine's own linked Ticket repositories.
-    checkoutOnly:
-      targetEnvironmentId !== environmentId ||
-      linkEnvironmentId !== environmentId ||
-      (threadProject !== undefined && threadProject.id !== repositoryProjectId),
+    checkoutOnly: machine
+      ? isWorkbenchCheckoutOnly(machine, environmentId)
+      : targetEnvironmentId !== environmentId || linkEnvironmentId !== environmentId,
     // An unchanged saved scope stays usable while a machine checks out each of its repositories.
     scopeUsable:
       scopeValid ||

@@ -23,6 +23,7 @@ import {
   chooseWorkbenchThreadMachine,
   getWorkbenchLinkEnvironment,
   getWorkbenchThreadMachines,
+  isWorkbenchCheckoutOnly,
   makeWorkbenchRepositoryKeyOf,
 } from "./workbenchRemoteProjects";
 import { DEFAULT_INTERACTION_MODE } from "../types";
@@ -46,6 +47,7 @@ interface StartWorkbenchTicketInput {
   readonly ticket: WorkbenchTicket;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
+  readonly linkedProjectIds?: ReadonlyArray<ProjectId> | undefined;
   readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject> | undefined;
   readonly repositoryKeys?: WorkbenchProject["repositoryKeys"] | undefined;
   readonly defaultEnvironmentId?: EnvironmentId | undefined;
@@ -319,13 +321,17 @@ const resolveThreadTarget = ({
   options: StartWorkbenchTicketOptions;
   repositoryProjectId: ProjectId;
 }) => {
-  const board = { remoteProjects: input.remoteProjects, repositoryKeys: input.repositoryKeys };
+  const board = {
+    linkedProjectIds: input.linkedProjectIds ?? [],
+    remoteProjects: input.remoteProjects,
+    repositoryKeys: input.repositoryKeys,
+  };
   const linkEnvironmentId = getWorkbenchLinkEnvironment({
     board,
     boardEnvironmentId: input.environmentId,
     projectId: repositoryProjectId,
   });
-  const threadProject = chooseWorkbenchThreadMachine({
+  const machine = chooseWorkbenchThreadMachine({
     machines: getWorkbenchThreadMachines({
       board,
       boardEnvironmentId: input.environmentId,
@@ -336,8 +342,9 @@ const resolveThreadTarget = ({
     defaultEnvironmentId: input.defaultEnvironmentId,
     boardEnvironmentId: input.environmentId,
     scopeEnvironmentId: linkEnvironmentId,
-  })?.projectsByRepository.get(repositoryProjectId);
-  if (!threadProject) return undefined;
+  });
+  const threadProject = machine?.projectsByRepository.get(repositoryProjectId);
+  if (!machine || !threadProject) return undefined;
   const remote =
     threadProject.environmentId === input.environmentId
       ? undefined
@@ -345,11 +352,7 @@ const resolveThreadTarget = ({
   return {
     threadProject,
     remote,
-    // Ticket worktrees are prepared only for the Board machine's own linked Ticket repositories.
-    checkoutOnly:
-      remote !== undefined ||
-      linkEnvironmentId !== input.environmentId ||
-      threadProject.id !== repositoryProjectId,
+    checkoutOnly: isWorkbenchCheckoutOnly(machine, input.environmentId),
     // Another checkout of the Ticket's repository joins the Board when the Thread is linked.
     repository:
       threadProject.id === repositoryProjectId

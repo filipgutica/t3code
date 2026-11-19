@@ -271,8 +271,21 @@ describe("Workbench repositories across machines", () => {
       projects,
     });
     expect(unkeyed.map((machine) => machine.environmentId)).toEqual([laptop]);
+    // A linked checkout matches only by its own stored key, as on the server.
+    const desktopLink = { projectId: desktopApp.id, environmentId: desktop, title: "app" };
+    const unkeyedLink = getWorkbenchThreadMachines({
+      board: {
+        linkedProjectIds: [laptopApp.id, desktopApp.id],
+        remoteProjects: [desktopLink],
+        repositoryKeys,
+      },
+      boardEnvironmentId: laptop,
+      repositoryProjectIds: [laptopApp.id],
+      projects,
+    });
+    expect(unkeyedLink.map((machine) => machine.environmentId)).toEqual([laptop]);
     const appOnly = getWorkbenchThreadMachines({
-      board: { repositoryKeys },
+      board: { linkedProjectIds: [laptopApp.id], repositoryKeys },
       boardEnvironmentId: laptop,
       repositoryProjectIds: [laptopApp.id],
       projects,
@@ -293,7 +306,11 @@ describe("Workbench repositories across machines", () => {
 
     const docsLink = { projectId: desktopDocs.id, environmentId: desktop, title: "docs" };
     const withDocs = getWorkbenchThreadMachines({
-      board: { remoteProjects: [docsLink], repositoryKeys },
+      board: {
+        linkedProjectIds: [laptopApp.id, desktopDocs.id],
+        remoteProjects: [docsLink],
+        repositoryKeys,
+      },
       boardEnvironmentId: laptop,
       repositoryProjectIds: [laptopApp.id, desktopDocs.id],
       projects,
@@ -312,6 +329,7 @@ describe("Workbench repositories across machines", () => {
 
   it("requires every saved Ticket repository, even one this client cannot see", () => {
     const board = {
+      linkedProjectIds: [laptopApp.id],
       remoteProjects: [{ projectId: laptopApp.id, environmentId: laptop, title: "app" }],
       repositoryKeys: [
         { projectId: laptopApp.id, repositoryKey: getWorkbenchRepositoryKey(laptopApp)! },
@@ -339,14 +357,20 @@ describe("Workbench repositories across machines", () => {
   });
 
   it("attaches another machine's Thread only when it works in a Ticket repository", () => {
-    const match = (projectId: ProjectId) =>
+    const repositoryKey = getWorkbenchRepositoryKey(laptopApp)!;
+    const match = (projectId: ProjectId, keyed = true) =>
       matchWorkbenchTicketThread({
-        board: { linkedProjectIds: [laptopApp.id] },
+        board: {
+          linkedProjectIds: [laptopApp.id],
+          repositoryKeys: keyed ? [{ projectId: laptopApp.id, repositoryKey }] : [],
+        },
         boardEnvironmentId: laptop,
         repositoryProjectIds: [laptopApp.id],
         projects,
         thread: { projectId, environmentId: desktop },
       });
+    // The server matches only a key the Board stored.
+    expect(match(desktopApp.id, false)).toBeNull();
     expect(match(desktopApp.id)).toEqual({
       repository: { repositoryKey: getWorkbenchRepositoryKey(laptopApp), title: "desktop-app" },
     });

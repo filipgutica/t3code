@@ -29,7 +29,7 @@ type StartWorkMachineInput = {
   readonly environmentId: EnvironmentId;
   readonly board: Pick<
     WorkbenchProject,
-    "remoteProjects" | "repositoryKeys" | "defaultEnvironmentId"
+    "linkedProjectIds" | "remoteProjects" | "repositoryKeys" | "defaultEnvironmentId"
   >;
   /** Null until the draft is a saved Ticket. */
   readonly ticket: WorkbenchTicket | null;
