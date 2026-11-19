@@ -74,10 +74,17 @@ vi.mock("../state/pullRequests", () => ({
     native.summaryQuery(target),
   pullRequestEnvironment: {
     activity: (target: Parameters<typeof native.activityQuery>[0]) => native.activityQuery(target),
+    invalidate: {},
   },
   sharedPullRequestSummaryAtom: (...args: Parameters<typeof native.sharedSummary>) =>
     native.sharedSummary(...args),
 }));
+const invalidatePullRequest = vi.hoisted(() =>
+  vi.fn(async (_command: { input: { reference: { number: number; projectId: string } } }) => ({
+    _tag: "Success",
+  })),
+);
+vi.mock("../state/use-atom-command", () => ({ useAtomCommand: () => invalidatePullRequest }));
 vi.mock("./state", () => ({
   workbenchEnvironment: {
     pullRequestViewer: (target: Parameters<typeof native.viewerQuery>[0]) =>
@@ -157,17 +164,21 @@ let renderer: ReactTestRenderer;
 function AttentionHarness({
   environment = environmentId,
   threads = threadsById,
+  tickets = [ticket],
+  ticketAssignments = assignments,
   activeThreadRef = null,
 }: {
   environment?: EnvironmentId;
   threads?: ReadonlyMap<ThreadId, EnvironmentThreadShell>;
+  tickets?: ReadonlyArray<WorkbenchTicket>;
+  ticketAssignments?: ReadonlyArray<WorkbenchAssignment>;
   activeThreadRef?: ScopedThreadRef | null;
 }) {
   const attention = useWorkbenchAttention({
     environmentId: environment,
     projectId,
-    tickets: [ticket],
-    assignments,
+    tickets,
+    assignments: ticketAssignments,
     threadsById: threads,
     activeThreadRef,
   });
@@ -202,9 +213,15 @@ async function publishInput(input: Parameters<typeof getWorkbenchPullRequestAtte
 }
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  vi.stubGlobal("window", new EventTarget());
+  vi.stubGlobal(
+    "document",
+    Object.assign(new EventTarget(), { visibilityState: "visible", hasFocus: () => true }),
+  );
   useUiStateStore.setState({ threadLastVisitedAtById: {} });
   native = createAttentionNativeFixture();
   registry = native.registry;
+  invalidatePullRequest.mockClear();
 });
 afterEach(async () => {
   await act(async () => renderer?.unmount());
@@ -360,7 +377,7 @@ it("preserves each eligible Thread source and deduplicates shared PR reasons ind
   expect(result.attentionReasonsByTicket.get(ticket.id)).toContain("PR attention unavailable");
 });
 
-it("retains feedback across reference-set and same-PR metadata changes, then prunes a closed PR", async () => {
+it("retains feedback across reference-set and same-PR metadata changes, prunes a closed PR, and re-reads metadata flags on return", async () => {
   const link: ThreadPullRequestLink = {
     host: "github.com",
     repository: reference.repository,
@@ -463,6 +480,90 @@ it("retains feedback across reference-set and same-PR metadata changes, then pru
   expect(
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("unresolved-feedback");
+  const settle: Array<() => void> = [];
+  const held = () =>
+    new Promise<{ _tag: string }>((resolve) => settle.push(() => resolve({ _tag: "Success" })));
+  invalidatePullRequest
+    .mockImplementationOnce(held)
+    .mockImplementationOnce(held)
+    .mockImplementationOnce(held);
+  // Inspection takes three PRs at a time and that batch never settles here, so PR 14 is
+  // known only from its link metadata.
+  const linkedPullRequests = (firstFailing: number) =>
+    [11, 12, 13, 14].map((number): ThreadPullRequestLink => ({
+      ...link,
+      number,
+      url: `https://github.com/acme/web/pull/${number}`,
+      snapshot: { ...link.snapshot!, checksState: number >= firstFailing ? "failing" : "passing" },
+    }));
+  const linkPullRequests = (firstFailing: number) =>
+    act(async () =>
+      renderer.update(
+        <Harness
+          threads={new Map(threadsById).set(waiting.id, {
+            ...waiting,
+            pullRequests: linkedPullRequests(firstFailing),
+          })}
+        />,
+      ),
+    );
+  await linkPullRequests(13);
+  const invalidated = () =>
+    invalidatePullRequest.mock.calls.map(([command]) => command.input.reference.number);
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidated()).toEqual([13]);
+  await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14]);
+  // Hiding the tab and showing it again, without focusing the window, while 14 is pending
+  // repeats the round once it ends, including PR 12, which became flagged meanwhile.
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  const switchTab = (visibilityState: DocumentVisibilityState) =>
+    act(async () => {
+      Object.assign(document, { visibilityState });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+  await switchTab("hidden");
+  await linkPullRequests(12);
+  await switchTab("visible");
+  expect(invalidated()).toEqual([13, 14]);
+  await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14, 12]);
+  await act(async () => settle.shift()?.());
+  expect(invalidated()).toEqual([13, 14, 12, 13, 14]);
+  hasFocus.mockReturnValue(true);
+  // A later Ticket's link to PR 14 without metadata does not hide the failing link, and the
+  // re-read targets the Project that inspection reads.
+  const otherTicket = { ...ticket, id: WorkbenchTicketId.make("other-ticket") };
+  const linker = {
+    ...thread("linker"),
+    projectId: ProjectId.make("fork"),
+    pullRequests: [
+      { ...link, number: 14, url: "https://github.com/acme/web/pull/14", snapshot: null },
+    ],
+  };
+  await act(async () =>
+    renderer.update(
+      <Harness
+        threads={new Map(threadsById)
+          .set(waiting.id, { ...waiting, pullRequests: linkedPullRequests(12) })
+          .set(linker.id, linker)}
+        tickets={[ticket, otherTicket]}
+        ticketAssignments={[
+          ...assignments,
+          {
+            ...assignments[0]!,
+            id: WorkbenchAssignmentId.make("linker"),
+            ticketId: otherTicket.id,
+            threadId: linker.id,
+          },
+        ]}
+      />,
+    ),
+  );
+  invalidatePullRequest.mockClear();
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidated()).toEqual([12, 13, 14]);
+  expect(invalidatePullRequest.mock.calls[2]?.[0].input.reference.projectId).toBe("fork");
 });
 
 it("keeps inspection across equivalent rerenders and known attention while explicit refresh completes", async () => {
@@ -488,7 +589,18 @@ it("keeps inspection across equivalent rerenders and known attention while expli
   expect(result.attentionScope).toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.status).toBe("complete");
-  await act(async () => result.refreshAttention());
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidatePullRequest).toHaveBeenCalledExactlyOnceWith({
+    environmentId,
+    input: {
+      reference: {
+        projectId: reference.projectId,
+        repository: reference.repository,
+        number: reference.number,
+        host: "github.com",
+      },
+    },
+  });
   expect(result.attentionScope).not.toBe(scope);
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]).toMatchObject({
     status: "loading",
@@ -545,10 +657,33 @@ it("keeps inspection across equivalent rerenders and known attention while expli
     result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind),
   ).not.toContain("failed-checks");
   expect(result.attentionInspectionsByTicket.get(ticket.id)?.[0]?.inspected).toBe(true);
+  invalidatePullRequest.mockClear();
+  await act(async () => window.dispatchEvent(new Event("focus")));
+  expect(invalidatePullRequest).not.toHaveBeenCalled();
   await publishInput(observations);
   expect(result.attentionSignalsByTicket.get(ticket.id)?.map((signal) => signal.kind)).toContain(
     "failed-checks",
   );
+  expect(invalidatePullRequest).not.toHaveBeenCalled();
+  await act(async () => {
+    window.dispatchEvent(new Event("focus"));
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  expect(invalidatePullRequest).toHaveBeenCalledOnce();
+  // Showing the tab before focusing the window is one return, not a departure and a return.
+  invalidatePullRequest.mockClear();
+  const hasFocus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
+  await act(async () => {
+    Object.assign(document, { visibilityState: "hidden" });
+    document.dispatchEvent(new Event("visibilitychange"));
+  });
+  await act(async () => {
+    Object.assign(document, { visibilityState: "visible" });
+    document.dispatchEvent(new Event("visibilitychange"));
+    hasFocus.mockReturnValue(true);
+    window.dispatchEvent(new Event("focus"));
+  });
+  expect(invalidatePullRequest).toHaveBeenCalledOnce();
   await act(async () =>
     renderer.update(<Harness environment={EnvironmentId.make("empty-environment")} />),
   );

@@ -43,6 +43,16 @@ const pendingObservation = (
   resolvedReviewThreadIds: [],
 });
 
+export const workbenchPullRequestRef = (reference: TicketPullRequestReference) => {
+  const host = sourceControlClients.parseChangeRequestUrl(reference.url)?.link.host;
+  return {
+    projectId: reference.projectId,
+    repository: reference.repository,
+    number: reference.number,
+    ...(host === undefined ? {} : { host }),
+  };
+};
+
 /** One provider's transient inspection progress; native atoms retain all PR data. */
 export function createWorkbenchAttentionQueries() {
   const history = Atom.make<{
@@ -121,16 +131,8 @@ export function createWorkbenchAttentionQueries() {
           });
         };
         for (const reference of batch) {
-          const host = sourceControlClients.parseChangeRequestUrl(reference.url)?.link.host;
-          const target = {
-            environmentId,
-            input: {
-              projectId: reference.projectId,
-              repository: reference.repository,
-              number: reference.number,
-              ...(host === undefined ? {} : { host }),
-            },
-          };
+          const target = { environmentId, input: workbenchPullRequestRef(reference) };
+          const { host } = target.input;
           const summaryQuery = linkedPullRequestDetailAtom(target);
           const activityQuery = pullRequestEnvironment.activity(target);
           const summary = sharedPullRequestSummaryAtom(environmentId, target.input);
