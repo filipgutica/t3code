@@ -179,12 +179,28 @@ export const WorkbenchRemoteProject = Schema.Struct({
 });
 export type WorkbenchRemoteProject = typeof WorkbenchRemoteProject.Type;
 
+/**
+ * The machine-independent identity of a Board repository: its git remote plus the Project's path
+ * inside it. Links with the same key are one repository checked out on several machines.
+ */
+export const WorkbenchRepositoryKey = TrimmedNonEmptyString.check(Schema.isMaxLength(2_000));
+
+export const WorkbenchProjectRepositoryKey = Schema.Struct({
+  projectId: ProjectId,
+  repositoryKey: WorkbenchRepositoryKey,
+});
+export type WorkbenchProjectRepositoryKey = typeof WorkbenchProjectRepositoryKey.Type;
+
 export const WorkbenchProject = Schema.Struct({
   id: WorkbenchProjectId,
   title: TrimmedNonEmptyString.check(Schema.isMaxLength(200)),
   linkedProjectIds: Schema.Array(ProjectId).check(Schema.isMinLength(1)),
   /** The entries of `linkedProjectIds` that live on another environment. */
   remoteProjects: Schema.optionalKey(Schema.Array(WorkbenchRemoteProject)),
+  /** The entries of `linkedProjectIds` whose repository identity is known. */
+  repositoryKeys: Schema.optionalKey(Schema.Array(WorkbenchProjectRepositoryKey)),
+  /** Where new Threads start when the Board's repositories are on several machines. */
+  defaultEnvironmentId: Schema.optionalKey(EnvironmentId),
   archivedAt: Schema.NullOr(IsoDateTime),
   revision: NonNegativeInt,
   createdAt: IsoDateTime,
@@ -445,6 +461,8 @@ export const WorkbenchCreateProjectInput = Schema.Struct({
   title: WorkbenchProject.fields.title,
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
   remoteProjects: WorkbenchProject.fields.remoteProjects,
+  repositoryKeys: WorkbenchProject.fields.repositoryKeys,
+  defaultEnvironmentId: WorkbenchProject.fields.defaultEnvironmentId,
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateProjectInput = typeof WorkbenchCreateProjectInput.Type;
@@ -457,6 +475,10 @@ export const WorkbenchUpdateProjectInput = Schema.Struct({
   // callers may send either the new IDs or the full selected list.
   linkedProjectIds: WorkbenchProject.fields.linkedProjectIds,
   remoteProjects: WorkbenchProject.fields.remoteProjects,
+  /** Fills a link's repository identity once; a key already stored is kept. */
+  repositoryKeys: WorkbenchProject.fields.repositoryKeys,
+  /** Absent keeps the current default; null clears it. */
+  defaultEnvironmentId: Schema.optionalKey(Schema.NullOr(EnvironmentId)),
   updatedAt: IsoDateTime,
 });
 export type WorkbenchUpdateProjectInput = typeof WorkbenchUpdateProjectInput.Type;
@@ -547,11 +569,22 @@ export const WorkbenchRemoteThread = Schema.Struct({
 });
 export type WorkbenchRemoteThread = typeof WorkbenchRemoteThread.Type;
 
+/**
+ * The Board repository a new Thread's Project checks out. When the Board has not linked that
+ * Project yet, it joins the repository with the same key, so the Thread can run on any machine.
+ */
+export const WorkbenchThreadRepository = Schema.Struct({
+  repositoryKey: WorkbenchRepositoryKey,
+  title: WorkbenchRemoteProject.fields.title,
+});
+export type WorkbenchThreadRepository = typeof WorkbenchThreadRepository.Type;
+
 export const WorkbenchCreateAssignmentInput = Schema.Struct({
   id: WorkbenchAssignmentId,
   ticketId: WorkbenchTicketId,
   threadId: ThreadId,
   remote: Schema.optionalKey(WorkbenchRemoteThread),
+  repository: Schema.optionalKey(WorkbenchThreadRepository),
   createdAt: IsoDateTime,
 });
 export type WorkbenchCreateAssignmentInput = typeof WorkbenchCreateAssignmentInput.Type;
@@ -568,6 +601,7 @@ export const WorkbenchReplaceAssignmentInput = Schema.Struct({
   previousThreadId: ThreadId,
   threadId: ThreadId,
   remote: Schema.optionalKey(WorkbenchRemoteThread),
+  repository: Schema.optionalKey(WorkbenchThreadRepository),
   replacedAt: IsoDateTime,
 });
 export type WorkbenchReplaceAssignmentInput = typeof WorkbenchReplaceAssignmentInput.Type;

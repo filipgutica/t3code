@@ -1,5 +1,8 @@
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
-import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
+import type {
+  EnvironmentProject,
+  EnvironmentThreadShell,
+} from "@t3tools/client-runtime/state/shell";
 import type {
   EnvironmentId,
   WorkbenchAssignment,
@@ -18,6 +21,7 @@ import { WorkbenchDiscardDraftDialog } from "./WorkbenchDiscardDraftDialog";
 import { WorkbenchDraftNavigationGuard } from "./WorkbenchDraftNavigationGuard";
 import { WorkbenchDraftActions } from "./WorkbenchDraftActions";
 import { WorkbenchDraftCard } from "./WorkbenchDraftCard";
+import { useWorkbenchStartWorkMachine } from "./WorkbenchStartWorkMachine";
 import {
   WorkbenchFloatingChat,
   type WorkbenchFloatingChatTicketThread,
@@ -85,6 +89,10 @@ interface WorkbenchBoardFloatingChatProps extends Pick<
   /** Starts another Thread on a ticket through the start-Thread dialog. */
   readonly onNewTicketThread: (ticket: WorkbenchTicket) => void;
   readonly newTicketThreadDisabled: boolean;
+  /** Every reachable Project, so Start work can offer another machine's checkout. */
+  readonly machineProjects: ReadonlyArray<EnvironmentProject>;
+  /** Opens Create Thread on another machine after Start work prepared the Ticket. */
+  readonly onStartWorkOn: (ticket: WorkbenchTicket, threadEnvironmentId: EnvironmentId) => void;
 }
 
 /** The Board owns Ticket drafting, including startup and recovery. */
@@ -487,7 +495,12 @@ export function WorkbenchDraftThread({
 }: {
   readonly context: Pick<
     WorkbenchBoardFloatingChatProps,
-    "environmentId" | "workspace" | "createContext" | "refreshSnapshot"
+    | "environmentId"
+    | "workspace"
+    | "createContext"
+    | "refreshSnapshot"
+    | "machineProjects"
+    | "onStartWorkOn"
   >;
   readonly snapshotDraft: WorkbenchConversationDraft;
   readonly ticket: WorkbenchTicket | null;
@@ -506,7 +519,7 @@ export function WorkbenchDraftThread({
   // Command replies can be newer than the snapshot; the newest revision wins.
   const [fromCommand, setFromCommand] = useState<WorkbenchConversationDraft | null>(null);
   const draft = pickNewestConversationDraft(snapshotDraft, fromCommand) ?? snapshotDraft;
-  const archived = workspace.archivedAt != null || ticket?.archivedAt != null;
+  const archived = isDraftArchived(workspace, ticket);
   const canOperate = useCanOperateDraft(environmentId, archived);
   const editor = useTicketDraftEditor({
     environmentId,
@@ -521,6 +534,13 @@ export function WorkbenchDraftThread({
   }, [editor, onDraftEditor]);
   const createState = getTicketDraftCreateState({ ...createContext, fields: editor.fields });
   const untouched = useIsUntouchedDraft(environmentId, draft.threadId, neverRan, editor.fields);
+  const startWork = useWorkbenchStartWorkMachine({
+    environmentId,
+    board: workspace,
+    ticket,
+    projects: context.machineProjects,
+    onStartWorkOn: context.onStartWorkOn,
+  });
   const transitions = useTicketDraftTransitions({
     environmentId,
     draft,
@@ -530,7 +550,7 @@ export function WorkbenchDraftThread({
       setFromCommand(created);
       onTicketCreated?.(created);
     },
-    onWorkStarted: () => {},
+    onWorkStarted: startWork.onWorkStarted,
     onDiscarded,
     onClose: () => {},
     onCreateManually: onOpenDraft,
@@ -565,6 +585,7 @@ export function WorkbenchDraftThread({
         canOperate={canOperate}
         ticketExists={ticket !== null}
         untouched={untouched}
+        runOn={startWork.runOn}
       />
     </>
   );
@@ -575,6 +596,11 @@ export function WorkbenchDraftThread({
     </>
   );
 }
+
+const isDraftArchived = (
+  workspace: Pick<WorkbenchBoardFloatingChatProps["workspace"], "archivedAt">,
+  ticket: Pick<WorkbenchTicket, "archivedAt"> | null,
+) => workspace.archivedAt != null || ticket?.archivedAt != null;
 
 /** Only unsaved drafts get the card; planning and starting drafts keep the Start work strip. */
 const getDraftCardContext = (

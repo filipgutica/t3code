@@ -111,7 +111,8 @@ export function useWorkbenchTicketActions({
         : current,
     );
   };
-  const saveRepositories = async () => {
+  /** Saves `value`, the draft's scope after the caller mapped it to one machine. */
+  const saveRepositories = async (value: WorkbenchRepositoryScope) => {
     const draft = repositoryScopeDraft;
     if (environmentId === null || draft === null || pendingAction !== null) return false;
     const latestTicket = snapshot?.tickets.find((ticket) => ticket.id === draft.ticket.id);
@@ -132,11 +133,11 @@ export function useWorkbenchTicketActions({
     setPendingAction(`update-repositories:${draft.ticket.id}`);
     setError(null);
     let savedTicket = draft.ticket;
-    const changed = !isWorkbenchRepositoryScopeEqual(draft.ticket, draft.value);
+    const changed = !isWorkbenchRepositoryScopeEqual(draft.ticket, value);
     const prepare =
       (draft.prepare || (changed && workspace?.status === "ready")) &&
       !isWorkbenchRemoteRepositoryScope(
-        draft.value,
+        value,
         snapshot?.projects.find((project) => project.id === draft.ticket.projectId),
       );
     return (async () => {
@@ -146,7 +147,7 @@ export function useWorkbenchTicketActions({
           input: {
             id: draft.ticket.id,
             expectedRevision: draft.ticket.revision,
-            ...draft.value,
+            ...value,
             updatedAt: new Date().toISOString(),
           },
         });

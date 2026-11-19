@@ -1,3 +1,4 @@
+import { matchWorkbenchTicketThread } from "./workbenchRemoteProjects";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import { isAtomCommandInterrupted } from "@t3tools/client-runtime/state/runtime";
 import {
@@ -40,6 +41,8 @@ type WorkbenchStartThreadRequest = {
   assignment?: WorkbenchAssignment;
   mode?: "additional" | "replace";
   previousThreadId?: ThreadId;
+  /** The machine the dialog preselects, as when Start work picked another machine. */
+  threadEnvironmentId?: EnvironmentId;
 };
 
 const getWorkbenchThreadStartOptions = ({
@@ -47,6 +50,7 @@ const getWorkbenchThreadStartOptions = ({
   modelSelection,
   repositoryScope,
   repositoryProjectId,
+  threadEnvironmentId,
   assignments,
   existingThreadIds,
 }: {
@@ -54,6 +58,7 @@ const getWorkbenchThreadStartOptions = ({
   modelSelection: ModelSelection;
   repositoryScope: WorkbenchRepositoryScope | undefined;
   repositoryProjectId: ProjectId | undefined;
+  threadEnvironmentId: EnvironmentId | undefined;
   assignments: readonly WorkbenchAssignment[];
   existingThreadIds: ReadonlySet<ThreadId>;
 }): StartWorkbenchTicketOptions => {
@@ -69,6 +74,7 @@ const getWorkbenchThreadStartOptions = ({
     modelSelection,
     ...(repositoryScope ? { repositoryScope } : {}),
     ...(repositoryProjectId ? { repositoryProjectId } : {}),
+    ...(threadEnvironmentId ? { threadEnvironmentId } : {}),
     ...(request.mode === "replace"
       ? { mode: "replace" as const }
       : hasOtherThread
@@ -255,21 +261,31 @@ export function useWorkbenchThreadActions({
     setStartThreadRequest({ environmentId, ...review, ...(assignment ? { assignment } : {}) });
   };
 
-  const requestNewThread = (ticket: WorkbenchTicket) => {
-    if (pendingAction !== null || !threadLookupReady || environmentId === null) return;
+  const requestNewThread = (
+    ticket: WorkbenchTicket,
+    { threadEnvironmentId }: { threadEnvironmentId?: EnvironmentId } = {},
+  ) => {
+    if (environmentId === null) return;
+    // Start work's handoff already started the Ticket with its planning Thread, so it can't wait
+    // for Thread lookup or a page action without dropping the picked machine.
+    const handoff = threadEnvironmentId !== undefined;
+    if (!handoff && (pendingAction !== null || !threadLookupReady)) return;
     const review = repositoryReviewRequest(ticket);
     if (!review) return;
-    const hasExistingThread = (snapshot?.assignments ?? []).some(
-      (assignment) =>
-        assignment.ticketId === ticket.id &&
-        assignment.supersededAt === null &&
-        (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
-    );
+    const hasExistingThread =
+      handoff ||
+      (snapshot?.assignments ?? []).some(
+        (assignment) =>
+          assignment.ticketId === ticket.id &&
+          assignment.supersededAt === null &&
+          (assignment.environmentId !== undefined || existingThreadIds.has(assignment.threadId)),
+      );
     setError(null);
     setStartThreadRequest({
       environmentId,
       ...review,
       ...(hasExistingThread ? { mode: "additional" as const } : {}),
+      ...(threadEnvironmentId ? { threadEnvironmentId } : {}),
     });
   };
 
@@ -322,6 +338,13 @@ export function useWorkbenchThreadActions({
       thread.environmentId !== environmentId
         ? { environmentId: thread.environmentId, projectId: thread.projectId }
         : undefined;
+    const repository = matchWorkbenchTicketThread({
+      board: snapshot?.projects.find((board) => board.id === attachThreadTicket.projectId),
+      boardEnvironmentId: environmentId,
+      repositoryProjectIds: attachThreadTicket.repositoryProjectIds,
+      projects,
+      thread,
+    })?.repository;
     const result = await attachAssignment({
       environmentId,
       input: {
@@ -329,6 +352,7 @@ export function useWorkbenchThreadActions({
         ticketId: attachThreadTicket.id,
         threadId,
         ...(remote ? { remote } : {}),
+        ...(repository ? { repository } : {}),
         createdAt: new Date().toISOString(),
       },
     });
@@ -399,10 +423,12 @@ export function useWorkbenchThreadActions({
     modelSelection,
     repositoryScope,
     repositoryProjectId,
+    threadEnvironmentId,
   }: {
     modelSelection: ModelSelection;
     repositoryScope?: WorkbenchRepositoryScope;
     repositoryProjectId?: ProjectId;
+    threadEnvironmentId?: EnvironmentId | undefined;
   }) => {
     if (
       startThreadRequest === null ||
@@ -420,6 +446,7 @@ export function useWorkbenchThreadActions({
         modelSelection,
         repositoryScope,
         repositoryProjectId,
+        threadEnvironmentId,
         assignments: snapshot?.assignments ?? [],
         existingThreadIds,
       }),

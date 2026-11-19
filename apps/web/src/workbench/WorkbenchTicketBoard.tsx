@@ -132,6 +132,8 @@ type WorkbenchTicketBoardProps = {
   readonly repositoryProjectIds: ReadonlyArray<ProjectId>;
   readonly repositoriesReady: boolean;
   readonly repositoriesById: ReadonlyMap<ProjectId, Project>;
+  /** Matches a Ticket to the repository filter when it names another machine's checkout. */
+  readonly repositoryKeyOf?: (projectId: ProjectId) => string;
   readonly assignmentsByTicket: ReadonlyMap<WorkbenchTicketId, WorkbenchAssignment>;
   readonly referencesByTicket: WorkbenchReferencesByTicket;
   readonly assignments: ReadonlyArray<WorkbenchAssignment>;
@@ -268,8 +270,11 @@ function WorkbenchTicketBoardContent({
               drafts={(props.drafts ?? []).filter(
                 (draft) =>
                   data.attentionMode === "all" &&
-                  (data.repositoryId === null ||
-                    draft.fields.repositoryProjectIds.includes(data.repositoryId)) &&
+                  namesWorkbenchRepository(
+                    draft.fields.repositoryProjectIds,
+                    data.repositoryId,
+                    props.repositoryKeyOf,
+                  ) &&
                   matchesWorkbenchTicketSearch({
                     title: getConversationDraftTitle(
                       draft,
@@ -563,6 +568,14 @@ function WorkbenchBoardTicketActions({
   );
 }
 
+function namesWorkbenchRepository(
+  projectIds: ReadonlyArray<ProjectId>,
+  repositoryId: ProjectId | null,
+  keyOf: (projectId: ProjectId) => string = (projectId) => projectId,
+) {
+  return repositoryId === null || projectIds.some((id) => keyOf(id) === keyOf(repositoryId));
+}
+
 function useWorkbenchBoardData({
   environmentId,
   projectId,
@@ -571,11 +584,13 @@ function useWorkbenchBoardData({
   assignments,
   threadsById,
   archivedThreadsById,
+  repositoryKeyOf,
 }: Pick<
   WorkbenchTicketBoardProps,
   | "environmentId"
   | "projectId"
   | "tickets"
+  | "repositoryKeyOf"
   | "referencesByTicket"
   | "assignments"
   | "threadsById"
@@ -601,7 +616,7 @@ function useWorkbenchBoardData({
   const visibleTickets = tickets.filter(
     (ticket) =>
       matchesWorkbenchAttention(attentionMode, attentionSignalsByTicket.get(ticket.id) ?? []) &&
-      (repositoryId === null || ticket.repositoryProjectIds.includes(repositoryId)) &&
+      namesWorkbenchRepository(ticket.repositoryProjectIds, repositoryId, repositoryKeyOf) &&
       matchesWorkbenchTicketSearch({
         title: ticket.title,
         referenceTerms: getWorkbenchReferenceSearchTerms(

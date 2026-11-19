@@ -451,6 +451,24 @@ describe("Workbench Board view", () => {
     act(() => renderer.root.findByType(Select).props.onValueChange("secondary"));
     expect(renderer.root.findAllByType("article")).toHaveLength(1);
     expect(renderer.root.findByType("h3").children).toEqual(["Across repositories"]);
+    // A Ticket naming another machine's checkout of the filtered repository still matches.
+    const [across, primary] = workspaceProps.tickets;
+    act(() =>
+      renderer.update(
+        <WorkbenchTicketBoard
+          {...workspaceProps}
+          tickets={[
+            {
+              ...across!,
+              repositoryProjectIds: [ProjectId.make("repo"), ProjectId.make("secondary-elsewhere")],
+            },
+            primary!,
+          ]}
+          repositoryKeyOf={(id) => id.replace("-elsewhere", "")}
+        />,
+      ),
+    );
+    expect(renderer.root.findByType("h3").children).toEqual(["Across repositories"]);
     act(() => renderer.unmount());
     act(() => {
       publishRepositories(null);

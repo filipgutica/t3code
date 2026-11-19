@@ -14,11 +14,18 @@ import type {
   WorkbenchPrepareTicketWorkspaceInput,
   WorkbenchTicket,
   WorkbenchTicketWorkspace,
+  WorkbenchProject,
   WorkbenchRemoteProject,
   WorkbenchUpdateTicketInput,
 } from "@t3tools/contracts";
 
-import { getWorkbenchBoardRepositories } from "./workbenchRemoteProjects";
+import {
+  chooseWorkbenchThreadMachine,
+  getWorkbenchLinkEnvironment,
+  getWorkbenchThreadMachines,
+  isWorkbenchCheckoutOnly,
+  makeWorkbenchRepositoryKeyOf,
+} from "./workbenchRemoteProjects";
 import { DEFAULT_INTERACTION_MODE } from "../types";
 import { resolveWorkbenchTicketThreadTarget } from "./workbench.logic";
 import {
@@ -40,7 +47,10 @@ interface StartWorkbenchTicketInput {
   readonly ticket: WorkbenchTicket;
   readonly projects: ReadonlyArray<EnvironmentProject>;
   readonly assignment: WorkbenchAssignment | undefined;
+  readonly linkedProjectIds?: ReadonlyArray<ProjectId> | undefined;
   readonly remoteProjects?: ReadonlyArray<WorkbenchRemoteProject> | undefined;
+  readonly repositoryKeys?: WorkbenchProject["repositoryKeys"] | undefined;
+  readonly defaultEnvironmentId?: EnvironmentId | undefined;
   readonly existingThreadIds: ReadonlySet<ThreadId>;
   readonly threadLookupReady: boolean;
 }
@@ -96,6 +106,8 @@ export interface StartWorkbenchTicketOptions {
   readonly repositoryScope?: WorkbenchRepositoryScope;
   /** The repository the new Thread works in; see `resolveWorkbenchThreadRepository`. */
   readonly repositoryProjectId?: ProjectId;
+  /** The machine the new Thread runs on; the Board's default machine applies when absent. */
+  readonly threadEnvironmentId?: EnvironmentId;
 }
 
 interface StartWorkbenchTicketDependencies {
@@ -269,6 +281,7 @@ const assignWorkbenchThread = ({
   assignmentId,
   createdAt,
   remote,
+  repository,
 }: {
   input: StartWorkbenchTicketInput;
   dependencies: StartWorkbenchTicketDependencies;
@@ -277,6 +290,7 @@ const assignWorkbenchThread = ({
   assignmentId: WorkbenchAssignmentId;
   createdAt: string;
   remote: WorkbenchCreateAssignmentInput["remote"];
+  repository: WorkbenchCreateAssignmentInput["repository"];
 }) => {
   const previousThreadId = options.previousThreadId ?? input.assignment?.threadId;
   const assignment = {
@@ -284,6 +298,7 @@ const assignWorkbenchThread = ({
     ticketId: input.ticket.id,
     threadId,
     ...(remote ? { remote } : {}),
+    ...(repository ? { repository } : {}),
   };
   return options.mode !== "additional" && previousThreadId
     ? dependencies.replaceAssignment({
@@ -294,6 +309,61 @@ const assignWorkbenchThread = ({
         environmentId: input.environmentId,
         input: { ...assignment, createdAt },
       });
+};
+
+/** The chosen machine's checkout of the Thread's repository, and how its Assignment names it. */
+const resolveThreadTarget = ({
+  input,
+  options,
+  repositoryProjectId,
+}: {
+  input: StartWorkbenchTicketInput;
+  options: StartWorkbenchTicketOptions;
+  repositoryProjectId: ProjectId;
+}) => {
+  const board = {
+    linkedProjectIds: input.linkedProjectIds ?? [],
+    remoteProjects: input.remoteProjects,
+    repositoryKeys: input.repositoryKeys,
+  };
+  const linkEnvironmentId = getWorkbenchLinkEnvironment({
+    board,
+    boardEnvironmentId: input.environmentId,
+    projectId: repositoryProjectId,
+  });
+  const machine = chooseWorkbenchThreadMachine({
+    machines: getWorkbenchThreadMachines({
+      board,
+      boardEnvironmentId: input.environmentId,
+      repositoryProjectIds: input.ticket.repositoryProjectIds,
+      projects: input.projects,
+    }),
+    picked: options.threadEnvironmentId,
+    defaultEnvironmentId: input.defaultEnvironmentId,
+    boardEnvironmentId: input.environmentId,
+    scopeEnvironmentId: linkEnvironmentId,
+  });
+  const threadProject = machine?.projectsByRepository.get(repositoryProjectId);
+  if (!machine || !threadProject) return undefined;
+  const remote =
+    threadProject.environmentId === input.environmentId
+      ? undefined
+      : { environmentId: threadProject.environmentId, projectId: threadProject.id };
+  return {
+    threadProject,
+    remote,
+    checkoutOnly: isWorkbenchCheckoutOnly(machine, input.environmentId),
+    // Another checkout of the Ticket's repository joins the Board when the Thread is linked.
+    repository:
+      threadProject.id === repositoryProjectId
+        ? undefined
+        : {
+            repositoryKey: makeWorkbenchRepositoryKeyOf({ board, projects: input.projects })(
+              repositoryProjectId,
+            ),
+            title: threadProject.title,
+          },
+  };
 };
 
 export async function coordinateWorkbenchTicketStart(
@@ -319,32 +389,24 @@ export async function coordinateWorkbenchTicketStart(
     ticket: input.ticket,
     preferred: options.repositoryProjectId,
   });
-  const project = getWorkbenchBoardRepositories({
-    board: {
-      linkedProjectIds: input.ticket.repositoryProjectIds,
-      remoteProjects: input.remoteProjects ?? [],
-    },
-    projects: input.projects,
-    environmentId: input.environmentId,
-  }).find((candidate) => candidate.id === repositoryProjectId);
-  if (!project) return { state: "project-unavailable", ticket: input.ticket };
-  const modelSelection = options.modelSelection ?? dependencies.resolveModelSelection(project);
+  if (!repositoryProjectId) return { state: "project-unavailable", ticket: input.ticket };
+  const target = resolveThreadTarget({ input, options, repositoryProjectId });
+  if (!target) return { state: "project-unavailable", ticket: input.ticket };
+  const { threadProject, remote, repository } = target;
+  const modelSelection =
+    options.modelSelection ?? dependencies.resolveModelSelection(threadProject);
   if (modelSelection === null) return { state: "provider-unavailable", ticket: input.ticket };
 
   const threadId = dependencies.makeThreadId();
   const assignmentId = dependencies.makeAssignmentId();
   const createdAt = dependencies.now();
-  const threadEnvironmentId = project.environmentId;
-  const remote =
-    threadEnvironmentId !== input.environmentId
-      ? { environmentId: threadEnvironmentId, projectId: project.id }
-      : undefined;
+  const threadEnvironmentId = threadProject.environmentId;
   const preparation = await prepareWorkbenchThreadCheckout({
     input,
     dependencies,
-    project,
+    project: threadProject,
     createdAt,
-    remote: remote !== undefined,
+    remote: target.checkoutOnly,
   });
   if (preparation.state === "failed") return preparation;
   const { checkout } = preparation;
@@ -353,10 +415,10 @@ export async function coordinateWorkbenchTicketStart(
     environmentId: threadEnvironmentId,
     input: {
       threadId,
-      projectId: project.id,
+      projectId: threadProject.id,
       title: input.ticket.title,
       modelSelection,
-      runtimeMode: dependencies.resolveRuntimeMode(project),
+      runtimeMode: dependencies.resolveRuntimeMode(threadProject),
       interactionMode: DEFAULT_INTERACTION_MODE,
       branch: checkout.branchName,
       worktreePath: checkout.worktreePath,
@@ -376,6 +438,7 @@ export async function coordinateWorkbenchTicketStart(
     assignmentId,
     createdAt,
     remote,
+    repository,
   });
   if (assignmentResult._tag === "Failure") {
     const cleanupResult = await dependencies.deleteThread({

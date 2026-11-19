@@ -334,12 +334,23 @@ as a server running `npx t3`. That machine needs no Workbench install. The Board
 and its Tickets stay on the machine that holds the Board.
 
 1. Connect this device to the other machine (see [Remote access](./remote-access.md)).
-2. Choose **Edit Board** and select its Projects, listed under that machine's name.
-3. Create a Ticket whose repositories are all on that machine, then start work.
+2. Choose **Edit Board** and select its repositories. Each row lists the
+   machines that check it out.
+3. Create a Ticket, then start work.
 
-Starting work creates the Thread on the other machine and puts the Ticket in its
-composer as the first message. Choose that Thread's workspace mode before you
-send it. After that the Thread works like any native Thread on that machine:
+A repository checked out on several machines, with the same git remote and path,
+is one Board repository. Selecting it links its checkout on every connected
+machine, and saving Edit Board links checkouts on machines connected since.
+**Create Thread** and **Start work** show a **Run on** choice of the connected machines that have all of
+the Ticket's repositories. Start work on another machine keeps the planning
+conversation on the Board's machine, then opens Create Thread for the new
+machine. To set the machine new Threads use first, choose **Edit Board** and pick
+a **Default machine**. **Automatic** prefers the Board's machine. Ticket
+worktrees are always prepared on the Board's machine.
+
+Choosing **Create Thread** for another machine creates the Thread there and puts
+the Ticket in its composer as the first message. Choose that Thread's workspace
+mode before you send it. After that the Thread works like any native Thread on that machine:
 
 - Later Ticket changes, Workbench tools, recaps, and automatic status don't reach it.
 - Its pull requests show in the Thread, not on the Ticket.

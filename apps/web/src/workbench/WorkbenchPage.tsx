@@ -9,6 +9,7 @@ import { useWorkbenchPageData } from "./useWorkbenchPageData";
 
 import { useWorkbenchPageSelection } from "./useWorkbenchPageSelection";
 import { useWorkbenchPageRefresh } from "./useWorkbenchPageRefresh";
+import { useWorkbenchRepositoryKeyBackfill } from "./useWorkbenchRepositoryKeyBackfill";
 import { useWorkbenchWorkspaceActions } from "./useWorkbenchWorkspaceActions";
 import { WorkbenchWorkspaceDeleteDialog } from "./WorkbenchWorkspaceDeleteDialog";
 
@@ -43,6 +44,13 @@ export function WorkbenchPage({
       initialProjectId,
       initialTicketId,
     });
+
+  useWorkbenchRepositoryKeyBackfill({
+    environmentId,
+    boards: pageData.snapshotProjects,
+    projects,
+    canOperate: pageData.canOperate,
+  });
 
   const dialogs = useWorkbenchPageDialogs({
     environmentId,

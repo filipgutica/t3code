@@ -27,6 +27,7 @@ const onOpenChange = vi.fn();
 const props: ComponentProps<typeof WorkbenchTicketDialog> = {
   open: true,
   linkedProjects: [project],
+  resolveRepositories: (projectIds) => projectIds,
   pending: false,
   error: null,
   onOpenChange,
@@ -89,7 +90,9 @@ const button = (text: string) => {
 
 describe("Workbench Ticket creation", () => {
   it("creates a local Ticket in the selected Repository scope", async () => {
-    await renderDialog();
+    // The Board's checkouts of the chosen repositories are saved, not the picker's.
+    const boardCheckoutId = ProjectId.make("board-repository-1");
+    await renderDialog({ resolveRepositories: (ids) => ids.map(() => boardCheckoutId) });
     await submit();
     expect(onCreate).not.toHaveBeenCalled();
     await setTitle();
@@ -97,7 +100,7 @@ describe("Workbench Ticket creation", () => {
     expect(onCreate).toHaveBeenCalledExactlyOnceWith(
       expect.objectContaining({
         title: "Fix this",
-        repositoryProjectIds: [project.id],
+        repositoryProjectIds: [boardCheckoutId],
       }),
     );
   });
