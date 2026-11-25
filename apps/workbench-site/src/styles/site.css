@@ -113,10 +113,6 @@ body {
     font-weight: var(--weight-semibold);
     text-wrap: balance;
   }
-  h1,
-  h2 {
-    font-family: var(--font-mono);
-  }
   h1 {
     max-width: 18ch;
     font-size: var(--h1);
@@ -210,7 +206,7 @@ body {
 }
 @media (max-width: 800px) {
   .contents-list a {
-    min-height: var(--control-lg);
+    min-height: var(--control-touch);
   }
 }
 
@@ -385,7 +381,7 @@ p.provenance {
   gap: var(--space-6);
 }
 .download-action {
-  min-height: var(--control-lg);
+  min-height: var(--control-touch);
   padding-inline: var(--space-5);
 }
 .text-link {
@@ -425,7 +421,7 @@ p.provenance {
 }
 .site-footer .brand {
   display: inline-flex;
-  min-height: var(--control-lg);
+  min-height: var(--control-touch);
   align-items: center;
   gap: var(--space-1);
   color: var(--text);
