@@ -50,8 +50,8 @@ the README hero and social share image.
 Capture native UI using normal sidebar/chat resizing, section toggles, search,
 and scrolling. Keep seeded outcomes distinct from real planning or agent edits.
 Shared context can use the native stacked layout to make its text readable.
-The current shared header, Graphite Indigo theme, IBM Plex fonts, and T3 accent
-stay unchanged.
+The current shared header, Graphite Indigo theme, Inter and JetBrains Mono
+fonts, and T3 accent stay unchanged.
 
 The palette in `src/styles/t3-theme.css` mirrors T3 Code's default light and dark theme
 so the page matches the screenshots. Update it when that theme changes.
